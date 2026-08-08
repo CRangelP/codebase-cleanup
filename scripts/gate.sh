@@ -94,6 +94,34 @@ missing() {
   incomplete=1
 }
 
+py_missing() {
+  echo "[gate] $1 present but toolchain '$2' missing — looked in \$VIRTUAL_ENV/bin," \
+       ".venv/bin, venv/bin, uv/poetry and PATH — manual gate" >&2
+  incomplete=1
+}
+
+# py_cmd <tool> — echoes the command prefix that runs <tool> in this project.
+# A Python project rarely puts its tools on the global PATH: the virtualenv
+# comes first, then the lockfile runners, and only then the global install.
+# Echoes a string (bash 3.2 has no arrays to return); call sites split it on
+# whitespace, which is safe because none of these paths contain spaces.
+py_cmd() {
+  local tool=$1
+  if [[ -n ${VIRTUAL_ENV:-} && -x ${VIRTUAL_ENV:-}/bin/$tool ]]; then
+    echo "$VIRTUAL_ENV/bin/$tool"; return 0
+  fi
+  if [[ -x .venv/bin/$tool ]]; then echo ".venv/bin/$tool"; return 0; fi
+  if [[ -x venv/bin/$tool ]]; then echo "venv/bin/$tool"; return 0; fi
+  if [[ -f uv.lock ]] || grep -qs '^\[tool\.uv\]' pyproject.toml; then
+    if command -v uv >/dev/null; then echo "uv run $tool"; return 0; fi
+  fi
+  if [[ -f poetry.lock ]]; then
+    if command -v poetry >/dev/null; then echo "poetry run $tool"; return 0; fi
+  fi
+  if command -v "$tool" >/dev/null; then echo "$tool"; return 0; fi
+  return 1
+}
+
 # --- JS/TS (package.json) ---
 if [[ -f package.json ]]; then
   if [[ -f bun.lock || -f bun.lockb ]]; then PM=bun
@@ -138,17 +166,23 @@ fi
 if [[ -f pyproject.toml || -f setup.py || -f setup.cfg || -f requirements.txt ]]; then
   if [[ -f mypy.ini || -f .mypy.ini ]] || grep -qs '^\[tool\.mypy\]' pyproject.toml \
       || grep -qs '^\[mypy\]' setup.cfg; then
-    if command -v mypy >/dev/null; then run typecheck mypy .
-    else missing config-mypy mypy; fi
+    py_tool=$(py_cmd mypy)
+    # shellcheck disable=SC2086  # the prefix is split on purpose
+    if [[ -n $py_tool ]]; then run typecheck $py_tool .
+    else py_missing config-mypy mypy; fi
   fi
-  if [[ -f pyrightconfig.json ]]; then
-    if command -v pyright >/dev/null; then run typecheck pyright
-    else missing pyrightconfig.json pyright; fi
+  if [[ -f pyrightconfig.json ]] || grep -qs '^\[tool\.pyright\]' pyproject.toml; then
+    py_tool=$(py_cmd pyright)
+    # shellcheck disable=SC2086
+    if [[ -n $py_tool ]]; then run typecheck $py_tool
+    else py_missing config-pyright pyright; fi
   fi
   if [[ -f pytest.ini || -d tests || -d test ]] || grep -qs '^\[tool\.pytest' pyproject.toml \
       || grep -qs '^\[tool:pytest\]' setup.cfg || grep -qs '^\[pytest\]' tox.ini; then
-    if command -v pytest >/dev/null; then run test pytest -q
-    else missing python-tests pytest; fi
+    py_tool=$(py_cmd pytest)
+    # shellcheck disable=SC2086
+    if [[ -n $py_tool ]]; then run test $py_tool -q
+    else py_missing python-tests pytest; fi
   fi
 fi
 

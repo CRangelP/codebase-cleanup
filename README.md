@@ -21,8 +21,10 @@ porque fronteira de módulo é decisão de domínio, não de código.
   cargo-udeps, ReferenceTrimmer). O que faltar, a skill aponta em vez de
   instalar por conta.
 - O gate (`scripts/gate.sh`) detecta o stack pelo manifesto e roda typecheck +
-  testes em JS/TS, Go, Rust, Python, JVM, Ruby e .NET — basta o toolchain
-  estar no PATH. Cada check roda sob um watchdog (`GATE_TIMEOUT`, 900s por
+  testes em JS/TS, Go, Rust, Python, JVM, Ruby e .NET. O toolchain precisa
+  estar alcançável: no PATH na maioria dos stacks e, em Python, também vale
+  `$VIRTUAL_ENV/bin`, `.venv/bin`, `venv/bin` ou os runners `uv run` e
+  `poetry run` (nessa ordem). Cada check roda sob um watchdog (`GATE_TIMEOUT`, 900s por
   padrão, `0` desliga): estourou o tempo, o gate sai 4 e vale como não
   conclusivo. É script bash (o 3.2 do macOS serve); no Windows, use WSL.
 

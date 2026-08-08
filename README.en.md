@@ -21,8 +21,10 @@ module boundary is a domain decision, not a code decision.
   cargo-udeps, ReferenceTrimmer). Whatever is missing, the skill reports
   instead of installing on its own.
 - The gate (`scripts/gate.sh`) detects the stack from the manifest and runs
-  typecheck + tests for JS/TS, Go, Rust, Python, JVM, Ruby and .NET — the
-  toolchain only has to be on PATH. Every check runs under a watchdog
+  typecheck + tests for JS/TS, Go, Rust, Python, JVM, Ruby and .NET. The
+  toolchain has to be reachable: on PATH for most stacks and, for Python, also
+  from `$VIRTUAL_ENV/bin`, `.venv/bin`, `venv/bin` or the `uv run` and
+  `poetry run` runners (in that order). Every check runs under a watchdog
   (`GATE_TIMEOUT`, 900s by default, `0` disables it): if it runs out of time,
   the gate exits 4 and counts as inconclusive. It is a bash script (the bash
   3.2 shipped with macOS is enough); on Windows, use WSL.

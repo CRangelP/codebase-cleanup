@@ -95,6 +95,23 @@ mkdir -p "$TMP/py-setupcfg/test"
 printf '[mypy]\n' > "$TMP/py-setupcfg/setup.cfg"
 touch "$TMP/py-setupcfg/test/test_x.py"
 
+mkdir -p "$TMP/py-venv/tests" "$TMP/py-venv/.venv/bin"
+printf '[tool.mypy]\n' > "$TMP/py-venv/pyproject.toml"
+touch "$TMP/py-venv/tests/test_x.py"
+stub "$TMP/py-venv/.venv/bin" mypy 0
+stub "$TMP/py-venv/.venv/bin" pytest 0
+
+mkdir -p "$TMP/py-no-tools/tests"
+printf '[tool.mypy]\n' > "$TMP/py-no-tools/pyproject.toml"
+touch "$TMP/py-no-tools/tests/test_x.py"
+
+mkdir -p "$TMP/py-uv/tests"
+printf '[project]\nname = "f"\n' > "$TMP/py-uv/pyproject.toml"
+touch "$TMP/py-uv/uv.lock" "$TMP/py-uv/tests/test_x.py"
+
+mkdir -p "$TMP/py-pyright"
+printf '[tool.pyright]\n' > "$TMP/py-pyright/pyproject.toml"
+
 mkdir -p "$TMP/go-only"
 printf 'module f\n\ngo 1.21\n' > "$TMP/go-only/go.mod"
 
@@ -103,10 +120,11 @@ printf 'module f\n\ngo 1.21\n' > "$TMP/go-hang/go.mod"
 printf 'package f\n' > "$TMP/go-hang/x_test.go"
 
 # stubs ----------------------------------------------------------------
-OK="$TMP/stubs-ok"; FAIL="$TMP/stubs-fail"; HANG="$TMP/stubs-hang"
-for t in pytest mypy dotnet mvn gradle; do stub "$OK" "$t" 0; done
+OK="$TMP/stubs-ok"; FAIL="$TMP/stubs-fail"; HANG="$TMP/stubs-hang"; UV="$TMP/stubs-uv"
+for t in pytest mypy pyright dotnet mvn gradle; do stub "$OK" "$t" 0; done
 stub "$FAIL" dotnet 1
 stub_body "$HANG" go 'sleep 30'
+stub "$UV" uv 0
 
 # matrix ---------------------------------------------------------------
 case_run bad-path         2 "$TMP/nope"         -             "bad path"
@@ -123,6 +141,10 @@ case_run dotnet-red       1 "$TMP/dotnet-root"  "$FAIL:$BASE" "RED"
 case_run dotnet-subdir    0 "$TMP/dotnet-sub"   "$OK:$BASE"   "src/App/App.fsproj" "GREEN"
 case_run jvm-hybrid       0 "$TMP/jvm-hybrid"   "$OK:$BASE"   "mvn -q test" "gradle test" "GREEN"
 case_run py-setupcfg      0 "$TMP/py-setupcfg"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
+case_run py-venv          0 "$TMP/py-venv"      "$BASE"       ".venv/bin/mypy" ".venv/bin/pytest" "GREEN"
+case_run py-no-tools      3 "$TMP/py-no-tools"  "$BASE"       "toolchain 'mypy' missing" "looked in"
+case_run py-uv            0 "$TMP/py-uv"        "$UV:$BASE"   "uv run pytest" "checks=test"
+case_run py-pyright       0 "$TMP/py-pyright"   "$OK:$BASE"   "checks=typecheck"
 
 GATE_ENV="GATE_TIMEOUT=2"
 case_run hang             4 "$TMP/go-hang"      "$HANG:$BASE" "TIMEOUT after 2s"
