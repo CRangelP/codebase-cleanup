@@ -34,8 +34,10 @@ incomplete=0
 # ps; without it the sweep silently degrades to the group kill), so under perl
 # a plain setsid does not escape — it changes the group, not the parent. GNU
 # timeout/gtimeout kill the group only, with no sweep: there a setsid child
-# does escape. Residual race, accepted: a pid snapshotted and recycled during
-# the 2s TERM→KILL grace can be signalled by mistake.
+# does escape. A pid recycled during the TERM→KILL grace is no longer signalled
+# by mistake: the snapshot records each process start time and the sweep only
+# touches a survivor whose start time still matches. Where ps has no lstart
+# (BusyBox), the sweep falls back to matching by pid alone, as before.
 GATE_TIMEOUT=${GATE_TIMEOUT:-900}
 case $GATE_TIMEOUT in
   ''|*[!0-9]*)
@@ -52,13 +54,26 @@ my $pid = fork();
 if (!defined $pid) { exit 127; }
 if (!$pid) { setpgrp(0,0); exec @ARGV; exit 127; }
 $SIG{ALRM} = sub {
-  my (%kids, @tree, @queue, %seen);
-  if (open(my $ps, "-|", "ps", "-eo", "pid=,ppid=")) {
+  my (%kids, %start, %now, @tree, @queue, %seen);
+  my $have_start = 0;
+  if (open(my $ps, "-|", "ps", "-eo", "pid=,ppid=,lstart=")) {
     while (<$ps>) {
-      my ($c, $p) = /^\s*(\d+)\s+(\d+)/ or next;
+      my ($c, $p, $st) = /^\s*(\d+)\s+(\d+)\s+(.*?)\s*$/ or next;
       push @{$kids{$p}}, $c;
+      $start{$c} = $st;
+      $have_start = 1;
     }
     close $ps;
+  }
+  if (!$have_start) {
+    %kids = ();
+    if (open(my $ps, "-|", "ps", "-eo", "pid=,ppid=")) {
+      while (<$ps>) {
+        my ($c, $p) = /^\s*(\d+)\s+(\d+)/ or next;
+        push @{$kids{$p}}, $c;
+      }
+      close $ps;
+    }
   }
   @queue = ($pid); $seen{$pid} = 1;
   while (@queue) {
@@ -69,7 +84,17 @@ $SIG{ALRM} = sub {
     }
   }
   kill "TERM", -$pid; sleep 2; kill "KILL", -$pid;
-  @tree = grep { $_ > 1 && $_ != $$ && kill(0, $_) } @tree;
+  if ($have_start && @tree) {
+    if (open(my $ps, "-|", "ps", "-eo", "pid=,ppid=,lstart=")) {
+      while (<$ps>) {
+        my ($c, $p, $st) = /^\s*(\d+)\s+(\d+)\s+(.*?)\s*$/ or next;
+        $now{$c} = $st;
+      }
+      close $ps;
+    }
+  }
+  @tree = grep { $_ > 1 && $_ != $$ && kill(0, $_) &&
+                 (!$have_start || !exists $start{$_} || $now{$_} eq $start{$_}) } @tree;
   if (@tree) { kill "TERM", @tree; sleep 1; kill "KILL", grep { kill(0, $_) } @tree; }
   exit 124;
 };

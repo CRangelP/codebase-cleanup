@@ -9,11 +9,14 @@ GATE="$(cd "$(dirname "$0")" && pwd)/gate.sh"
 TMP=$(mktemp -d)
 # The escapee case spawns a process outside the gate's process group on
 # purpose; the suite kills it on the way out so a failure never leaks it.
+# More than one case spawns one, so the sweep is a glob over every pid file.
 ESCAPEE_PID_FILE=""
 cleanup() {
-  if [[ -n $ESCAPEE_PID_FILE && -s $ESCAPEE_PID_FILE ]]; then
-    kill -KILL "$(cat "$ESCAPEE_PID_FILE")" 2>/dev/null
-  fi
+  local f
+  for f in "$TMP"/escapee*.pid; do
+    [[ -s $f ]] || continue
+    kill -KILL "$(cat "$f")" 2>/dev/null
+  done
   rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -281,6 +284,11 @@ GO124="$TMP/stubs-go-124"; stub "$GO124" go 124
 MINI="$TMP/mini-path"
 link_bin "$MINI" bash sh perl ps find grep sleep
 
+# The same sandbox without ps: the perl watchdog cannot map the process tree,
+# so the sweep degrades to killing the group. The timeout itself must not.
+NOPS="$TMP/nops-path"
+link_bin "$NOPS" bash sh perl find grep sleep
+
 reset_logs() { rm -f "$WD_LOG_T" "$WD_LOG_G" "$WD_LOG_K"; }
 
 # A check whose grandchild calls setsid: it leaves the gate's process group, so
@@ -288,16 +296,25 @@ reset_logs() { rm -f "$WD_LOG_T" "$WD_LOG_G" "$WD_LOG_K"; }
 # pid and sleeps for a bounded time, never longer than the suite. Its output goes
 # to /dev/null on purpose: holding the case's pipe open would make case_run wait
 # for it, which hides the very leak this case is about.
-ESCAPE="$TMP/stubs-escape"
-ESCAPEE_PID_FILE="$TMP/escapee.pid"
-mkdir -p "$ESCAPE"
-cat > "$ESCAPE/go" <<EOF
+make_escapee() { # make_escapee <dir> <pidfile>
+  mkdir -p "$1"
+  cat > "$1/go" <<EOF
 #!/bin/sh
-perl -e 'use POSIX; POSIX::setsid(); open(F, ">", "$ESCAPEE_PID_FILE") or exit 1;
+perl -e 'use POSIX; POSIX::setsid(); open(F, ">", "$2") or exit 1;
          print F \$\$; close F; sleep 60' >/dev/null 2>&1 &
 sleep 45
 EOF
-chmod +x "$ESCAPE/go"
+  chmod +x "$1/go"
+}
+
+ESCAPE="$TMP/stubs-escape"
+ESCAPEE_PID_FILE="$TMP/escapee.pid"
+make_escapee "$ESCAPE" "$ESCAPEE_PID_FILE"
+
+# The same check, for the sandbox without ps: its own pid file so the two
+# escapees never share one and the exit trap can reap both.
+ESCAPE_NOPS="$TMP/stubs-escape-nops"
+make_escapee "$ESCAPE_NOPS" "$TMP/escapee-nops.pid"
 
 # matrix ---------------------------------------------------------------
 case_run bad-path         2 "$TMP/nope"         -             "bad path"
@@ -379,6 +396,15 @@ if command -v perl >/dev/null; then
   case_run wd-escapee 4 "$TMP/go-hang" "$ESCAPE:$MINI" "TIMEOUT after 2s"
   elapsed_lt wd-escapee-is-bounded 10
   assert_reaped wd-escapee-reaped "$ESCAPEE_PID_FILE"
+
+  # Without ps there is no tree to snapshot and no start time to confirm, so
+  # the watchdog only kills the group: the escapee survives, and asserting
+  # otherwise would be freezing a limitation as a promise. What is contract
+  # here is that the degraded path still returns exit 4 on schedule instead of
+  # dying on the missing ps or hanging on the ps that never answers.
+  GATE_ENV="GATE_TIMEOUT=2"
+  case_run wd-no-ps 4 "$TMP/go-hang" "$ESCAPE_NOPS:$NOPS" "TIMEOUT after 2s"
+  elapsed_lt wd-no-ps-is-bounded 10
 else
   echo "skip: wd-perl-forced (no perl on this machine)"
 fi
