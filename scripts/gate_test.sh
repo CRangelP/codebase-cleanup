@@ -40,7 +40,13 @@ case_run() { # case_run <name> <expected_exit> <dir> <PATH|-> <grep_pattern...>
   LAST_ELAPSED=$((SECONDS-start))
   GATE_ENV=""
   [[ $rc -eq $expected ]] || ok=0
-  for p in "$@"; do grep -q "$p" <<<"$out" || ok=0; done
+  # a pattern starting with '!' asserts absence (a command that must NOT run)
+  for p in "$@"; do
+    case $p in
+      '!'*) if grep -q "${p#!}" <<<"$out"; then ok=0; fi ;;
+      *)    grep -q "$p" <<<"$out" || ok=0 ;;
+    esac
+  done
   total=$((total+1))
   if [[ $ok -eq 1 ]]; then echo "ok: $name"
   else
@@ -86,7 +92,13 @@ touch "$TMP/polyglot/pyproject.toml" "$TMP/polyglot/tests/test_x.py"
 printf 'module f\n\ngo 1.21\n' > "$TMP/polyglot/go.mod"
 
 mkdir -p "$TMP/dotnet-root" "$TMP/dotnet-sub/src/App"
-touch "$TMP/dotnet-root/App.csproj" "$TMP/dotnet-sub/src/App/App.fsproj"
+TESTPROJ='<Project><ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk" /></ItemGroup></Project>'
+printf '%s\n' "$TESTPROJ" > "$TMP/dotnet-root/App.csproj"
+printf '%s\n' "$TESTPROJ" > "$TMP/dotnet-sub/src/App/App.fsproj"
+
+mkdir -p "$TMP/dotnet-no-tests" "$TMP/dotnet-sub-no-tests/src/App"
+printf '<Project></Project>\n' > "$TMP/dotnet-no-tests/App.csproj"
+printf '<Project></Project>\n' > "$TMP/dotnet-sub-no-tests/src/App/App.fsproj"
 
 mkdir -p "$TMP/jvm-hybrid"
 touch "$TMP/jvm-hybrid/pom.xml" "$TMP/jvm-hybrid/build.gradle"
@@ -115,6 +127,14 @@ printf '[tool.pyright]\n' > "$TMP/py-pyright/pyproject.toml"
 mkdir -p "$TMP/go-only"
 printf 'module f\n\ngo 1.21\n' > "$TMP/go-only/go.mod"
 
+mkdir -p "$TMP/go-with-tests"
+printf 'module f\n\ngo 1.21\n' > "$TMP/go-with-tests/go.mod"
+printf 'package f\n' > "$TMP/go-with-tests/x_test.go"
+
+mkdir -p "$TMP/go-no-tests/vendor/dep"
+printf 'module f\n\ngo 1.21\n' > "$TMP/go-no-tests/go.mod"
+printf 'package dep\n' > "$TMP/go-no-tests/vendor/dep/vendored_test.go"
+
 mkdir -p "$TMP/go-hang"
 printf 'module f\n\ngo 1.21\n' > "$TMP/go-hang/go.mod"
 printf 'package f\n' > "$TMP/go-hang/x_test.go"
@@ -125,6 +145,7 @@ for t in pytest mypy pyright dotnet mvn gradle; do stub "$OK" "$t" 0; done
 stub "$FAIL" dotnet 1
 stub_body "$HANG" go 'sleep 30'
 stub "$UV" uv 0
+GO="$TMP/stubs-go"; stub "$GO" go 0
 
 # matrix ---------------------------------------------------------------
 case_run bad-path         2 "$TMP/nope"         -             "bad path"
@@ -145,6 +166,10 @@ case_run py-venv          0 "$TMP/py-venv"      "$BASE"       ".venv/bin/mypy" "
 case_run py-no-tools      3 "$TMP/py-no-tools"  "$BASE"       "toolchain 'mypy' missing" "looked in"
 case_run py-uv            0 "$TMP/py-uv"        "$UV:$BASE"   "uv run pytest" "checks=test"
 case_run py-pyright       0 "$TMP/py-pyright"   "$OK:$BASE"   "checks=typecheck"
+case_run go-with-tests    0 "$TMP/go-with-tests" "$GO:$BASE"  "checks=typecheck,test" "GREEN"
+case_run go-no-tests      0 "$TMP/go-no-tests"  "$GO:$BASE"   "checks=typecheck" "not counted" '!go test'
+case_run dotnet-no-tests  0 "$TMP/dotnet-no-tests" "$OK:$BASE" "checks=typecheck" "not counted" '!dotnet test'
+case_run dotnet-sub-no-t  0 "$TMP/dotnet-sub-no-tests" "$OK:$BASE" "checks=typecheck" "not counted" '!dotnet test'
 
 GATE_ENV="GATE_TIMEOUT=2"
 case_run hang             4 "$TMP/go-hang"      "$HANG:$BASE" "TIMEOUT after 2s"

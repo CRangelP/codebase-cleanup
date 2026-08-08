@@ -99,8 +99,12 @@ Before touching any file, the skill measures the project's safety net with
 | Level | Condition | What it does |
 |---|---|---|
 | GREEN | typecheck and tests pass | runs the full phases without asking |
-| YELLOW | partial net | only deps and orphan files, no touching exports |
+| YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports |
 | RED | no tests and no typecheck | diagnoses only; nothing is deleted |
+
+A stack with no test file at all does not count as tested: the gate does not
+run the empty suite and the level stays at YELLOW. If your suite lives outside
+the usual place, promoting it is your call — the gate never promotes itself.
 
 With the level announced, it creates the cleanup branch and proceeds:
 

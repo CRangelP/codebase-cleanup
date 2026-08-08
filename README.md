@@ -99,8 +99,12 @@ projeto com `scripts/gate.sh` e se classifica em um de três níveis:
 | Nível | Condição | O que ela faz |
 |---|---|---|
 | GREEN | typecheck e testes passam | executa as fases inteiras sem perguntar |
-| YELLOW | rede parcial | só deps e arquivos órfãos, sem mexer em exports |
+| YELLOW | rede parcial, ou nenhum arquivo de teste no stack | só deps e arquivos órfãos, sem mexer em exports |
 | RED | sem testes e sem typecheck | só diagnostica; nada é deletado |
+
+Stack sem nenhum arquivo de teste não conta como testado: o gate não roda a
+suíte vazia e o nível fica em YELLOW. Se a sua suíte mora fora do lugar
+padrão, a promoção é sua — o gate não se promove sozinho.
 
 Com o nível anunciado, ela cria a branch de limpeza e segue:
 

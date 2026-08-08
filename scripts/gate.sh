@@ -94,6 +94,14 @@ missing() {
   incomplete=1
 }
 
+# no_tests <stack> <reason> — a green run with no test file is not a tested
+# repo. Does not set incomplete: the verdict stays exit 0 with checks=typecheck,
+# which is the YELLOW cap, and the user can promote it by hand.
+no_tests() {
+  echo "[gate] $1: $2 — 'test' not counted (YELLOW cap; promote by hand if the" \
+       "suite lives elsewhere)" >&2
+}
+
 py_missing() {
   echo "[gate] $1 present but toolchain '$2' missing — looked in \$VIRTUAL_ENV/bin," \
        ".venv/bin, venv/bin, uv/poetry and PATH — manual gate" >&2
@@ -150,7 +158,13 @@ fi
 if [[ -f go.mod ]]; then
   if command -v go >/dev/null; then
     run typecheck go build ./...
-    run test go test ./...
+    # 'go test ./...' passes on a repo with zero test files. Counting that as a
+    # test is how a suiteless repo gets classified GREEN.
+    if [[ -n $(find . -name '*_test.go' -not -path './vendor/*' -print -quit 2>/dev/null) ]]; then
+      run test go test ./...
+    else
+      no_tests go "no *_test.go found"
+    fi
   else missing go.mod go; fi
 fi
 
@@ -208,6 +222,9 @@ if [[ -f Gemfile ]]; then
 fi
 
 # --- .NET (sln/slnx/csproj/fsproj/vbproj at the root, or projects one level down) ---
+# A test project is detected by content, not by name: the test SDK package, the
+# explicit flag, or one of the three usual frameworks.
+DOTNET_TEST_MARKERS='Microsoft\.NET\.Test\.Sdk|<IsTestProject>|xunit|NUnit|MSTest'
 dotnet_targets=()
 if compgen -G '*.sln' >/dev/null || compgen -G '*.slnx' >/dev/null \
     || compgen -G '*.??proj' >/dev/null; then
@@ -220,12 +237,20 @@ fi
 if [[ ${#dotnet_targets[@]} -gt 0 ]]; then
   if command -v dotnet >/dev/null; then
     for target in "${dotnet_targets[@]}"; do
+      # 'dotnet test' on a solution with no test project is a no-op that exits
+      # 0 — same trap as 'go test' on a repo with no _test.go file.
       if [[ $target == . ]]; then
+        has_tests=0
+        grep -qsE "$DOTNET_TEST_MARKERS" ./*.??proj ./*/*.??proj ./src/*/*.??proj \
+          && has_tests=1
         run typecheck dotnet build --nologo -v minimal
-        run test dotnet test --nologo -v minimal
+        if [[ $has_tests -eq 1 ]]; then run test dotnet test --nologo -v minimal
+        else no_tests dotnet "no test project found"; fi
       else
         run typecheck dotnet build --nologo -v minimal "$target"
-        run test dotnet test --nologo -v minimal "$target"
+        if grep -qsE "$DOTNET_TEST_MARKERS" "$target"; then
+          run test dotnet test --nologo -v minimal "$target"
+        else no_tests dotnet "no test project found in '$target'"; fi
       fi
     done
   else missing 'sln/csproj' dotnet; fi

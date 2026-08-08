@@ -81,6 +81,12 @@ autonomously.
 | Tests exist but fail, or typecheck only | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Stops before phase 2 and reports. |
 | No tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. Delivers a report. |
 
+`checks=typecheck` because the stack has **no test file** is YELLOW, not GREEN,
+even though the gate exits 0 — a suite that does not exist cannot pass. The
+script names the stack in the `'test' not counted` line. Only the user promotes
+it, by pointing at the suite that lives somewhere the gate does not look; the
+skill never promotes itself.
+
 If the baseline is already broken, **fix it or warn before touching
 anything**. You need an initial green to distinguish what you broke from what
 was already broken.
