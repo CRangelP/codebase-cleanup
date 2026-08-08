@@ -99,6 +99,20 @@ toolchain, o rollback cria repositórios descartáveis dentro de um `mktemp -d`,
 com `HOME` redirecionado e identidade de commit passada por `-c` — sua config
 do git não é lida nem escrita —, e a de coerência só lê arquivos.
 
+As suítes também rodam fora do macOS. Num container Linux, o caso de hang
+exercita o GNU `timeout` real em vez do backend perl:
+
+```bash
+docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
+  'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
+# validado em 08/2026: 40/40 casos, 5/5 propriedades, 43/43 invariantes
+```
+
+A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
+e `:10.0`, 08/2026): `dotnet test` sem projeto de teste é mesmo no-op com exit 0
+nas duas versões, e os templates `xunit`, `nunit` e `mstest` casam com os
+marcadores — no 10.0 o mstest casa só pelo token `MSTest`.
+
 A terceira transforma em teste o que antes dependia de reler tudo: o comando de
 rollback escrito igual em todo lugar, o contrato de exit codes do gate batendo
 com os READMEs, instrução velha que ficou para trás e árvore de arquivos que
@@ -197,6 +211,10 @@ rollback joga fora foi ela mesma que criou.
 - Nível RED devolve relatório, não limpeza. Se o projeto não tem teste nem
   typecheck, o primeiro passo é criar uma verificação mínima; a skill aponta o
   caminho no próprio relatório.
+- Raiz com `.sln` e `.csproj` de nomes-base diferentes lado a lado faz o
+  `dotnet build` sem argumento falhar com MSB1011, e o gate dá RED num repo
+  que compila. A falha é fechada (nada é promovido indevidamente): rode o
+  gate manual apontando a solução, ou alinhe os nomes.
 - Pasta sem git também cai em RED, mesmo com typecheck e testes passando. Sem
   commit não existe rollback, e é o rollback que sustenta a autonomia do resto
   do pipeline.

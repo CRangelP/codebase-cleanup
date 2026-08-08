@@ -252,6 +252,10 @@ fi
 # --- .NET (sln/slnx/csproj/fsproj/vbproj at the root, or projects one level down) ---
 # A test project is detected by content, not by name: the test SDK package, the
 # explicit flag, or one of the three usual frameworks.
+# Validated against mcr.microsoft.com/dotnet/sdk:8.0 (8.0.423) and :10.0
+# (10.0.302) on 2026-08: 'dotnet test' without a test project really is a
+# silent no-op exit 0 in both, and every dotnet-new test template matches the
+# markers — on 10.0 the mstest template matches only through the MSTest token.
 DOTNET_TEST_MARKERS='Microsoft\.NET\.Test\.Sdk|<IsTestProject>|xunit|NUnit|MSTest'
 dotnet_targets=()
 if compgen -G '*.sln' >/dev/null || compgen -G '*.slnx' >/dev/null \

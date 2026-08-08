@@ -102,6 +102,21 @@ toolchain stubs, the rollback suite builds throwaway repositories inside a
 your git config is never read nor written —, and the coherence suite only
 reads files.
 
+The suites also run outside macOS. In a Linux container the hang case
+exercises the real GNU `timeout` instead of the perl backend:
+
+```bash
+docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
+  'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
+# validated 2026-08: 40/40 cases, 5/5 properties, 43/43 invariants
+```
+
+The .NET heuristic was validated against the real SDK
+(`mcr.microsoft.com/dotnet/sdk:8.0` and `:10.0`, 2026-08): `dotnet test` with
+no test project really is a no-op exit 0 on both, and the `xunit`, `nunit` and
+`mstest` templates all match the markers — on 10.0 mstest matches only through
+the `MSTest` token.
+
 The third one turns into a test what used to depend on re-reading everything:
 the rollback command written the same way everywhere, the gate's exit code
 contract matching the READMEs, old instructions left behind, and a file tree
@@ -201,6 +216,10 @@ rollback discards is what the skill itself created.
 - RED level returns a report, not a cleanup. If the project has neither tests
   nor typecheck, the first step is to create a minimal verification; the skill
   points the way in the report itself.
+- A root with a `.sln` and a `.csproj` whose base names differ makes
+  `dotnet build` with no argument fail with MSB1011, and the gate reports RED
+  on a repo that compiles. It fails closed (nothing gets promoted unduly):
+  run the gate by hand pointing at the solution, or align the names.
 - A folder with no git falls into RED as well, even with typecheck and tests
   passing. With no commit there is no rollback, and the rollback is what holds
   up the autonomy of the rest of the pipeline.
