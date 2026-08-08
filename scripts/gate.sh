@@ -28,8 +28,14 @@ incomplete=0
 # A hanging check (a test waiting on a port, a REPL, a prompt) would freeze the
 # gate forever. Resolve one backend up front; all three exit 124 on timeout,
 # copying GNU timeout so run() only has to know that number.
-# Limit: a child that leaves the process group on its own (setsid) escapes the
-# kill. The watchdog bounds the well-behaved case, it does not promise more.
+# Limit: what still escapes the kill is a double fork already reparented to
+# init/launchd when the alarm fires, and anything created between the snapshot
+# and the kill. The perl backend also sweeps descendants by parent pid (needs
+# ps; without it the sweep silently degrades to the group kill), so under perl
+# a plain setsid does not escape — it changes the group, not the parent. GNU
+# timeout/gtimeout kill the group only, with no sweep: there a setsid child
+# does escape. Residual race, accepted: a pid snapshotted and recycled during
+# the 2s TERM→KILL grace can be signalled by mistake.
 GATE_TIMEOUT=${GATE_TIMEOUT:-900}
 case $GATE_TIMEOUT in
   ''|*[!0-9]*)
@@ -37,12 +43,36 @@ case $GATE_TIMEOUT in
     GATE_TIMEOUT=900 ;;
 esac
 
-# fork + setpgrp so the whole group dies, not just the direct child.
+# fork + setpgrp so the whole group dies, not just the direct child. The alarm
+# handler first snapshots the descendants of the child (ps, walked transitively)
+# and only then kills the group: after the kill the survivors are reparented and
+# the link that identifies them is gone, so the order matters.
 PERL_WATCHDOG='my $t = shift;
 my $pid = fork();
 if (!defined $pid) { exit 127; }
 if (!$pid) { setpgrp(0,0); exec @ARGV; exit 127; }
-$SIG{ALRM} = sub { kill "TERM", -$pid; sleep 2; kill "KILL", -$pid; exit 124; };
+$SIG{ALRM} = sub {
+  my (%kids, @tree, @queue, %seen);
+  if (open(my $ps, "-|", "ps", "-eo", "pid=,ppid=")) {
+    while (<$ps>) {
+      my ($c, $p) = /^\s*(\d+)\s+(\d+)/ or next;
+      push @{$kids{$p}}, $c;
+    }
+    close $ps;
+  }
+  @queue = ($pid); $seen{$pid} = 1;
+  while (@queue) {
+    my $cur = shift @queue;
+    for my $k (@{$kids{$cur} || []}) {
+      next if $seen{$k}++;
+      push @tree, $k; push @queue, $k;
+    }
+  }
+  kill "TERM", -$pid; sleep 2; kill "KILL", -$pid;
+  @tree = grep { $_ > 1 && $_ != $$ && kill(0, $_) } @tree;
+  if (@tree) { kill "TERM", @tree; sleep 1; kill "KILL", grep { kill(0, $_) } @tree; }
+  exit 124;
+};
 alarm $t;
 waitpid($pid, 0);
 alarm 0;
@@ -226,6 +256,10 @@ fi
 # --- .NET (sln/slnx/csproj/fsproj/vbproj at the root, or projects one level down) ---
 # A test project is detected by content, not by name: the test SDK package, the
 # explicit flag, or one of the three usual frameworks.
+# Validated against mcr.microsoft.com/dotnet/sdk:8.0 (8.0.423) and :10.0
+# (10.0.302) on 2026-08: 'dotnet test' without a test project really is a
+# silent no-op exit 0 in both, and every dotnet-new test template matches the
+# markers — on 10.0 the mstest template matches only through the MSTest token.
 DOTNET_TEST_MARKERS='Microsoft\.NET\.Test\.Sdk|<IsTestProject>|xunit|NUnit|MSTest'
 dotnet_targets=()
 if compgen -G '*.sln' >/dev/null || compgen -G '*.slnx' >/dev/null \

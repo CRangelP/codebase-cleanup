@@ -73,8 +73,10 @@ codebase-cleanup/
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
     ├── gate.sh                       multi-stack typecheck + tests, exit 0/1/2/3/4
+    ├── test.sh                       runs the three suites in sequence
     ├── gate_test.sh                  gate contract tests (toolchain stubs)
-    └── rollback_test.sh              executable proof of the rollback protocol
+    ├── rollback_test.sh              executable proof of the rollback protocol
+    └── coherence_test.sh             coherence invariants between docs and code
 ```
 
 To check the installation, open a new session (or run `/reload-skills`) and
@@ -82,18 +84,43 @@ see whether `codebase-cleanup` shows up in the list of available skills.
 
 ### Tests
 
-Two suites, with nothing to install beyond `bash` and `git`:
+Three suites, with nothing to install beyond `bash` and `git`:
 
 ```bash
+bash scripts/test.sh            # runs all three, stopping at the first failure
+
 bash scripts/gate_test.sh       # gate contract: exit codes, the checks= line, PARTIAL
 bash scripts/rollback_test.sh   # what `git restore` brings back and what it destroys
+bash scripts/coherence_test.sh  # docs and code saying the same thing
 ```
 
 Each exits 0 when everything passed and prints the failing case when it does
-not. Neither touches the repository you run it from: the gate suite uses
-toolchain stubs, and the rollback suite builds throwaway repositories inside a
+not; `test.sh` only chains the three and stops at the first red. None of them
+touches the repository you run it from: the gate suite uses
+toolchain stubs, the rollback suite builds throwaway repositories inside a
 `mktemp -d`, with `HOME` redirected and the commit identity passed via `-c` —
-your git config is never read nor written.
+your git config is never read nor written —, and the coherence suite only
+reads files.
+
+The suites also run outside macOS. In a Linux container the hang case
+exercises the real GNU `timeout` instead of the perl backend:
+
+```bash
+docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
+  'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
+# validated 2026-08: 40/40 cases, 5/5 properties, 43/43 invariants
+```
+
+The .NET heuristic was validated against the real SDK
+(`mcr.microsoft.com/dotnet/sdk:8.0` and `:10.0`, 2026-08): `dotnet test` with
+no test project really is a no-op exit 0 on both, and the `xunit`, `nunit` and
+`mstest` templates all match the markers — on 10.0 mstest matches only through
+the `MSTest` token.
+
+The third one turns into a test what used to depend on re-reading everything:
+the rollback command written the same way everywhere, the gate's exit code
+contract matching the READMEs, old instructions left behind, and a file tree
+that agrees with what is on disk.
 
 ### No other skill is required
 
@@ -189,6 +216,10 @@ rollback discards is what the skill itself created.
 - RED level returns a report, not a cleanup. If the project has neither tests
   nor typecheck, the first step is to create a minimal verification; the skill
   points the way in the report itself.
+- A root with a `.sln` and a `.csproj` whose base names differ makes
+  `dotnet build` with no argument fail with MSB1011, and the gate reports RED
+  on a repo that compiles. It fails closed (nothing gets promoted unduly):
+  run the gate by hand pointing at the solution, or align the names.
 - A folder with no git falls into RED as well, even with typecheck and tests
   passing. With no commit there is no rollback, and the rollback is what holds
   up the autonomy of the rest of the pipeline.
