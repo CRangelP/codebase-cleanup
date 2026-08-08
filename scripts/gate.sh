@@ -27,7 +27,9 @@ incomplete=0
 # --- Watchdog ---------------------------------------------------------
 # A hanging check (a test waiting on a port, a REPL, a prompt) would freeze the
 # gate forever. Resolve one backend up front; all three exit 124 on timeout,
-# copying GNU timeout so run() only has to know that number.
+# copying GNU timeout so run() only has to know that number. Contract: 124 is
+# reserved for the watchdog, exactly as in GNU timeout — a check that
+# legitimately exits 124 under an active watchdog is read as TIMEOUT.
 # Limit: what still escapes the kill is a double fork already reparented to
 # init/launchd when the alarm fires, and anything created between the snapshot
 # and the kill. The perl backend also sweeps descendants by parent pid (needs
