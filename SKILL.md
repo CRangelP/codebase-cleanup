@@ -65,8 +65,15 @@ a partial list caps at YELLOW, and the script itself says so. Exit 0 =
 everything that ran passed; 1 = something failed; 2 = bad path (the argument is
 not a directory the script can enter, so nothing was checked — fix the path and
 rerun); 3 = no runnable check **or** some detected stack had no toolchain
-(`PARTIAL` — including in a polyglot repo where another stack passed). In the
-exit-3 cases, finish the gate by hand before classifying.
+(`PARTIAL` — including in a polyglot repo where another stack passed); 4 = a
+check hit the watchdog (`GATE_TIMEOUT`, 900s per check by default, `0`
+disables). In the exit-3 cases, finish the gate by hand before classifying.
+
+**Exit 4 is an inconclusive gate, not a green one.** A timed-out check says
+nothing about the code: treat it as red (rollback, record what timed out in
+`CLEANUP_PROGRESS.md`) and never promote it to GREEN. On the Step 0 baseline,
+exit 4 means the safety net could not be measured — report it and do not run
+autonomously.
 
 | Signal | Level | Behavior |
 |---|---|---|
@@ -355,7 +362,9 @@ prevents that.
 
 **A red gate means rollback, not repair.** If typecheck or tests fail, the
 previous commit was already correct. Revert, record, move on. Trying to fix it
-turns a cleanup into an unsolicited debugging session.
+turns a cleanup into an unsolicited debugging session. A gate that times out
+(exit 4) follows the same path: it is inconclusive, so it rolls back like a red
+one and is recorded as a timeout — never as a green.
 
 **Never force push, never commit on main.** All the work lives on the cleanup
 branch. Merging is the user's decision, on their own schedule.

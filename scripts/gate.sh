@@ -6,7 +6,9 @@
 # Exit 0 = everything that ran passed · 1 = some check failed ·
 # 2 = bad path (the argument is not a reachable directory: nothing was checked) ·
 # 3 = no runnable check OR a detected stack has no toolchain (PARTIAL) —
-#     in both cases, run the gate manually: classify according to the stack.
+#     in both cases, run the gate manually: classify according to the stack ·
+# 4 = a check hit the GATE_TIMEOUT watchdog (inconclusive gate, never GREEN).
+# GATE_TIMEOUT: seconds per check, default 900; 0 disables the watchdog.
 set -uo pipefail
 
 target="${1:-.}"
@@ -22,11 +24,61 @@ ran_typecheck=0
 ran_test=0
 incomplete=0
 
+# --- Watchdog ---------------------------------------------------------
+# A hanging check (a test waiting on a port, a REPL, a prompt) would freeze the
+# gate forever. Resolve one backend up front; all three exit 124 on timeout,
+# copying GNU timeout so run() only has to know that number.
+# Limit: a child that leaves the process group on its own (setsid) escapes the
+# kill. The watchdog bounds the well-behaved case, it does not promise more.
+GATE_TIMEOUT=${GATE_TIMEOUT:-900}
+case $GATE_TIMEOUT in
+  ''|*[!0-9]*)
+    echo "[gate] GATE_TIMEOUT='$GATE_TIMEOUT' is not a number — using 900" >&2
+    GATE_TIMEOUT=900 ;;
+esac
+
+# fork + setpgrp so the whole group dies, not just the direct child.
+PERL_WATCHDOG='my $t = shift;
+my $pid = fork();
+if (!defined $pid) { exit 127; }
+if (!$pid) { setpgrp(0,0); exec @ARGV; exit 127; }
+$SIG{ALRM} = sub { kill "TERM", -$pid; sleep 2; kill "KILL", -$pid; exit 124; };
+alarm $t;
+waitpid($pid, 0);
+alarm 0;
+my $rc = $?;
+exit(($rc & 127) ? 128 + ($rc & 127) : ($rc >> 8));'
+
+WATCHDOG=""
+if [[ $GATE_TIMEOUT -gt 0 ]]; then
+  if command -v timeout >/dev/null; then WATCHDOG=timeout
+  elif command -v gtimeout >/dev/null; then WATCHDOG=gtimeout
+  elif command -v perl >/dev/null; then WATCHDOG=perl
+  else echo "[gate] no watchdog available — checks run unbounded" >&2
+  fi
+fi
+
+# guard <cmd...> — runs the command under the resolved watchdog, if any
+guard() {
+  case $WATCHDOG in
+    timeout|gtimeout) "$WATCHDOG" "$GATE_TIMEOUT" "$@" ;;
+    perl) perl -e "$PERL_WATCHDOG" "$GATE_TIMEOUT" "$@" ;;
+    *) "$@" ;;
+  esac
+}
+
 # run <typecheck|test|both> <cmd...>
 run() {
   local kind=$1; shift
+  local rc
   echo "[gate] $*"
-  if ! "$@"; then
+  guard "$@"
+  rc=$?
+  if [[ -n $WATCHDOG && $rc -eq 124 ]]; then
+    echo "[gate] TIMEOUT after ${GATE_TIMEOUT}s at '$*'" >&2
+    exit 4
+  fi
+  if [[ $rc -ne 0 ]]; then
     echo "[gate] RED at '$*'" >&2
     exit 1
   fi

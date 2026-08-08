@@ -22,7 +22,9 @@ porque fronteira de módulo é decisão de domínio, não de código.
   instalar por conta.
 - O gate (`scripts/gate.sh`) detecta o stack pelo manifesto e roda typecheck +
   testes em JS/TS, Go, Rust, Python, JVM, Ruby e .NET — basta o toolchain
-  estar no PATH. É script bash (o 3.2 do macOS serve); no Windows, use WSL.
+  estar no PATH. Cada check roda sob um watchdog (`GATE_TIMEOUT`, 900s por
+  padrão, `0` desliga): estourou o tempo, o gate sai 4 e vale como não
+  conclusivo. É script bash (o 3.2 do macOS serve); no Windows, use WSL.
 
 ## Instalação
 
@@ -59,7 +61,7 @@ codebase-cleanup/
 │   ├── phase-3-structure.md          padrões de organização de pastas
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
-    ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/2/3
+    ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/2/3/4
     └── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
 ```
 

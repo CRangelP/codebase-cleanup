@@ -98,10 +98,15 @@ touch "$TMP/py-setupcfg/test/test_x.py"
 mkdir -p "$TMP/go-only"
 printf 'module f\n\ngo 1.21\n' > "$TMP/go-only/go.mod"
 
+mkdir -p "$TMP/go-hang"
+printf 'module f\n\ngo 1.21\n' > "$TMP/go-hang/go.mod"
+printf 'package f\n' > "$TMP/go-hang/x_test.go"
+
 # stubs ----------------------------------------------------------------
-OK="$TMP/stubs-ok"; FAIL="$TMP/stubs-fail"
+OK="$TMP/stubs-ok"; FAIL="$TMP/stubs-fail"; HANG="$TMP/stubs-hang"
 for t in pytest mypy dotnet mvn gradle; do stub "$OK" "$t" 0; done
 stub "$FAIL" dotnet 1
+stub_body "$HANG" go 'sleep 30'
 
 # matrix ---------------------------------------------------------------
 case_run bad-path         2 "$TMP/nope"         -             "bad path"
@@ -118,6 +123,10 @@ case_run dotnet-red       1 "$TMP/dotnet-root"  "$FAIL:$BASE" "RED"
 case_run dotnet-subdir    0 "$TMP/dotnet-sub"   "$OK:$BASE"   "src/App/App.fsproj" "GREEN"
 case_run jvm-hybrid       0 "$TMP/jvm-hybrid"   "$OK:$BASE"   "mvn -q test" "gradle test" "GREEN"
 case_run py-setupcfg      0 "$TMP/py-setupcfg"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
+
+GATE_ENV="GATE_TIMEOUT=2"
+case_run hang             4 "$TMP/go-hang"      "$HANG:$BASE" "TIMEOUT after 2s"
+elapsed_lt hang-is-bounded 10
 
 echo "----"
 echo "$((total-failures))/$total cases passed"

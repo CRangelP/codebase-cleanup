@@ -22,8 +22,10 @@ module boundary is a domain decision, not a code decision.
   instead of installing on its own.
 - The gate (`scripts/gate.sh`) detects the stack from the manifest and runs
   typecheck + tests for JS/TS, Go, Rust, Python, JVM, Ruby and .NET — the
-  toolchain only has to be on PATH. It is a bash script (the bash 3.2 shipped
-  with macOS is enough); on Windows, use WSL.
+  toolchain only has to be on PATH. Every check runs under a watchdog
+  (`GATE_TIMEOUT`, 900s by default, `0` disables it): if it runs out of time,
+  the gate exits 4 and counts as inconclusive. It is a bash script (the bash
+  3.2 shipped with macOS is enough); on Windows, use WSL.
 
 ## Installation
 
@@ -60,7 +62,7 @@ codebase-cleanup/
 │   ├── phase-3-structure.md          folder organization patterns
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
-    ├── gate.sh                       multi-stack typecheck + tests, exit 0/1/2/3
+    ├── gate.sh                       multi-stack typecheck + tests, exit 0/1/2/3/4
     └── gate_test.sh                  gate contract tests (toolchain stubs)
 ```
 
