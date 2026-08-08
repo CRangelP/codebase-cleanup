@@ -1,353 +1,360 @@
 ---
 name: codebase-cleanup
-description: Faxina completa de codebase em três fases — remove código morto (knip/vulture/cargo-udeps), consolida módulos rasos e reorganiza a estrutura de pastas, executando tudo de forma autônoma com commits atômicos e rollback automático. Use SEMPRE que o usuário mencionar limpar, organizar, arrumar, refatorar ou "dar uma faxina" no projeto; falar em código morto, arquivos órfãos, dependências não usadas, dívida técnica, pastas bagunçadas, estrutura confusa ou codebase pesado; pedir auditoria ou health check do projeto; ou disser que o repo "cresceu demais", "está difícil de navegar" ou "tem coisa que ninguém usa". Use também quando o usuário só quiser uma das três fases isoladamente. Não use para formatação ou lint, atualização de dependências vulneráveis, otimização de tamanho de bundle, limpeza de banco de dados ou reescrita de histórico do git.
+description: Full three-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules and reorganizes the folder structure, running autonomously with atomic commits and automatic rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, messy folders, confusing structure or a bloated codebase; asks to "give the codebase a deep clean", to "reorganiza essas pastas", or for an audit or health check; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the three phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
 ---
 
 # Codebase Cleanup
 
-Faxina de codebase em três fases sequenciais. A ordem não é negociável:
+Codebase cleanup in three sequential phases. The order is not negotiable:
 
-**Limpar o morto → decidir as fronteiras → mover os arquivos.**
+**Clear out the dead → decide the boundaries → move the files.**
 
-Na ordem inversa você reorganiza lixo em pastas bonitas e depois descobre que
-metade não deveria existir. Cada fase remove o ruído que atrapalharia a próxima:
-o grafo de módulos só é confiável depois que o código morto sai, e as pastas só
-fazem sentido depois que as fronteiras dos módulos estabilizaram.
+In reverse order you reorganize garbage into pretty folders and then find out
+half of it should not exist. Each phase removes the noise that would get in the
+next one's way: the module graph is only trustworthy once the dead code is
+gone, and folders only make sense once module boundaries have stabilized.
 
-## Princípio operacional
+## Operating principle
 
-Execute o máximo possível sem perguntar. O usuário instalou esta skill para não
-ter que digitar quinze comandos — cada confirmação desnecessária é uma falha de
-design, não uma cortesia.
+Do as much as possible without asking. The user installed this skill to avoid
+typing fifteen commands — every unnecessary confirmation is a design failure,
+not a courtesy.
 
-O que torna isso seguro não é perguntar, é a estrutura do trabalho: branch
-dedicada, commits atômicos por categoria, e um gate verde (typecheck + testes)
-antes de cada commit. Se algo quebra, o rollback é descartar o que ainda não
-foi commitado com `git restore --staged --worktree .` — sem consultar ninguém,
-porque o commit anterior já estava certo. Como todo commit só acontece com gate
-verde, o HEAD é sempre um estado bom, e restaurar os arquivos rastreados para o
-HEAD equivale ao rollback completo (nunca use `git reset --hard` nem
-`git clean`: o restore cobre o caso e sobrevive a ambientes com hooks que
-bloqueiam comandos destrutivos).
+What makes this safe is not asking, it is the structure of the work: a
+dedicated branch, atomic commits per category, and a green gate (typecheck +
+tests) before every commit. If something breaks, the rollback is to discard
+whatever is not committed yet with `git restore --staged --worktree .` —
+without asking anyone, because the previous commit was already correct. Since every
+commit only happens on a green gate, HEAD is always a good state, and restoring
+the tracked files to HEAD is equivalent to a full rollback (never use
+`git reset --hard` or `git clean`: restore covers the case and survives
+environments with hooks that block destructive commands).
 
-**Se um hook de segurança bloquear um comando do protocolo** (rollback, criação
-de branch, deleção de arquivo), não contorne: registre a pendência em
-`CLEANUP_PROGRESS.md`, entregue o comando pronto ao usuário e siga para o
-próximo passo que não depende dele. Guard é política do ambiente, não obstáculo.
+**If a security hook blocks a command from the protocol** (rollback, branch
+creation, file deletion), do not work around it: record the pending item in
+`CLEANUP_PROGRESS.md`, hand the ready-to-run command to the user and move on to
+the next step that does not depend on it. A guard is environment policy, not an
+obstacle.
 
-Só existe **um checkpoint obrigatório** no pipeline inteiro (fase 2, escolha do
-candidato de consolidação). Todo o resto roda sozinho.
+There is **one mandatory checkpoint** in the entire pipeline (phase 2, choosing
+the consolidation candidate). Everything else runs on its own.
 
 ---
 
-## Passo 0 — Calibrar autonomia
+## Step 0 — Calibrate autonomy
 
-Antes de qualquer coisa, meça a rede de segurança. O nível de autonomia é uma
-função dela, não uma preferência.
+Before anything else, measure the safety net. The autonomy level is a function
+of it, not a preference.
 
 ```bash
-git status --porcelain                    # working tree limpa?
-git rev-parse --abbrev-ref HEAD           # branch atual
+git status --porcelain                    # clean working tree?
+git rev-parse --abbrev-ref HEAD           # current branch
 [ -f package.json ] && grep -E '"(test|typecheck|lint|build)"' package.json
 ```
 
-Rode o gate de baseline com `scripts/gate.sh` (caminho relativo ao diretório
-desta skill; aceita o diretório do projeto como argumento) e classifique. O
-script detecta o stack pelo manifesto na raiz — `package.json`, `go.mod`,
+Run the baseline gate with `scripts/gate.sh` (path relative to this skill's
+directory; it accepts the project directory as an argument) and classify. The
+script detects the stack from the root manifest — `package.json`, `go.mod`,
 `Cargo.toml`, `pyproject.toml`/`setup.cfg`, `pom.xml`/`build.gradle`,
-`Gemfile`, `sln`/`csproj`/`fsproj` — e roda typecheck e testes de cada um que
-encontrar (compilar conta como typecheck).
+`Gemfile`, `sln`/`csproj`/`fsproj` — and runs typecheck and tests for each one
+it finds (compiling counts as typecheck).
 
-Classifique pela linha `[gate] checks=...`, que lista o que de fato rodou, e
-não só pelo exit code: VERDE exige `typecheck` e `test` na lista; lista
-parcial limita a AMARELO, e o próprio script avisa. Exit 0 = tudo que rodou
-passou; 1 = algo falhou; 3 = nenhum check executável **ou** algum stack
-detectado ficou sem toolchain (`PARCIAL` — inclusive em repo poliglota onde
-outro stack passou). Nos casos de exit 3, complete o gate à mão antes de
-classificar.
+Classify by the `[gate] checks=...` line, which lists what actually ran, and
+not by the exit code alone: GREEN requires `typecheck` and `test` in the list;
+a partial list caps at YELLOW, and the script itself says so. Exit 0 =
+everything that ran passed; 1 = something failed; 3 = no runnable check **or**
+some detected stack had no toolchain (`PARTIAL` — including in a polyglot repo
+where another stack passed). In the exit-3 cases, finish the gate by hand
+before classifying.
 
-| Sinal | Nível | Comportamento |
+| Signal | Level | Behavior |
 |---|---|---|
-| Typecheck **e** testes passam | **VERDE** | Executa fases 1 e 3 inteiras sem perguntar. Fase 2 para no checkpoint. |
-| Testes existem mas falham, ou só typecheck | **AMARELO** | Executa fase 1 (só deps e arquivos órfãos, **não** exports). Para antes da fase 2 e reporta. |
-| Sem testes e sem typecheck | **VERMELHO** | Só diagnostica. Não deleta, não move, não commita. Entrega relatório. |
+| Typecheck **and** tests pass | **GREEN** | Runs phases 1 and 3 in full without asking. Phase 2 stops at the checkpoint. |
+| Tests exist but fail, or typecheck only | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Stops before phase 2 and reports. |
+| No tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. Delivers a report. |
 
-Se o baseline já está quebrado, **conserte ou avise antes de tocar em qualquer
-coisa**. Você precisa de um verde inicial para distinguir o que você quebrou do
-que já estava quebrado.
+If the baseline is already broken, **fix it or warn before touching
+anything**. You need an initial green to distinguish what you broke from what
+was already broken.
 
-Anuncie o nível detectado em uma linha e siga. Não peça permissão para o nível.
+Announce the detected level in one line and move on. Do not ask permission for
+the level.
 
 ```bash
-git checkout -b faxina/$(date +%Y%m%d)
+git checkout -b cleanup/$(date +%Y%m%d)
 ```
 
-## Passo 0.1 — Estado persistente
+## Step 0.1 — Persistent state
 
-Crie `CLEANUP_PROGRESS.md` na raiz e mantenha atualizado ao fim de cada passo.
-As fases são separadas por `/clear` (contexto sujo de uma fase degrada a
-seguinte), então este arquivo é o que permite retomar sem o usuário reexplicar
-nada.
+Create `CLEANUP_PROGRESS.md` at the root and keep it updated at the end of
+every step. Phases are separated by `/clear` (dirty context from one phase
+degrades the next), so this file is what allows resuming without the user
+re-explaining anything.
 
 ```markdown
 # Cleanup Progress
-Branch: faxina/20260808 · Nível: VERDE · Iniciado: 2026-08-08
+Branch: cleanup/20260808 · Level: GREEN · Started: 2026-08-08
 
-- [x] Fase 1.1 — hints do knip zerados (3 rodadas)
-- [x] Fase 1.2 — deps removidas (7) · commit a3f9c21
-- [ ] Fase 1.3 — arquivos órfãos
+- [x] Phase 1.1 — knip hints down to zero (3 rounds)
+- [x] Phase 1.2 — deps removed (7) · commit a3f9c21
+- [ ] Phase 1.3 — orphan files
 ...
-## Decisões
-- `lodash.merge` mantida: usada em script de build fora do grafo
-## Pendências para o humano
-- (nenhuma)
+## Decisions
+- `lodash.merge` kept: used by a build script outside the graph
+## Pending for the human
+- (none)
 ```
 
-Ao ser invocada, **sempre leia este arquivo primeiro**. Se existir, retome de
-onde parou em vez de recomeçar.
+When invoked, **always read this file first**. If it exists, resume where it
+stopped instead of starting over.
 
-## Passo 0.2 — Sessão única ou subagentes
+## Step 0.2 — Single session or subagents
 
-Pipeline completo em repo real: se o ambiente tiver subagentes, rode como
-orquestrador — cada fase vai para um subagente de implementação com contexto
-descartável, que é o mesmo efeito do `/clear` sem depender do usuário lembrar.
-Pedido de fase única ou repo pequeno: sessão única, sem orquestração.
+Full pipeline on a real repo: if the environment has subagents, run as
+orchestrator — each phase goes to an implementation subagent with disposable
+context, which is the same effect as `/clear` without depending on the user
+remembering. Single-phase request or small repo: single session, no
+orchestration.
 
-O contrato de cada delegação:
+The contract of each delegation:
 
-- o caminho desta skill (o subagente lê a SKILL.md e segue, com references/ e
-  scripts/ ao lado) e o caminho do repo;
-- a ordem de ler `CLEANUP_PROGRESS.md` antes de qualquer coisa;
-- escopo de **uma** fase — e a fase 2 vira duas delegações: o levantamento
-  devolve os candidatos, a implementação só parte depois da escolha do usuário;
-- devolver um resumo do que fez, com `CLEANUP_PROGRESS.md` atualizado como
-  estado canônico.
+- the path to this skill (the subagent reads SKILL.md and follows it, with
+  references/ and scripts/ alongside) and the path to the repo;
+- the instruction to read `CLEANUP_PROGRESS.md` before anything else;
+- the scope of **one** phase — and phase 2 becomes two delegations: the survey
+  returns the candidates, the implementation only starts after the user's
+  choice;
+- returning a summary of what it did, with `CLEANUP_PROGRESS.md` updated as the
+  canonical state.
 
-O Passo 0 (calibrar nível, criar a branch) e o checkpoint da fase 2 ficam com
-o orquestrador — subagente não fala com o usuário. Nível e branch chegam aos
-subagentes prontos, via `CLEANUP_PROGRESS.md`.
+Step 0 (calibrating the level, creating the branch) and the phase 2 checkpoint
+stay with the orchestrator — a subagent does not talk to the user. Level and
+branch reach the subagents ready-made, through `CLEANUP_PROGRESS.md`.
 
 ---
 
-# FASE 1 — Morto ou vivo
+# PHASE 1 — Dead or alive
 
-Objetivo: separar o que é código de verdade do que pode sumir.
+Goal: separate what is real code from what can disappear.
 
-Aqui não use julgamento de LLM como juiz. Use ferramenta, e interprete o
-resultado. "Esse arquivo parece não usado" é palpite; "nenhum entry point
-alcança este arquivo no grafo de módulos" é fato.
+Do not use LLM judgment as the judge here. Use a tool, and interpret the
+result. "This file looks unused" is a guess; "no entry point reaches this file
+in the module graph" is a fact.
 
-Para stacks não-JS/TS, leia `references/outras-stacks.md`. O resto desta fase
-assume JS/TS.
+For non-JS/TS stacks, read `references/other-stacks.md`. The rest of this phase
+assumes JS/TS.
 
-## 1.1 Configurar o knip até os hints zerarem
+## 1.1 Configure knip until the hints reach zero
 
-Rode `npx knip` sem config nenhuma primeiro. O knip tem plugins para a grande
-maioria das ferramentas do ecossistema (Next, Vitest, ESLint, Playwright, e
-dezenas de outras) que leem a configuração delas e deduzem entry points
-sozinhos — escrever config antes de ver o que ele já sabe é trabalho jogado
-fora.
+Run `npx knip` with no config at all first. knip has plugins for the vast
+majority of the ecosystem's tools (Next, Vitest, ESLint, Playwright, and dozens
+of others) that read their configuration and work out entry points on their own
+— writing config before seeing what it already knows is wasted work.
 
-**Trate os configuration hints antes de olhar qualquer finding.** Hints indicam
-que o knip não conseguiu resolver uma dependência, plugin ou entry file — ou
-seja, o grafo está incompleto e todo finding derivado dele é suspeito. Boa parte
-da lista de "arquivos não usados" evapora sozinha quando os hints somem.
+**Handle the configuration hints before looking at any finding.** Hints mean
+knip could not resolve a dependency, plugin or entry file — that is, the graph
+is incomplete and every finding derived from it is suspect. A good chunk of the
+"unused files" list evaporates on its own once the hints are gone.
 
-Itere sozinho: escreva `knip.json`, rode de novo, ajuste, repita. Não mostre
-cada rodada ao usuário — reporte no fim quantas rodadas foram necessárias e
-quantos achados sumiram.
+Iterate on your own: write `knip.json`, run again, adjust, repeat. Do not show
+every round to the user — report at the end how many rounds it took and how
+many findings disappeared.
 
-Detalhes de configuração (entry, project, paths, monorepo, quando usar cada
-`ignore*`) em `references/knip-config.md`. Leia antes de escrever o arquivo.
+Configuration details (entry, project, paths, monorepo, when to use each
+`ignore*`) are in `references/knip-config.md`. Read it before writing the file.
 
-A regra que mais economiza retrabalho: **não use a opção `ignore`.** Ela não
-exclui da análise, só esconde o report — criando ponto cego. Se algo aparece
-errado, o conserto é ensinar o grafo (entry, project, paths, plugin), não calar
-o output.
+The rule that saves the most rework: **do not use the `ignore` option.** It
+does not exclude anything from the analysis, it only hides the report —
+creating a blind spot. If something shows up wrong, the fix is to teach the
+graph (entry, project, paths, plugin), not to silence the output.
 
-## 1.2 Rodar em modo produção
+## 1.2 Run in production mode
 
 ```bash
 npx knip --production --reporter json > knip-report.json
 ```
 
-Production mode exclui testes e devDependencies automaticamente. Isso importa
-porque uma função importada só por um teste está tecnicamente viva, mas está
-morta para a aplicação — e é exatamente esse código que você quer encontrar.
+Production mode excludes tests and devDependencies automatically. That matters
+because a function imported only by a test is technically alive, but it is dead
+as far as the application is concerned — and that is exactly the code you want
+to find.
 
-Nunca exclua testes com `ignore` para conseguir o mesmo efeito.
+Never exclude tests with `ignore` to get the same effect.
 
-## 1.3 Deletar em commits atômicos, um por categoria
+## 1.3 Delete in atomic commits, one per category
 
-Execute os três sem perguntar (nível VERDE) ou os dois primeiros (AMARELO).
-Cada um é: deleta → gate → commit. Para o gate, use `scripts/gate.sh` (detecta
-o stack e o package manager e roda typecheck + testes na ordem certa); se ele
-sair com código 3, rode os comandos equivalentes do stack à mão.
+Run all three without asking (GREEN level) or the first two (YELLOW). Each one
+is: delete → gate → commit. For the gate, use `scripts/gate.sh` (it detects the
+stack and the package manager and runs typecheck + tests in the right order);
+if it exits with code 3, run the stack's equivalent commands by hand.
 
 ```
-1. deps não usadas    → "chore: remove unused deps"
-2. arquivos órfãos    → "chore: remove orphan files"
-3. exports mortos     → "chore: remove dead exports"
+1. unused deps        → "chore: remove unused deps"
+2. orphan files       → "chore: remove orphan files"
+3. dead exports       → "chore: remove dead exports"
 ```
 
-Separados porque se algo quebrar em produção daqui duas semanas, o usuário
-precisa reverter *um* commit — não uma faxina de 400 arquivos.
+Kept separate because if something breaks in production two weeks from now, the
+user needs to revert *one* commit — not a 400-file cleanup.
 
-**Em caso de falha no gate:** `git restore --staged --worktree .`, registre a
-categoria como falha em `CLEANUP_PROGRESS.md` com o erro, e **siga para a
-próxima categoria**.
-Não pare o pipeline inteiro e não tente consertar — se o typecheck quebrou, o
-knip errou sobre aquela categoria, e a informação útil é qual categoria, não um
-remendo.
+**If the gate fails:** `git restore --staged --worktree .`, record the category
+as failed in `CLEANUP_PROGRESS.md` along with the error, and **move on to the
+next category**.
+Do not stop the entire pipeline and do not try to fix it — if typecheck broke,
+knip was wrong about that category, and the useful information is which
+category, not a patch.
 
-Não rode `knip --fix` até a config estar assentada por duas ou três rodadas sem
-surpresas.
+Do not run `knip --fix` until the config has settled for two or three rounds
+with no surprises.
 
-## 1.4 Auditoria completa
+## 1.4 Full audit
 
-Com o lixo fora, o grafo está limpo e a auditoria fica precisa. Se a skill
-`tech-debt-audit` estiver instalada, leia o SKILL.md dela e siga o protocolo —
-ela é marcada como user-invoked (`disable-model-invocation`), então não
-tente invocá-la como skill; o valor está no protocolo, que você executa
-diretamente. Se não estiver instalada, produza o equivalente: varredura de
-repo inteiro citando `arquivo:linha` em cada achado,
-com severidade e esforço, cobrindo decadência arquitetural, inconsistência,
-dívida de tipos, testes, deps e config, performance, tratamento de erro,
-higiene de segurança e documentação desatualizada.
+With the garbage gone, the graph is clean and the audit becomes precise. If the
+`tech-debt-audit` skill is installed, read its SKILL.md and follow the protocol
+— it is marked as user-invoked (`disable-model-invocation`), so do not try to
+invoke it as a skill; the value is in the protocol, which you run directly. If
+it is not installed, produce the equivalent: a whole-repo sweep citing
+`file:line` in every finding, with severity and effort, covering architectural
+decay, inconsistency, type debt, tests, deps and config, performance, error
+handling, security hygiene and outdated documentation.
 
-Inclua obrigatoriamente uma seção **"parece ruim mas está ok"** — chamadas que
-você considerou fazer e decidiu não fazer, com o motivo. Se essa seção vier
-vazia, a auditoria não olhou fundo o suficiente e você deve voltar.
+Always include a **"looks bad but is fine"** section — the calls you considered
+making and decided not to make, with the reason. If that section comes out
+empty, the audit did not look deep enough and you must go back.
 
-Commit o relatório. Atualize `CLEANUP_PROGRESS.md`. **Diga ao usuário para rodar
-`/clear` antes da fase 2.**
+Commit the report. Update `CLEANUP_PROGRESS.md`. **Tell the user to run
+`/clear` before phase 2.**
 
 ---
 
-# FASE 2 — Consolidar módulos
+# PHASE 2 — Consolidate modules
 
-Objetivo: descobrir onde "esses três módulos deveriam virar um".
+Goal: find out where "these three modules should be one".
 
-Leia `references/fase-2-consolidacao.md` para o protocolo completo de
-levantamento e o vocabulário de análise.
+Read `references/phase-2-consolidation.md` for the full survey protocol and the
+analysis vocabulary.
 
-## O checkpoint irredutível
+## The irreducible checkpoint
 
-Este é o único ponto do pipeline que exige o humano, e vale explicar por quê:
-consolidar módulos muda fronteiras de responsabilidade, e essa é uma decisão
-sobre o *domínio*, não sobre o código. Testes verdes não provam que a fronteira
-nova é a certa — provam que o comportamento não mudou, que é outra coisa.
+This is the only point in the pipeline that requires the human, and it is worth
+explaining why: consolidating modules changes responsibility boundaries, and
+that is a decision about the *domain*, not about the code. Green tests do not
+prove the new boundary is the right one — they prove the behavior did not
+change, which is a different thing.
 
-Reduza o custo do checkpoint ao mínimo:
+Keep the cost of the checkpoint to a minimum:
 
-1. Apresente **no máximo 5 candidatos** ranqueados por confiança.
-2. Para cada um: quais módulos, por que estão rasos, o que vira depois, e o
-   risco de mexer.
-3. **Recomende um** explicitamente, com o motivo em uma frase.
-4. Faça **uma** pergunta: qual seguir. Não faça entrevista de múltiplas rodadas.
+1. Present **at most 5 candidates** ranked by confidence.
+2. For each one: which modules, why they are shallow, what it becomes
+   afterwards, and the risk of touching it.
+3. **Recommend one** explicitly, with the reason in a single sentence.
+4. Ask **one** question: which one to go with. Do not run a multi-round
+   interview.
 
-Se o usuário responder "vai" ou equivalente, siga com sua recomendação.
+If the user answers "go" or equivalent, proceed with your recommendation.
 
-## Critério de decisão: o teste da deleção
+## Decision criterion: the deletion test
 
-Imagine apagar o módulo. Se a complexidade some, ele era pass-through e deve ser
-consolidado. Se a complexidade reaparece espalhada por N chamadores, ele estava
-se pagando e deve ficar.
+Imagine deleting the module. If the complexity disappears, it was pass-through
+and should be consolidated. If the complexity reappears spread across N
+callers, it was paying for itself and should stay.
 
-Um módulo raso é aquele cuja interface é quase tão complexa quanto o que ela
-esconde — o custo de aprender a interface se aproxima do custo de simplesmente
-ler a implementação. Consolide agrupamentos de módulos pequenos e fortemente
-acoplados, não arquivos grandes isolados (arquivo grande é problema da fase 1,
-e módulo grande com interface simples é exatamente o que você *quer*).
+A shallow module is one whose interface is almost as complex as what it hides —
+the cost of learning the interface approaches the cost of simply reading the
+implementation. Consolidate clusters of small, tightly coupled modules, not
+large isolated files (a large file is a phase 1 problem, and a large module
+with a simple interface is exactly what you *want*).
 
-## Implementação
+## Implementation
 
-Depois da escolha, execute sozinho: um módulo por vez, typecheck e testes entre
-cada passo, um commit por consolidação. Mesmo protocolo de rollback da fase 1.
+After the choice, run on your own: one module at a time, typecheck and tests
+between each step, one commit per consolidation. Same rollback protocol as
+phase 1.
 
-**Um candidato por sessão.** Não empilhe dois — o segundo refactor herda o
-contexto sujo do primeiro e a taxa de erro sobe.
+**One candidate per session.** Do not stack two — the second refactor inherits
+the dirty context of the first and the error rate goes up.
 
-Atualize `CLEANUP_PROGRESS.md`. Recomende `/clear` antes da fase 3.
+Update `CLEANUP_PROGRESS.md`. Recommend `/clear` before phase 3.
 
 ---
 
-# FASE 3 — Estrutura de pastas
+# PHASE 3 — Folder structure
 
-Objetivo: organização legível de diretórios e arquivos.
+Goal: readable organization of directories and files.
 
-Vem por último porque consolidar módulos muda o que as pastas deveriam ser.
-Mover arquivo antes de decidir a fronteira é retrabalho garantido.
+It comes last because consolidating modules changes what the folders should be.
+Moving a file before deciding the boundary is guaranteed rework.
 
-Leia `references/fase-3-estrutura.md` para os padrões de organização e como
-escolher entre eles.
+Read `references/phase-3-structure.md` for the organization patterns and how to
+choose between them.
 
-## Diagnóstico primeiro, movimento depois
+## Diagnosis first, moves after
 
-Produza um plano faseado antes de mover qualquer coisa: mapa da estrutura
-atual, dependências circulares, módulos-deus, abstrações vazando, e a estrutura
-alvo com justificativa. Só então execute.
+Produce a phased plan before moving anything: a map of the current structure,
+circular dependencies, god modules, leaking abstractions, and the target
+structure with a rationale. Only then execute.
 
-## Execução autônoma
+## Autonomous execution
 
-Nível VERDE executa o plano inteiro sem perguntar. Uma pasta por commit:
+GREEN level runs the whole plan without asking. One folder per commit:
 
 ```bash
-git mv src/utils/format.ts src/features/billing/format.ts   # sempre git mv
+git mv src/utils/format.ts src/features/billing/format.ts   # always git mv
 ```
 
-`git mv` preserva histórico — `rm` + `create` destrói o `git blame` daquele
-arquivo, que é justamente a informação que alguém vai querer daqui a seis meses.
+`git mv` preserves history — `rm` + `create` destroys that file's `git blame`,
+which is precisely the information someone will want six months from now.
 
-Prefira atualizar **path aliases** a reescrever 200 imports. Se o projeto usa
-`@/features/*`, mover uma pasta pode ser uma linha no tsconfig em vez de um diff
-de 3.000 linhas.
+Prefer updating **path aliases** over rewriting 200 imports. If the project
+uses `@/features/*`, moving a folder can be one line in the tsconfig instead of
+a 3,000-line diff.
 
-Typecheck ao final de cada pasta. Falhou: `git restore --staged --worktree .`,
-registra, próxima pasta.
+Typecheck at the end of each folder. Failed: `git restore --staged --worktree .`,
+record it, next folder.
 
 ---
 
-## Regras que valem para o pipeline inteiro
+## Rules that apply to the whole pipeline
 
-**`/clear` entre fases.** Não é opcional. Contexto acumulado da fase anterior
-degrada o julgamento da seguinte, e `CLEANUP_PROGRESS.md` existe para que isso
-não custe nada.
+**`/clear` between phases.** Not optional. Accumulated context from the
+previous phase degrades the judgment of the next one, and
+`CLEANUP_PROGRESS.md` exists so that this costs nothing.
 
-**Nunca junte dois passos.** "Configure o knip e delete o que ele achar" é como
-se deleta um handler de rota registrado por convenção que o knip não conhecia.
-A separação entre configurar, verificar e deletar é o que impede isso.
+**Never merge two steps.** "Configure knip and delete whatever it finds" is how
+you delete a route handler registered by convention that knip did not know
+about. The separation between configuring, verifying and deleting is what
+prevents that.
 
-**Gate vermelho é rollback, não conserto.** Se typecheck ou testes falham, o
-commit anterior já estava certo. Reverta, registre, siga. Tentar consertar
-transforma uma faxina em um debugging não solicitado.
+**A red gate means rollback, not repair.** If typecheck or tests fail, the
+previous commit was already correct. Revert, record, move on. Trying to fix it
+turns a cleanup into an unsolicited debugging session.
 
-**Nunca force push, nunca commite na main.** Todo o trabalho vive na branch de
-faxina. O merge é decisão do usuário, no tempo dele.
+**Never force push, never commit on main.** All the work lives on the cleanup
+branch. Merging is the user's decision, on their own schedule.
 
-## Relatório final
+## Final report
 
-Ao encerrar (ou ao ser interrompido), entregue:
+When wrapping up (or when interrupted), deliver:
 
 ```markdown
-## Faxina — resumo
-Branch: `faxina/AAAAMMDD` · Nível: VERDE · N commits
+## Cleanup — summary
+Branch: `cleanup/YYYYMMDD` · Level: GREEN · N commits
 
-| Fase | Resultado |
+| Phase | Result |
 |---|---|
-| 1 — código morto | 7 deps, 23 arquivos, 41 exports removidos |
-| 2 — consolidação | 3 módulos → 1 (`src/billing/`) |
-| 3 — estrutura | 4 pastas reorganizadas, 2 ciclos quebrados |
+| 1 — dead code | 7 deps, 23 files, 41 exports removed |
+| 2 — consolidation | 3 modules → 1 (`src/billing/`) |
+| 3 — structure | 4 folders reorganized, 2 cycles broken |
 
-### Reverter qualquer coisa
-`git revert <sha>` — commits são atômicos por categoria.
+### Revert anything
+`git revert <sha>` — commits are atomic per category.
 
-### Falhou / não foi feito
-- exports mortos: typecheck quebrou em `src/api/routes.ts` (import dinâmico)
+### Failed / not done
+- dead exports: typecheck broke in `src/api/routes.ts` (dynamic import)
 
-### Pendente de decisão sua
-- (nada)
+### Pending your decision
+- (nothing)
 ```
 
-Se o nível era VERMELHO, o relatório é só diagnóstico: liste o que faria e o que
-precisa existir (testes, typecheck) para poder fazer.
+If the level was RED, the report is diagnosis only: list what you would do and
+what needs to exist (tests, typecheck) to make it possible.
