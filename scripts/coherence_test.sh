@@ -26,9 +26,13 @@ references/phase-2-consolidation.md references/phase-3-structure.md \
 scripts/rollback_test.sh"
 
 # Files that spell out the protocol step by step: whoever tells the reader to
-# run the gate also has to tell them to stage first.
-PROTOCOL_FILES="SKILL.md references/phase-2-consolidation.md \
-references/phase-3-structure.md"
+# run the gate also has to tell them to stage first. Derived, not listed — a
+# new reference that starts calling the gate has to answer for it too, and a
+# hand-kept list would silently leave it out. The READMEs are excluded on
+# purpose: they present the skill, they do not walk the reader through it.
+protocol_files() {
+  grep -l -F -- 'scripts/gate.sh' SKILL.md references/*.md 2>/dev/null | sort
+}
 
 pass() { total=$((total+1)); echo "ok: $1"; }
 
@@ -236,10 +240,22 @@ check "\"$GITMV\" appears exactly once in references/phase-3-structure.md" \
 # 4. Whoever documents the gate as a step also documents staging. -------------
 # The gate reads the working tree, so a protocol that runs it without `git
 # add -A` first checks something the commit will not contain.
-for f in $PROTOCOL_FILES; do
-  if ! grep -q -F -- 'scripts/gate.sh' "$f" 2>/dev/null; then
-    fail "gate step pairs with git add -A in $f" "no longer mentions scripts/gate.sh"
-  elif grep -q -F -- 'git add -A' "$f" 2>/dev/null; then
+derived=$(protocol_files)
+
+# Floor: the three files that carry the protocol today have to be in the
+# derived list. Without it, a rename or a dropped mention would empty the list
+# and the invariant would pass over nothing at all.
+for f in SKILL.md references/phase-2-consolidation.md references/phase-3-structure.md; do
+  if printf '%s\n' "$derived" | grep -qx -F -- "$f"; then
+    pass "$f is derived as a protocol file"
+  else
+    fail "$f is derived as a protocol file" \
+         "no longer mentions scripts/gate.sh — derived list: $(printf '%s' "$derived" | tr '\n' ' ')"
+  fi
+done
+
+for f in $derived; do
+  if grep -q -F -- 'git add -A' "$f" 2>/dev/null; then
     pass "gate step pairs with git add -A in $f"
   else
     fail "gate step pairs with git add -A in $f" \
