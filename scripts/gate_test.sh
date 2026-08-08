@@ -203,6 +203,14 @@ mkdir -p "$TMP/py-uv/tests"
 printf '[project]\nname = "f"\n' > "$TMP/py-uv/pyproject.toml"
 touch "$TMP/py-uv/uv.lock" "$TMP/py-uv/tests/test_x.py"
 
+# pytest exits 5 when it collects no test: green-but-empty, not a pass.
+mkdir -p "$TMP/py-pytest-no-tests/tests"
+printf '[tool.mypy]\n[tool.pytest.ini_options]\n' > "$TMP/py-pytest-no-tests/pyproject.toml"
+
+# ...and with pytest as the only configured check, nothing at all ran.
+mkdir -p "$TMP/py-pytest-only-no-tests"
+printf '[tool.pytest.ini_options]\n' > "$TMP/py-pytest-only-no-tests/pyproject.toml"
+
 mkdir -p "$TMP/py-pyright"
 printf '[tool.pyright]\n' > "$TMP/py-pyright/pyproject.toml"
 
@@ -228,6 +236,8 @@ stub "$FAIL" dotnet 1
 stub_body "$HANG" go 'sleep 30'
 stub "$UV" uv 0
 GO="$TMP/stubs-go"; stub "$GO" go 0
+# pytest's "no tests collected" code, with a passing mypy next to it.
+PY5="$TMP/stubs-py5"; stub "$PY5" pytest 5; stub "$PY5" mypy 0
 
 # watchdog sandbox: delegators that record how gate.sh called them, plus a
 # minimal PATH with no timeout/gtimeout so the perl backend can be forced.
@@ -276,6 +286,10 @@ case_run py-venv          0 "$TMP/py-venv"      "$BASE"       ".venv/bin/mypy" "
 case_run py-no-tools      3 "$TMP/py-no-tools"  "$BASE"       "toolchain 'mypy' missing" "looked in"
 case_run py-uv            0 "$TMP/py-uv"        "$UV:$BASE"   "uv run pytest" "checks=test"
 case_run py-pyright       0 "$TMP/py-pyright"   "$OK:$BASE"   "checks=typecheck"
+case_run py-pytest-no-tests 0 "$TMP/py-pytest-no-tests" "$PY5:$BASE" \
+         "checks=typecheck" "not counted" "no tests collected (exit 5)"
+case_run py-pytest-only-no-tests 3 "$TMP/py-pytest-only-no-tests" "$PY5:$BASE" \
+         "no runnable checks" "no tests collected (exit 5)"
 case_run go-with-tests    0 "$TMP/go-with-tests" "$GO:$BASE"  "checks=typecheck,test" "GREEN"
 case_run go-no-tests      0 "$TMP/go-no-tests"  "$GO:$BASE"   "checks=typecheck" "not counted" '!go test'
 case_run dotnet-no-tests  0 "$TMP/dotnet-no-tests" "$OK:$BASE" "checks=typecheck" "not counted" '!dotnet test'

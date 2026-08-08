@@ -97,16 +97,31 @@ guard() {
   esac
 }
 
-# run <typecheck|test|both> <cmd...>
+# run <kind> <cmd...>
+# <kind> is typecheck|test|both, optionally extended as <kind>:<rc>:<stack>:
+# that <rc> is the runner's "I collected nothing" code, and it is a YELLOW cap
+# (the check did not run) instead of RED. pytest is the case: exit 5 means zero
+# tests collected, which would otherwise sink a repo whose suite lives elsewhere.
 run() {
   local kind=$1; shift
   local rc
+  local no_tests_rc="" nt_label=""
+  case $kind in
+    *:*) nt_label=${kind#*:}; no_tests_rc=${nt_label%%:*}; nt_label=${nt_label#*:}
+         kind=${kind%%:*} ;;
+  esac
   echo "[gate] $*"
   guard "$@"
   rc=$?
+  # The watchdog keeps absolute priority: a check killed at the timeout is
+  # inconclusive, never "no tests collected", whatever code it happens to share.
   if [[ -n $WATCHDOG && $rc -eq 124 ]]; then
     echo "[gate] TIMEOUT after ${GATE_TIMEOUT}s at '$*'" >&2
     exit 4
+  fi
+  if [[ -n $no_tests_rc && $rc -eq $no_tests_rc ]]; then
+    no_tests "$nt_label" "no tests collected (exit $rc)"
+    return 0
   fi
   if [[ $rc -ne 0 ]]; then
     echo "[gate] RED at '$*'" >&2
@@ -228,7 +243,7 @@ if [[ -f pyproject.toml || -f setup.py || -f setup.cfg || -f requirements.txt ]]
   fi
   if [[ -f pytest.ini || -d tests || -d test ]] || grep -qs '^\[tool\.pytest' pyproject.toml \
       || grep -qs '^\[tool:pytest\]' setup.cfg || grep -qs '^\[pytest\]' tox.ini; then
-    py_run test python-tests pytest -q
+    py_run "test:5:python" python-tests pytest -q
   fi
 fi
 
