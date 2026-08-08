@@ -83,7 +83,7 @@ tree_scripts() {
   ' "$1" | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u
 }
 
-# strip_quotes — reads a shell script on stdin and prints its bash body with
+# bash_body — reads a shell script on stdin and prints its bash body with
 # quoted text and comments removed. One character-by-character pass does both,
 # because doing them in two passes is wrong: stripping comments first mutilates
 # a '# ...' that lives inside a string, and stripping strings first swallows a
@@ -91,7 +91,7 @@ tree_scripts() {
 # survives across lines, which is what the embedded multi-line perl watchdog of
 # gate.sh needs. Each quoted run collapses to a single space so nothing on
 # either side of it gets glued together.
-strip_quotes() {
+bash_body() {
   local q
   q=$(printf '\047')
   awk -v q="$q" '
@@ -121,7 +121,7 @@ strip_quotes() {
 # what the script can really return is left (the perl watchdog's own 124/127
 # live inside a quoted string and do not count).
 exit_codes() {
-  strip_quotes |
+  bash_body |
   grep -oE '(^|[^A-Za-z0-9_])exit[[:space:]]+[0-9]+' |
   grep -oE '[0-9]+$' | sort -u
 }

@@ -88,7 +88,7 @@ assert_status_has() { # assert_status_has <repo> <expected porcelain line>
   # unrelated line is noise, and demanding equality would make the test brittle
   # for no gain. Where emptiness itself is the property, assert_status stays.
   local st; st=$(g "$1" status --porcelain)
-  printf '%s\n' "$st" | grep -q -F -- "$2" ||
+  printf '%s\n' "$st" | grep -qx -F -- "$2" ||
     note_fail "git status --porcelain: got '$st', want a line '$2'"
   return 0
 }

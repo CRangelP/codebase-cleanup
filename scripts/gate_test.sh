@@ -279,6 +279,12 @@ printf '[package]\nname = "f"\n' > "$TMP/rust-no-tests/Cargo.toml"
 printf 'fn main() {}\n' > "$TMP/rust-no-tests/src/main.rs"
 printf '#[test]\nfn t() {}\n' > "$TMP/rust-no-tests/target/debug/tests/dep.rs"
 
+# Vendored dependencies carry their own tests; they are not this crate's suite.
+mkdir -p "$TMP/rust-vendor/src" "$TMP/rust-vendor/vendor/dep/tests"
+printf '[package]\nname = "f"\n' > "$TMP/rust-vendor/Cargo.toml"
+printf 'fn main() {}\n' > "$TMP/rust-vendor/src/main.rs"
+printf '#[test]\nfn t() {}\n' > "$TMP/rust-vendor/vendor/dep/tests/it.rs"
+
 mkdir -p "$TMP/go-hang"
 printf 'module f\n\ngo 1.21\n' > "$TMP/go-hang/go.mod"
 printf 'package f\n' > "$TMP/go-hang/x_test.go"
@@ -338,6 +344,20 @@ make_escapee "$ESCAPE" "$ESCAPEE_PID_FILE"
 ESCAPE_NOPS="$TMP/stubs-escape-nops"
 make_escapee "$ESCAPE_NOPS" "$TMP/escapee-nops.pid"
 
+# A ps that rejects lstart (BusyBox shape): delegates the plain pid=,ppid= form
+# to the real ps and fails on anything mentioning lstart.
+NOLS="$TMP/nols-path"
+mkdir -p "$NOLS"
+REAL_PS=$(command -v ps)
+cat > "$NOLS/ps" <<EOF
+#!/bin/sh
+case "\$*" in *lstart*) exit 1 ;; esac
+exec "$REAL_PS" "\$@"
+EOF
+chmod +x "$NOLS/ps"
+ESCAPE_NOLS="$TMP/stubs-escape-nols"
+make_escapee "$ESCAPE_NOLS" "$TMP/escapee-nols.pid"
+
 # matrix ---------------------------------------------------------------
 case_run bad-path         2 "$TMP/nope"         -             "bad path"
 case_run empty            3 "$TMP/empty"        -             "no runnable checks"
@@ -371,6 +391,7 @@ case_run go-no-tests      0 "$TMP/go-no-tests"  "$GO:$BASE"   "checks=typecheck"
 case_run rust-with-tests  0 "$TMP/rust-with-tests" "$CARGO:$BASE" "checks=typecheck,test" "GREEN"
 case_run rust-tests-dir   0 "$TMP/rust-tests-dir" "$CARGO:$BASE" "checks=typecheck,test" "GREEN"
 case_run rust-no-tests    0 "$TMP/rust-no-tests"  "$CARGO:$BASE" "checks=typecheck" "not counted" '!cargo test'
+case_run rust-vendor      0 "$TMP/rust-vendor"    "$CARGO:$BASE" "checks=typecheck" "not counted" '!cargo test'
 case_run dotnet-no-tests  0 "$TMP/dotnet-no-tests" "$OK:$BASE" "checks=typecheck" "not counted" '!dotnet test'
 case_run dotnet-sub-no-t  0 "$TMP/dotnet-sub-no-tests" "$OK:$BASE" "checks=typecheck" "not counted" '!dotnet test'
 case_run dotnet-deep      0 "$TMP/dotnet-deep"  "$OK:$BASE"   "checks=typecheck,test" "dotnet test" "GREEN"
@@ -434,6 +455,13 @@ if command -v perl >/dev/null; then
   GATE_ENV="GATE_TIMEOUT=2"
   case_run wd-no-ps 4 "$TMP/go-hang" "$ESCAPE_NOPS:$NOPS" "TIMEOUT after 2s"
   elapsed_lt wd-no-ps-is-bounded 10
+
+  # ps present but without lstart support (BusyBox shape): the watchdog must
+  # fall back to pid-only matching and still reap the escapee.
+  GATE_ENV="GATE_TIMEOUT=2"
+  case_run wd-ps-no-lstart 4 "$TMP/go-hang" "$ESCAPE_NOLS:$NOLS:$MINI" "TIMEOUT after 2s"
+  elapsed_lt wd-ps-no-lstart-is-bounded 10
+  assert_reaped wd-ps-no-lstart-reaped "$TMP/escapee-nols.pid"
 else
   echo "skip: wd-perl-forced (no perl on this machine)"
 fi

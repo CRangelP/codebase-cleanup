@@ -271,14 +271,16 @@ if [[ -f Cargo.toml ]]; then
     run typecheck cargo check --all-targets --quiet
     # 'cargo test' on a crate with no test exits 0 reporting "0 passed" — the
     # same trap as 'go test'. A Rust test is either an integration file under
-    # tests/ or a #[test]/#[cfg(test)] item in the sources; target/ is build
+    # tests/ or a #[test]/#[cfg(test)] item in the sources; target/ and vendor/ are
     # output and never evidence. /dev/null keeps grep off stdin when the scan
     # comes up empty, and head -1 is what makes the result the whole scan's,
     # not the last xargs batch's.
     rust_tests=$(find . -name '*.rs' -path '*/tests/*' -not -path './target/*' \
+        -not -path './vendor/*' \
                    -print -quit 2>/dev/null)
     if [[ -z $rust_tests ]]; then
-      rust_tests=$(find . -name '*.rs' -not -path './target/*' -print0 2>/dev/null \
+      rust_tests=$(find . -name '*.rs' -not -path './target/*' \
+        -not -path './vendor/*' -print0 2>/dev/null \
         | xargs -0 grep -lE '#\[test\]|#\[cfg\(test\)\]' /dev/null 2>/dev/null | head -1)
     fi
     if [[ -n $rust_tests ]]; then
