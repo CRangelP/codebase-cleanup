@@ -65,6 +65,17 @@ codebase-cleanup/
 To check the installation, open a new session (or run `/reload-skills`) and
 see whether `codebase-cleanup` shows up in the list of available skills.
 
+### No other skill is required
+
+codebase-cleanup is self-contained by design. The pipeline calls tools
+(knip, similarity-ts, jscpd, gate.sh), not other skills — and the knowledge
+that came from third-party skills was absorbed into this one's files: the
+phase 1.4 audit protocol is summarized in SKILL.md itself, and the phase 2
+consolidation vocabulary lives in `references/phase-2-consolidation.md`.
+Installing the skills named in the credits changes nothing at runtime; they
+are sources, not dependencies. The only real runtime integration is
+tech-debt-audit below, optional and with a built-in fallback.
+
 ### Companion skill (optional, but worth installing first)
 
 At the end of phase 1, the skill produces an audit of what is left after the
@@ -172,10 +183,11 @@ Skills and materials used in building this one:
   fine" section come from it; when installed, the phase follows the full
   protocol (installation in the section above).
 - [codebase-design and improve-codebase-architecture](https://github.com/mattpocock/skills),
-  by Matt Pocock — phase 2's analysis vocabulary (module, interface, depth,
-  seam, adapter, locality), the deletion test and the definition of a shallow
-  module come from these skills. Seam and module depth trace back to Michael
-  Feathers and John Ousterhout (*A Philosophy of Software Design*).
+  by Matt Pocock — phase 2's analysis vocabulary (module, interface,
+  implementation, depth, seam, adapter, locality), the deletion test and the
+  definition of a shallow module come from these skills. Seam and module
+  depth trace back to Michael Feathers and John Ousterhout (*A Philosophy of
+  Software Design*).
 - [skill-creator](https://github.com/anthropics/claude-plugins-official),
   Anthropic's official plugin — it drove the best-practice review, the
   comparative evals and the description optimization of this skill.

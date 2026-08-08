@@ -64,6 +64,18 @@ codebase-cleanup/
 Para conferir a instalação, abra uma sessão nova (ou rode `/reload-skills`) e
 veja se `codebase-cleanup` aparece na lista de skills disponíveis.
 
+### Nenhuma outra skill é obrigatória
+
+A codebase-cleanup é autossuficiente por design. O pipeline chama
+ferramentas (knip, similarity-ts, jscpd, gate.sh), não outras skills — e o
+conhecimento que veio de skills de terceiros foi absorvido nos arquivos
+desta: o protocolo de auditoria da fase 1.4 está resumido na própria
+SKILL.md, e o vocabulário de consolidação da fase 2 já vive em
+`references/phase-2-consolidation.md`. Instalar as skills citadas nos
+créditos não muda o comportamento em runtime; elas são fonte, não
+dependência. A única integração real de runtime é a tech-debt-audit abaixo,
+opcional e com fallback embutido.
+
 ### Skill complementar (opcional, mas vale instalar antes)
 
 Ao fim da fase 1, a skill produz uma auditoria do que sobrou depois da
@@ -170,10 +182,10 @@ Skills e materiais usados na construção desta:
   (instalação na seção acima).
 - [codebase-design e improve-codebase-architecture](https://github.com/mattpocock/skills),
   de Matt Pocock — o vocabulário de análise da fase 2 (module, interface,
-  depth, seam, adapter, locality), o teste da deleção e a definição de módulo
-  raso vêm dessas skills. Os conceitos de seam e profundidade de módulo
-  remontam a Michael Feathers e a John Ousterhout (*A Philosophy of Software
-  Design*).
+  implementation, depth, seam, adapter, locality), o teste da deleção e a
+  definição de módulo raso vêm dessas skills. Os conceitos de seam e
+  profundidade de módulo remontam a Michael Feathers e a John Ousterhout
+  (*A Philosophy of Software Design*).
 - [skill-creator](https://github.com/anthropics/claude-plugins-official),
   plugin oficial da Anthropic — conduziu a revisão de boas práticas, os evals
   comparativos e a otimização da description desta skill.
