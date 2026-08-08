@@ -48,14 +48,23 @@ função dela, não uma preferência.
 ```bash
 git status --porcelain                    # working tree limpa?
 git rev-parse --abbrev-ref HEAD           # branch atual
-cat package.json | grep -E '"(test|typecheck|lint|build)"'
+[ -f package.json ] && grep -E '"(test|typecheck|lint|build)"' package.json
 ```
 
 Rode o gate de baseline com `scripts/gate.sh` (caminho relativo ao diretório
 desta skill; aceita o diretório do projeto como argumento) e classifique. O
-script sai 0 quando typecheck e testes passam, 1 quando algo falha e 3 quando
-não há `package.json` ou scripts — nesse último caso, rode o equivalente do
-stack à mão antes de classificar.
+script detecta o stack pelo manifesto na raiz — `package.json`, `go.mod`,
+`Cargo.toml`, `pyproject.toml`/`setup.cfg`, `pom.xml`/`build.gradle`,
+`Gemfile`, `sln`/`csproj`/`fsproj` — e roda typecheck e testes de cada um que
+encontrar (compilar conta como typecheck).
+
+Classifique pela linha `[gate] checks=...`, que lista o que de fato rodou, e
+não só pelo exit code: VERDE exige `typecheck` e `test` na lista; lista
+parcial limita a AMARELO, e o próprio script avisa. Exit 0 = tudo que rodou
+passou; 1 = algo falhou; 3 = nenhum check executável **ou** algum stack
+detectado ficou sem toolchain (`PARCIAL` — inclusive em repo poliglota onde
+outro stack passou). Nos casos de exit 3, complete o gate à mão antes de
+classificar.
 
 | Sinal | Nível | Comportamento |
 |---|---|---|
@@ -172,8 +181,8 @@ Nunca exclua testes com `ignore` para conseguir o mesmo efeito.
 
 Execute os três sem perguntar (nível VERDE) ou os dois primeiros (AMARELO).
 Cada um é: deleta → gate → commit. Para o gate, use `scripts/gate.sh` (detecta
-o package manager e roda typecheck + testes na ordem certa); em stack sem
-`package.json`, rode os comandos equivalentes do stack à mão.
+o stack e o package manager e roda typecheck + testes na ordem certa); se ele
+sair com código 3, rode os comandos equivalentes do stack à mão.
 
 ```
 1. deps não usadas    → "chore: remove unused deps"
@@ -197,8 +206,11 @@ surpresas.
 ## 1.4 Auditoria completa
 
 Com o lixo fora, o grafo está limpo e a auditoria fica precisa. Se a skill
-`tech-debt-audit` estiver instalada, invoque-a. Se não estiver, produza o
-equivalente: varredura de repo inteiro citando `arquivo:linha` em cada achado,
+`tech-debt-audit` estiver instalada, leia o SKILL.md dela e siga o protocolo —
+ela é marcada como user-invoked (`disable-model-invocation`), então não
+tente invocá-la como skill; o valor está no protocolo, que você executa
+diretamente. Se não estiver instalada, produza o equivalente: varredura de
+repo inteiro citando `arquivo:linha` em cada achado,
 com severidade e esforço, cobrindo decadência arquitetural, inconsistência,
 dívida de tipos, testes, deps e config, performance, tratamento de erro,
 higiene de segurança e documentação desatualizada.
