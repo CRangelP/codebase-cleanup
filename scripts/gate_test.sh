@@ -101,6 +101,7 @@ for t in pytest mypy dotnet mvn gradle; do stub "$OK" "$t" 0; done
 stub "$FAIL" dotnet 1
 
 # matrix ---------------------------------------------------------------
+case_run bad-path         2 "$TMP/nope"         -             "bad path"
 case_run empty            3 "$TMP/empty"        -             "no runnable checks"
 case_run js-green         0 "$TMP/js-green"     -             "checks=typecheck,test" "GREEN"
 case_run js-test-only     0 "$TMP/js-test-only" -             "checks=test" "YELLOW"

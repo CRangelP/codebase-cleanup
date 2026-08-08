@@ -4,11 +4,20 @@
 # Requires bash (macOS 3.2 is fine). Usage: gate.sh [dir]
 # Output: "[gate] checks=..." lists what actually ran (compiling counts as typecheck).
 # Exit 0 = everything that ran passed · 1 = some check failed ·
+# 2 = bad path (the argument is not a reachable directory: nothing was checked) ·
 # 3 = no runnable check OR a detected stack has no toolchain (PARTIAL) —
 #     in both cases, run the gate manually: classify according to the stack.
 set -uo pipefail
 
-cd "${1:-.}" || exit 3
+target="${1:-.}"
+if [[ ! -d $target ]]; then
+  echo "[gate] bad path: '$target' is not a directory" >&2
+  exit 2
+fi
+cd "$target" || {
+  echo "[gate] bad path: '$target' is not a directory we can enter" >&2
+  exit 2
+}
 ran_typecheck=0
 ran_test=0
 incomplete=0

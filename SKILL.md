@@ -62,10 +62,11 @@ it finds (compiling counts as typecheck).
 Classify by the `[gate] checks=...` line, which lists what actually ran, and
 not by the exit code alone: GREEN requires `typecheck` and `test` in the list;
 a partial list caps at YELLOW, and the script itself says so. Exit 0 =
-everything that ran passed; 1 = something failed; 3 = no runnable check **or**
-some detected stack had no toolchain (`PARTIAL` — including in a polyglot repo
-where another stack passed). In the exit-3 cases, finish the gate by hand
-before classifying.
+everything that ran passed; 1 = something failed; 2 = bad path (the argument is
+not a directory the script can enter, so nothing was checked — fix the path and
+rerun); 3 = no runnable check **or** some detected stack had no toolchain
+(`PARTIAL` — including in a polyglot repo where another stack passed). In the
+exit-3 cases, finish the gate by hand before classifying.
 
 | Signal | Level | Behavior |
 |---|---|---|

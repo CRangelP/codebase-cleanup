@@ -59,7 +59,7 @@ codebase-cleanup/
 │   ├── phase-3-structure.md          padrões de organização de pastas
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
-    ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/3
+    ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/2/3
     └── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
 ```
 
