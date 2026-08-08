@@ -356,10 +356,18 @@ if [[ ${#dotnet_targets[@]} -gt 0 ]]; then
       # 0 — same trap as 'go test' on a repo with no _test.go file.
       if [[ $target == . ]]; then
         has_tests=0
-        # Three fixed depths only; a test project nested deeper is missed and
-        # the verdict caps at YELLOW — fail-safe, promote by hand if so.
-        grep -qsE "$DOTNET_TEST_MARKERS" ./*.??proj ./*/*.??proj ./src/*/*.??proj \
-          && has_tests=1
+        # Walks the tree down to five levels instead of three fixed globs, so a
+        # test project under src/App/Tests/ still counts. bin/obj/node_modules
+        # and .git are pruned: a marker in build output is leftover, not the
+        # repo's suite. /dev/null keeps grep from reading stdin when the scan
+        # comes back empty, and head -1 closes the pipe on the first hit.
+        if [[ -n $(find . -maxdepth 5 \
+              \( -name bin -o -name obj -o -name node_modules -o -name .git \) \
+              -prune -o -name '*.??proj' -print0 \
+              | xargs -0 grep -lE "$DOTNET_TEST_MARKERS" /dev/null 2>/dev/null \
+              | head -1) ]]; then
+          has_tests=1
+        fi
         # shellcheck disable=SC2086  # the :+ expansion is one argument or none
         run typecheck dotnet build --nologo -v minimal ${dotnet_root_arg:+"$dotnet_root_arg"}
         if [[ $has_tests -eq 1 ]]; then

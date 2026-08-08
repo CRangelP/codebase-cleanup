@@ -206,6 +206,16 @@ mkdir -p "$TMP/dotnet-two-slns"
 printf 'Microsoft Visual Studio Solution File\n' > "$TMP/dotnet-two-slns/A.sln"
 printf 'Microsoft Visual Studio Solution File\n' > "$TMP/dotnet-two-slns/B.sln"
 
+# The test project is nested deeper than the old three fixed globs reached.
+mkdir -p "$TMP/dotnet-deep/src/App/Tests"
+printf '<Project></Project>\n' > "$TMP/dotnet-deep/App.csproj"
+printf '%s\n' "$TESTPROJ" > "$TMP/dotnet-deep/src/App/Tests/Tests.csproj"
+
+# A marker under bin/ is build output, not the repo's suite.
+mkdir -p "$TMP/dotnet-prune-bin/bin/Debug"
+printf '<Project></Project>\n' > "$TMP/dotnet-prune-bin/App.csproj"
+printf '%s\n' "$TESTPROJ" > "$TMP/dotnet-prune-bin/bin/Debug/Leftover.csproj"
+
 mkdir -p "$TMP/dotnet-no-tests" "$TMP/dotnet-sub-no-tests/src/App"
 printf '<Project></Project>\n' > "$TMP/dotnet-no-tests/App.csproj"
 printf '<Project></Project>\n' > "$TMP/dotnet-sub-no-tests/src/App/App.fsproj"
@@ -363,6 +373,8 @@ case_run rust-tests-dir   0 "$TMP/rust-tests-dir" "$CARGO:$BASE" "checks=typeche
 case_run rust-no-tests    0 "$TMP/rust-no-tests"  "$CARGO:$BASE" "checks=typecheck" "not counted" '!cargo test'
 case_run dotnet-no-tests  0 "$TMP/dotnet-no-tests" "$OK:$BASE" "checks=typecheck" "not counted" '!dotnet test'
 case_run dotnet-sub-no-t  0 "$TMP/dotnet-sub-no-tests" "$OK:$BASE" "checks=typecheck" "not counted" '!dotnet test'
+case_run dotnet-deep      0 "$TMP/dotnet-deep"  "$OK:$BASE"   "checks=typecheck,test" "dotnet test" "GREEN"
+case_run dotnet-prune-bin 0 "$TMP/dotnet-prune-bin" "$OK:$BASE" "checks=typecheck" "not counted" '!dotnet test'
 
 GATE_ENV="GATE_TIMEOUT=2"
 case_run hang             4 "$TMP/go-hang"      "$HANG:$BASE" "TIMEOUT after 2s"
