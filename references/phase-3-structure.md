@@ -56,8 +56,16 @@ return: anyone new understands it without explanation.
 One folder per commit. Always:
 
 ```bash
+mkdir -p src/features/billing
 git mv src/utils/format.ts src/features/billing/format.ts
 ```
+
+The `mkdir -p` is not decoration: phase 3 applies a structure that does not
+exist yet, and moving into a directory nobody created fails with `fatal:
+renaming ... failed: No such file or directory` and exit 128. That is a
+missing precondition, not a failed step — create the directory and repeat the
+move. Do not fall back to `mv` plus `git rm`/`git add`: that is `rm` +
+`create` under another name.
 
 `git mv` preserves history. `rm` + `create` destroys that file's `git blame` —
 exactly the information someone will want six months from now when asking "why

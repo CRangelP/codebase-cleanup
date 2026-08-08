@@ -283,6 +283,40 @@ for readme in README.md README.en.md; do
   done
 done
 
+# 6. Whoever shows a `git mv` also shows the mkdir -p it needs. ---------------
+# Phase 3 applies a structure that does not exist yet, so the destination
+# directory has to be created before the move: `git mv` into a missing
+# directory dies with exit 128, and an agent running unsupervised reads that
+# as a failed step. Only command lines count — a line that *starts* with
+# `git mv` — so the prose mentions in the READMEs and in the explanatory
+# paragraphs, where the phrase is named and not run, stay out of it.
+gitmv_files() {
+  grep -l -E '^git mv ' SKILL.md references/*.md 2>/dev/null | sort
+}
+
+moves=$(gitmv_files)
+
+# Floor, same reason as in section 4: a derivation that comes back without the
+# two files that carry the move today is broken, and the loop below would
+# assert over an empty list and pass.
+for f in SKILL.md references/phase-3-structure.md; do
+  if printf '%s\n' "$moves" | grep -qx -F -- "$f"; then
+    pass "$f is derived as a file that runs git mv"
+  else
+    fail "$f is derived as a file that runs git mv" \
+         "no git mv command line — derived list: $(printf '%s' "$moves" | tr '\n' ' ')"
+  fi
+done
+
+# The mkdir has to be on the line right above, not merely somewhere in the
+# file: what is being read is a snippet, not a page.
+for f in $moves; do
+  orphan=$(awk '/^git mv / && prev !~ /^mkdir -p / { print FILENAME ":" FNR ": " $0 }
+                { prev = $0 }' "$f")
+  check "git mv preceded by mkdir -p in $f" \
+        "$([[ -z $orphan ]] && echo 0 || echo 1)" "$orphan"
+done
+
 echo "----"
 echo "$((total-failures))/$total invariants held"
 [[ $failures -eq 0 ]]
