@@ -108,6 +108,17 @@ py_missing() {
   incomplete=1
 }
 
+# py_run <kind> <label> <tool> [args...] — resolves <tool> via py_cmd and runs
+# it, or records the miss.
+py_run() {
+  local kind=$1 label=$2 tool=$3 prefix
+  shift 3
+  prefix=$(py_cmd "$tool")
+  # shellcheck disable=SC2086  # the prefix is split on purpose
+  if [[ -n $prefix ]]; then run "$kind" $prefix "$@"
+  else py_missing "$label" "$tool"; fi
+}
+
 # py_cmd <tool> — echoes the command prefix that runs <tool> in this project.
 # A Python project rarely puts its tools on the global PATH: the virtualenv
 # comes first, then the lockfile runners, and only then the global install.
@@ -180,23 +191,14 @@ fi
 if [[ -f pyproject.toml || -f setup.py || -f setup.cfg || -f requirements.txt ]]; then
   if [[ -f mypy.ini || -f .mypy.ini ]] || grep -qs '^\[tool\.mypy\]' pyproject.toml \
       || grep -qs '^\[mypy\]' setup.cfg; then
-    py_tool=$(py_cmd mypy)
-    # shellcheck disable=SC2086  # the prefix is split on purpose
-    if [[ -n $py_tool ]]; then run typecheck $py_tool .
-    else py_missing config-mypy mypy; fi
+    py_run typecheck config-mypy mypy .
   fi
   if [[ -f pyrightconfig.json ]] || grep -qs '^\[tool\.pyright\]' pyproject.toml; then
-    py_tool=$(py_cmd pyright)
-    # shellcheck disable=SC2086
-    if [[ -n $py_tool ]]; then run typecheck $py_tool
-    else py_missing config-pyright pyright; fi
+    py_run typecheck config-pyright pyright
   fi
   if [[ -f pytest.ini || -d tests || -d test ]] || grep -qs '^\[tool\.pytest' pyproject.toml \
       || grep -qs '^\[tool:pytest\]' setup.cfg || grep -qs '^\[pytest\]' tox.ini; then
-    py_tool=$(py_cmd pytest)
-    # shellcheck disable=SC2086
-    if [[ -n $py_tool ]]; then run test $py_tool -q
-    else py_missing python-tests pytest; fi
+    py_run test python-tests pytest -q
   fi
 fi
 
@@ -241,6 +243,8 @@ if [[ ${#dotnet_targets[@]} -gt 0 ]]; then
       # 0 — same trap as 'go test' on a repo with no _test.go file.
       if [[ $target == . ]]; then
         has_tests=0
+        # Three fixed depths only; a test project nested deeper is missed and
+        # the verdict caps at YELLOW — fail-safe, promote by hand if so.
         grep -qsE "$DOTNET_TEST_MARKERS" ./*.??proj ./*/*.??proj ./src/*/*.??proj \
           && has_tests=1
         run typecheck dotnet build --nologo -v minimal
