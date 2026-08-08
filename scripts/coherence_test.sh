@@ -3,8 +3,9 @@
 # than one file at once. A doc drift that used to be caught by reading — a
 # rollback command typed slightly differently, an exit code the READMEs never
 # heard of, a script missing from the file tree — fails here instead.
-# Read-only: it opens the repository's files and never writes, stages or runs
-# anything in it.
+# Read-only over the repository: it opens the repo's files and never writes,
+# stages or runs anything inside it. Its self-tests need files to scan, so they
+# build them in a mktemp -d of their own and delete it on the way out.
 # Usage: coherence_test.sh   (exit 0 = every invariant held)
 set -u
 
@@ -42,17 +43,31 @@ check() { # check <name> <ok:0|1> <detail>
   if [[ $2 -eq 0 ]]; then pass "$1"; else fail "$1" "$3"; fi
 }
 
-# repo_files — every file of the repo except .git and this suite. The suite
-# quotes the very strings it forbids, so scanning itself would fail on purpose.
+# repo_files [root] — every file under <root> (default: the repo) except .git
+# and this suite, NUL-separated. The suite quotes the very strings it forbids,
+# so scanning itself would fail on purpose. The root is a parameter so the
+# self-tests below can point the scanner at a throwaway directory.
+# NUL keeps names with spaces intact end to end; a name with a newline in it is
+# still out of reach (grep -l prints one path per line) and is not defended.
 repo_files() {
-  find . -type f -not -path './.git/*' -not -path "./$SELF" | sort
+  local root=${1:-.}
+  find "$root" -type f -not -path "$root/.git/*" -not -path "$root/$SELF" -print0
 }
 
-# count_matches <pattern> — occurrences (not lines) across repo_files
+# count_matches <pattern> [root] — occurrences (not lines) across repo_files.
+# /dev/null is passed to grep so it never falls back to reading stdin when the
+# scan comes up empty.
 count_matches() {
   local n
-  n=$(repo_files | xargs grep -o -F -- "$1" 2>/dev/null | wc -l)
+  n=$(repo_files "${2:-.}" | xargs -0 grep -o -F -- "$1" /dev/null 2>/dev/null | wc -l)
   printf '%s' "$((n))"
+}
+
+# files_with <string> [root] — the files under <root> that contain the fixed
+# string, one per line, sorted (the sort belongs here, not in find: the NUL
+# stream must stay in find's order all the way to grep).
+files_with() {
+  repo_files "${2:-.}" | xargs -0 grep -l -F -- "$1" /dev/null 2>/dev/null | sort
 }
 
 # tree_scripts <readme> — the *.sh names listed in the README's file tree
@@ -128,6 +143,16 @@ check "exit-code extractor sees past quotes and comments" \
       "$([[ $got == 7 ]] && echo 0 || echo 1)" \
       "extracted [$(printf '%s' "$got" | tr '\n' ' ')], expected [7]"
 
+# The file scanner has to reach a file whose name has a space in it, or a dead
+# string could hide in one. Exercised on a throwaway tree, never in the repo.
+SELFTMP=$(mktemp -d)
+trap 'rm -rf "$SELFTMP"' EXIT
+printf '%s\n' '--isolate-workspaces' > "$SELFTMP/a b.txt"
+got=$(files_with '--isolate-workspaces' "$SELFTMP")
+check "file scanner reads a file name with a space" \
+      "$([[ $got == "$SELFTMP/a b.txt" ]] && echo 0 || echo 1)" \
+      "found [$got], expected [$SELFTMP/a b.txt]"
+
 # 1. The rollback command is one string, in every file that documents it. -----
 for f in $ROLLBACK_FILES; do
   if grep -q -F -- "$ROLLBACK" "$f" 2>/dev/null; then
@@ -181,7 +206,7 @@ check "gate.sh only exits documented codes" \
 # Each one described a protocol that no longer exists; a copy left behind
 # contradicts the current one.
 while IFS= read -r dead; do
-  hits=$(repo_files | xargs grep -l -F -- "$dead" 2>/dev/null)
+  hits=$(files_with "$dead")
   if [[ -z $hits ]]; then
     pass "dead string absent: $dead"
   else
@@ -198,8 +223,7 @@ DEAD
 # The exception: phase-3-structure.md explains why a "pure git mv" commit is
 # not enough. Anywhere else the phrase would be the old, wrong instruction.
 GITMV='pure `git mv`'
-hits=$(repo_files | xargs grep -l -F -- "$GITMV" 2>/dev/null |
-       grep -v '^\./references/phase-3-structure\.md$')
+hits=$(files_with "$GITMV" | grep -v '^\./references/phase-3-structure\.md$')
 check "\"$GITMV\" only in references/phase-3-structure.md" \
       "$([[ -z $hits ]] && echo 0 || echo 1)" "$hits"
 
