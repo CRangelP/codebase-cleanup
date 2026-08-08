@@ -225,6 +225,22 @@ mkdir -p "$TMP/go-no-tests/vendor/dep"
 printf 'module f\n\ngo 1.21\n' > "$TMP/go-no-tests/go.mod"
 printf 'package dep\n' > "$TMP/go-no-tests/vendor/dep/vendored_test.go"
 
+# Rust: evidence is a #[test] in the sources or a file under tests/.
+mkdir -p "$TMP/rust-with-tests/src"
+printf '[package]\nname = "f"\n' > "$TMP/rust-with-tests/Cargo.toml"
+printf 'pub fn f() {}\n\n#[test]\nfn t() {}\n' > "$TMP/rust-with-tests/src/lib.rs"
+
+mkdir -p "$TMP/rust-tests-dir/src" "$TMP/rust-tests-dir/tests"
+printf '[package]\nname = "f"\n' > "$TMP/rust-tests-dir/Cargo.toml"
+printf 'pub fn f() {}\n' > "$TMP/rust-tests-dir/src/lib.rs"
+printf 'fn it() {}\n' > "$TMP/rust-tests-dir/tests/it.rs"
+
+# target/ is build output: a test attribute in there is not the crate's suite.
+mkdir -p "$TMP/rust-no-tests/src" "$TMP/rust-no-tests/target/debug/tests"
+printf '[package]\nname = "f"\n' > "$TMP/rust-no-tests/Cargo.toml"
+printf 'fn main() {}\n' > "$TMP/rust-no-tests/src/main.rs"
+printf '#[test]\nfn t() {}\n' > "$TMP/rust-no-tests/target/debug/tests/dep.rs"
+
 mkdir -p "$TMP/go-hang"
 printf 'module f\n\ngo 1.21\n' > "$TMP/go-hang/go.mod"
 printf 'package f\n' > "$TMP/go-hang/x_test.go"
@@ -236,6 +252,7 @@ stub "$FAIL" dotnet 1
 stub_body "$HANG" go 'sleep 30'
 stub "$UV" uv 0
 GO="$TMP/stubs-go"; stub "$GO" go 0
+CARGO="$TMP/stubs-cargo"; stub "$CARGO" cargo 0
 # pytest's "no tests collected" code, with a passing mypy next to it.
 PY5="$TMP/stubs-py5"; stub "$PY5" pytest 5; stub "$PY5" mypy 0
 
@@ -292,6 +309,9 @@ case_run py-pytest-only-no-tests 3 "$TMP/py-pytest-only-no-tests" "$PY5:$BASE" \
          "no runnable checks" "no tests collected (exit 5)"
 case_run go-with-tests    0 "$TMP/go-with-tests" "$GO:$BASE"  "checks=typecheck,test" "GREEN"
 case_run go-no-tests      0 "$TMP/go-no-tests"  "$GO:$BASE"   "checks=typecheck" "not counted" '!go test'
+case_run rust-with-tests  0 "$TMP/rust-with-tests" "$CARGO:$BASE" "checks=typecheck,test" "GREEN"
+case_run rust-tests-dir   0 "$TMP/rust-tests-dir" "$CARGO:$BASE" "checks=typecheck,test" "GREEN"
+case_run rust-no-tests    0 "$TMP/rust-no-tests"  "$CARGO:$BASE" "checks=typecheck" "not counted" '!cargo test'
 case_run dotnet-no-tests  0 "$TMP/dotnet-no-tests" "$OK:$BASE" "checks=typecheck" "not counted" '!dotnet test'
 case_run dotnet-sub-no-t  0 "$TMP/dotnet-sub-no-tests" "$OK:$BASE" "checks=typecheck" "not counted" '!dotnet test'
 
