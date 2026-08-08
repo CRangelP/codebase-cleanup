@@ -13,17 +13,32 @@ total=0
 
 BASE="/usr/bin:/bin"
 
+# Extra environment for the next case_run only ("VAR=value VAR2=value2").
+# A single string instead of an array: bash 3.2 has no associative arrays and
+# word splitting is enough for the assignments used here.
+GATE_ENV=""
+LAST_ELAPSED=0
+
 stub() { # stub <dir> <name> <exit>
   mkdir -p "$1"
   printf '#!/bin/sh\nexit %s\n' "$3" > "$1/$2"
   chmod +x "$1/$2"
 }
 
+stub_body() { # stub_body <dir> <name> <shell body>
+  mkdir -p "$1"
+  printf '#!/bin/sh\n%s\n' "$3" > "$1/$2"
+  chmod +x "$1/$2"
+}
+
 case_run() { # case_run <name> <expected_exit> <dir> <PATH|-> <grep_pattern...>
   local name=$1 expected=$2 dir=$3 path=$4; shift 4
-  local out rc p ok=1
-  if [[ $path == - ]]; then out=$(bash "$GATE" "$dir" 2>&1); rc=$?
-  else out=$(PATH="$path" bash "$GATE" "$dir" 2>&1); rc=$?; fi
+  local out rc p ok=1 start=$SECONDS
+  # shellcheck disable=SC2086  # GATE_ENV is split on purpose
+  if [[ $path == - ]]; then out=$(env $GATE_ENV bash "$GATE" "$dir" 2>&1); rc=$?
+  else out=$(env PATH="$path" $GATE_ENV bash "$GATE" "$dir" 2>&1); rc=$?; fi
+  LAST_ELAPSED=$((SECONDS-start))
+  GATE_ENV=""
   [[ $rc -eq $expected ]] || ok=0
   for p in "$@"; do grep -q "$p" <<<"$out" || ok=0; done
   total=$((total+1))
@@ -32,6 +47,16 @@ case_run() { # case_run <name> <expected_exit> <dir> <PATH|-> <grep_pattern...>
     failures=$((failures+1))
     echo "FAILED: $name (exit=$rc, expected=$expected)"
     printf '%s\n' "$out" | sed 's/^/    /'
+  fi
+}
+
+elapsed_lt() { # elapsed_lt <name> <seconds> — asserts on the last case_run
+  local name=$1 limit=$2
+  total=$((total+1))
+  if [[ $LAST_ELAPSED -lt $limit ]]; then echo "ok: $name (${LAST_ELAPSED}s)"
+  else
+    failures=$((failures+1))
+    echo "FAILED: $name (elapsed=${LAST_ELAPSED}s, limit=${limit}s)"
   fi
 }
 
