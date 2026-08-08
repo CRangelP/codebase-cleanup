@@ -72,7 +72,8 @@ codebase-cleanup/
 └── scripts/
     ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/2/3/4
     ├── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
-    └── rollback_test.sh              prova executável do protocolo de rollback
+    ├── rollback_test.sh              prova executável do protocolo de rollback
+    └── coherence_test.sh             invariantes de coerência entre doc e código
 ```
 
 Para conferir a instalação, abra uma sessão nova (ou rode `/reload-skills`) e
@@ -80,18 +81,24 @@ veja se `codebase-cleanup` aparece na lista de skills disponíveis.
 
 ### Testes
 
-Duas suítes, sem dependência além de `bash` e `git`:
+Três suítes, sem dependência além de `bash` e `git`:
 
 ```bash
 bash scripts/gate_test.sh       # contrato do gate: exit codes, linha checks=, PARTIAL
 bash scripts/rollback_test.sh   # o que `git restore` recupera e o que ele destrói
+bash scripts/coherence_test.sh  # doc e código dizendo a mesma coisa
 ```
 
 Cada uma sai 0 quando tudo passou e imprime o caso que falhou quando não.
-Nenhuma das duas toca o repositório em que você a rodou: o gate usa stubs de
-toolchain e o rollback cria repositórios descartáveis dentro de um `mktemp -d`,
+Nenhuma das três toca o repositório em que você a rodou: o gate usa stubs de
+toolchain, o rollback cria repositórios descartáveis dentro de um `mktemp -d`,
 com `HOME` redirecionado e identidade de commit passada por `-c` — sua config
-do git não é lida nem escrita.
+do git não é lida nem escrita —, e a de coerência só lê arquivos.
+
+A terceira transforma em teste o que antes dependia de reler tudo: o comando de
+rollback escrito igual em todo lugar, o contrato de exit codes do gate batendo
+com os READMEs, instrução velha que ficou para trás e árvore de arquivos que
+combina com o que existe no disco.
 
 ### Nenhuma outra skill é obrigatória
 

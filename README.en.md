@@ -74,7 +74,8 @@ codebase-cleanup/
 └── scripts/
     ├── gate.sh                       multi-stack typecheck + tests, exit 0/1/2/3/4
     ├── gate_test.sh                  gate contract tests (toolchain stubs)
-    └── rollback_test.sh              executable proof of the rollback protocol
+    ├── rollback_test.sh              executable proof of the rollback protocol
+    └── coherence_test.sh             coherence invariants between docs and code
 ```
 
 To check the installation, open a new session (or run `/reload-skills`) and
@@ -82,18 +83,25 @@ see whether `codebase-cleanup` shows up in the list of available skills.
 
 ### Tests
 
-Two suites, with nothing to install beyond `bash` and `git`:
+Three suites, with nothing to install beyond `bash` and `git`:
 
 ```bash
 bash scripts/gate_test.sh       # gate contract: exit codes, the checks= line, PARTIAL
 bash scripts/rollback_test.sh   # what `git restore` brings back and what it destroys
+bash scripts/coherence_test.sh  # docs and code saying the same thing
 ```
 
 Each exits 0 when everything passed and prints the failing case when it does
-not. Neither touches the repository you run it from: the gate suite uses
-toolchain stubs, and the rollback suite builds throwaway repositories inside a
+not. None of them touches the repository you run it from: the gate suite uses
+toolchain stubs, the rollback suite builds throwaway repositories inside a
 `mktemp -d`, with `HOME` redirected and the commit identity passed via `-c` —
-your git config is never read nor written.
+your git config is never read nor written —, and the coherence suite only
+reads files.
+
+The third one turns into a test what used to depend on re-reading everything:
+the rollback command written the same way everywhere, the gate's exit code
+contract matching the READMEs, old instructions left behind, and a file tree
+that agrees with what is on disk.
 
 ### No other skill is required
 
