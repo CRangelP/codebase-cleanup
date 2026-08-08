@@ -269,7 +269,8 @@ Never exclude tests with `ignore` to get the same effect.
 ## 1.3 Delete in atomic commits, one per category
 
 Run all three without asking (GREEN level) or the first two (YELLOW). Each one
-is: delete → `git add -A` → gate → commit. For the gate, use `scripts/gate.sh`
+is: delete → `git add -A` → gate → commit → regenerate the report. For the
+gate, use `scripts/gate.sh`
 (it detects the stack and the package manager and runs typecheck + tests in the
 right order); if it exits with code 3, run the stack's equivalent commands by
 hand.
@@ -288,12 +289,51 @@ of the user's.
 Kept separate because if something breaks in production two weeks from now, the
 user needs to revert *one* commit — not a 400-file cleanup.
 
+**Unused deps: install after pruning the manifest.** Removing an entry from
+`package.json` does not remove the package from `node_modules`, and the gate
+never installs — the resolver still finds the package on disk, typecheck and
+tests pass, and the break only surfaces on CI or on the next machine that
+installs from the pruned manifest. So, after editing the manifest and before
+`git add -A`, run the package manager's plain install:
+
+```bash
+npm install                          # npm
+pnpm install --no-frozen-lockfile    # pnpm
+yarn install --no-immutable          # yarn berry (yarn 1: yarn install)
+bun install                          # bun
+```
+
+Plain, never the frozen form. `--frozen-lockfile`, `--immutable` and the CI
+defaults that turn them on refuse a lockfile that no longer matches the
+manifest — which is exactly the state a correct prune produces, so a good
+deletion would come back as a red gate for the wrong reason. `npm ci` accepts
+the removal but never writes the lockfile, leaving a stale one in the commit.
+The updated lockfile goes in this category's commit: it is what carries the
+prune to every other machine.
+
+**Regenerate the report between categories.** After each category's commit, run
+the 1.2 command again — same hardened form, same file — and read the next
+category from the fresh report. The three feed each other: deleting orphan
+files kills exports the old report still saw as alive and frees deps it saw as
+used, while some exports it lists as dead live in files the previous category
+already removed. On a frozen report those second-order items survive the
+cleanup and a category tries to edit paths that no longer exist. The cost is
+two extra knip runs per cleanup.
+
+A category that is skipped (YELLOW does not run exports) or that fails its gate
+leaves no commit and nothing changed on disk, so there is nothing to regenerate
+from — keep the current report and go to the next category. The regeneration
+after the last category that did commit is the one the final report counts
+against.
+
 **If the gate fails:** `git restore --staged --worktree .`, record the category
 as failed in `CLEANUP_PROGRESS.md` along with the error, and **move on to the
 next category**.
 Do not stop the entire pipeline and do not try to fix it — if typecheck broke,
 knip was wrong about that category, and the useful information is which
-category, not a patch.
+category, not a patch. On the deps category, that restore brings back
+`package.json` and the lockfile but not `node_modules`: run the install again
+before starting orphan files.
 
 Do not run `knip --fix` until the config has settled for two or three rounds
 with no surprises.
@@ -420,6 +460,7 @@ structure with a rationale. Only then execute.
 GREEN level runs the whole plan without asking. One folder per commit:
 
 ```bash
+mkdir -p src/features/billing
 git mv src/utils/format.ts src/features/billing/format.ts   # always git mv
 ```
 
@@ -488,6 +529,12 @@ Branch: `cleanup/YYYYMMDD` · Level: GREEN · N commits
 ### Pending your decision
 - (nothing)
 ```
+
+The phase 1 line counts what each category actually removed, tallied per commit
+from the report that category ran on — not the numbers of the first report,
+which stopped describing the repo the moment the first commit landed. The last
+regeneration settles the rest: whatever it still lists is what survived, and it
+belongs under "Failed / not done", along with any category that was skipped.
 
 If the level was RED, the report is diagnosis only: list what you would do and
 what needs to exist (tests, typecheck) to make it possible.
