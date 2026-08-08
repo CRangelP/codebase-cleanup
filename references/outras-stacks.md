@@ -4,7 +4,7 @@ O knip é só JS/TS. A lógica da fase 1 é idêntica em qualquer stack — o qu
 é o ferramental e, importante, a **confiabilidade** dele.
 
 Detecte o stack pelo manifesto: `package.json`, `pyproject.toml`/`requirements.txt`,
-`go.mod`, `Cargo.toml`, `pom.xml`/`build.gradle`, `Gemfile`, `*.csproj`.
+`go.mod`, `Cargo.toml`, `pom.xml`/`build.gradle`, `Gemfile`, `*.sln`/`*.csproj`.
 
 ## Python
 
@@ -82,6 +82,29 @@ bundle-audit check           # CVEs
 
 Metaprogramação torna qualquer resultado suspeito. Diagnóstico apenas.
 
+## .NET (C# / F#)
+
+```bash
+dotnet build --nologo                # typecheck (é o que o gate roda)
+dotnet test --nologo
+dotnet list package --vulnerable     # CVEs
+dotnet list package --deprecated
+```
+
+Para deps e código morto, em ordem de confiança:
+
+- **ReferenceTrimmer** (MSBuild task + analyzer): aponta referências e pacotes
+  não usados a partir do `GetUsedAssemblyReferences` do próprio compilador.
+  É dado do compilador, não heurística — a remoção mais segura do stack.
+- **DotnetUnused** (CLI sobre Roslyn): métodos, propriedades e campos não
+  usados; `--unused-packages` cobre pacotes NuGet.
+- Analisadores embutidos `IDE0051`/`IDE0052`: membros privados não usados,
+  sem instalar nada.
+
+Reflexão, DI (ASP.NET Core), serialização e descoberta por atributo têm o
+mesmo efeito da JVM: análise de código pouco confiável. AMARELO por padrão —
+deps apontadas pelo compilador podem sair, código é diagnóstico.
+
 ---
 
 ## Regra geral
@@ -94,6 +117,7 @@ A confiança na deleção automática segue a qualidade do grafo:
 | Go | deadcode (grafo de chamadas) | sim, em VERDE |
 | Rust | compilador + udeps | sim para deps, confirmar código |
 | Python | vulture (sintático) | confirmar sempre |
+| .NET | ReferenceTrimmer (dado do compilador) | sim para deps, código diagnóstico |
 | JVM / Ruby | — | diagnóstico apenas |
 
 Quando a ferramenta não constrói grafo de alcançabilidade, ela não sabe o que

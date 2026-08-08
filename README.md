@@ -16,7 +16,11 @@ porque fronteira de módulo é decisão de domínio, não de código.
 - Para projetos JS/TS: Node com `npx` (o knip roda via `npx knip`, sem
   instalação prévia).
 - Outros stacks usam as ferramentas de cada ecossistema (vulture, deadcode,
-  cargo-udeps). O que faltar, a skill aponta em vez de instalar por conta.
+  cargo-udeps, ReferenceTrimmer). O que faltar, a skill aponta em vez de
+  instalar por conta.
+- O gate (`scripts/gate.sh`) detecta o stack pelo manifesto e roda typecheck +
+  testes em JS/TS, Go, Rust, Python, JVM, Ruby e .NET — basta o toolchain
+  estar no PATH. É script bash (o 3.2 do macOS serve); no Windows, use WSL.
 
 ## Instalação
 
@@ -47,13 +51,39 @@ codebase-cleanup/
 │   ├── knip-config.md                configuração do knip sem armadilhas
 │   ├── fase-2-consolidacao.md        protocolo de consolidação de módulos
 │   ├── fase-3-estrutura.md           padrões de organização de pastas
-│   └── outras-stacks.md              Python, Go, Rust, JVM, Ruby
+│   └── outras-stacks.md              Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
-    └── gate.sh                       typecheck + testes, exit 0/1/3
+    ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/3
+    └── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
 ```
 
 Para conferir a instalação, abra uma sessão nova (ou rode `/reload-skills`) e
 veja se `codebase-cleanup` aparece na lista de skills disponíveis.
+
+### Skill complementar (opcional, mas vale instalar antes)
+
+Ao fim da fase 1, a skill produz uma auditoria do que sobrou depois da
+limpeza. Se a [tech-debt-audit](https://github.com/ksimback/tech-debt-skill)
+estiver instalada, a codebase-cleanup segue o protocolo dela nessa etapa em
+vez de improvisar o relatório — o resultado sai num formato estável, com
+severidade e estimativa de esforço por achado.
+
+O comando abaixo está pinado num commit específico, porque o arquivo baixado
+não é dado: é instrução que o Claude executa com as permissões da sua sessão.
+Leia o arquivo antes de usar, e revise de novo se um dia atualizar para uma
+versão mais nova do repositório:
+
+```bash
+mkdir -p ~/.claude/skills/tech-debt-audit
+curl -fSL -o ~/.claude/skills/tech-debt-audit/SKILL.md \
+  https://raw.githubusercontent.com/ksimback/tech-debt-skill/5a15c1ca4a929b2759461c218478de391a8bda0f/SKILL.md
+shasum -a 256 ~/.claude/skills/tech-debt-audit/SKILL.md
+# esperado: 60bb907377d11cd71e3b0aa6bb67a3128de8ad6230352ff61c621a9d8bea441f
+```
+
+Sem ela nada quebra: a auditoria é gerada inline, só com formato menos
+previsível. É a única dependência entre skills — nenhuma outra precisa existir
+para a codebase-cleanup rodar.
 
 ## Uso
 
@@ -119,3 +149,20 @@ commitado e convive com hooks que bloqueiam comandos destrutivos.
 - Nível VERMELHO devolve relatório, não faxina. Se o projeto não tem teste nem
   typecheck, o primeiro passo é criar uma verificação mínima; a skill aponta o
   caminho no próprio relatório.
+
+## Créditos
+
+Skills e materiais usados na construção desta:
+
+- [tech-debt-audit](https://github.com/ksimback/tech-debt-skill), de ksimback —
+  a fase 1.4 segue o protocolo dessa skill quando ela está instalada
+  (instalação na seção acima).
+- [skill-creator](https://github.com/anthropics/claude-plugins-official),
+  plugin oficial da Anthropic — conduziu a revisão de boas práticas, os evals
+  comparativos e a otimização da description desta skill.
+- [Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing),
+  do WikiProject AI Cleanup da Wikipedia — base da adaptação local
+  `humanizer-pt-br`, usada na escrita deste README.
+
+As duas últimas foram ferramentas de desenvolvimento: não precisam estar
+instaladas para usar a codebase-cleanup.
