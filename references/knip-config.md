@@ -1,37 +1,37 @@
-# Configuração do knip
+# knip configuration
 
-Leia antes de escrever `knip.json`. Só se aplica a JS/TS.
+Read this before writing `knip.json`. Applies to JS/TS only.
 
-Este guia foi escrito contra o knip v6. Confira a major instalada com
-`npx knip --version`; se for outra, valide contra a doc oficial (knip.dev) o
-que divergir — em especial o schema, a detecção de ciclos e nomes de opção.
-Ajuste a versão do `$schema` abaixo para a major em uso.
+This guide was written against knip v6. Check the installed major with
+`npx knip --version`; if it differs, validate whatever diverges against the
+official docs (knip.dev) — especially the schema, cycle detection and option
+names. Adjust the `$schema` version below to the major in use.
 
-## Índice
-- [Ordem de trabalho](#ordem-de-trabalho)
-- [Esqueleto](#esqueleto)
-- [Aliases de import](#aliases-de-import)
-- [Modo produção](#modo-produção)
-- [Quando precisar suprimir algo](#quando-precisar-suprimir-algo)
+## Index
+- [Order of work](#order-of-work)
+- [Skeleton](#skeleton)
+- [Import aliases](#import-aliases)
+- [Production mode](#production-mode)
+- [When you need to suppress something](#when-you-need-to-suppress-something)
 - [Plugins](#plugins)
 - [Monorepo](#monorepo)
-- [Detecção de ciclos](#detecção-de-ciclos)
-- [Armadilhas](#armadilhas)
+- [Cycle detection](#cycle-detection)
+- [Pitfalls](#pitfalls)
 
-## Ordem de trabalho
+## Order of work
 
-1. `npx knip` sem config nenhuma
-2. Resolver **todos** os configuration hints
-3. Só então escrever/ajustar `knip.json`
-4. Repetir 2–3 até hints zerarem
+1. `npx knip` with no config at all
+2. Resolve **every** configuration hint
+3. Only then write/adjust `knip.json`
+4. Repeat 2–3 until the hints reach zero
 5. `npx knip --production --reporter json > knip-report.json`
 
-A mentalidade certa: quando o knip reporta algo inesperado, ele está dizendo a
-verdade sobre o grafo de módulos — não conseguiu alcançar aquele código a partir
-de um entry. Resultado surpreendente é achado real ou lacuna de configuração,
-quase nunca falso positivo para silenciar.
+The right mindset: when knip reports something unexpected, it is telling the
+truth about the module graph — it could not reach that code from an entry. A
+surprising result is either a real finding or a configuration gap, almost never
+a false positive to silence.
 
-## Esqueleto
+## Skeleton
 
 ```jsonc
 {
@@ -41,20 +41,20 @@ quase nunca falso positivo para silenciar.
 }
 ```
 
-- `entry` — raízes do grafo, de onde a caminhada começa
-- `project` — universo de arquivos considerados
-- arquivo morto = está em `project` mas não é alcançável a partir de `entry`
-- prefixo `!` nega o padrão
-- sufixo `!` marca o padrão como exclusivo de production mode
+- `entry` — the graph's roots, where the walk starts
+- `project` — the universe of files under consideration
+- a dead file is in `project` but unreachable from `entry`
+- the `!` prefix negates the pattern
+- the `!` suffix marks the pattern as production-mode only
 
-Use `knip.jsonc` (schema `schema-jsonc.json`) se quiser comentários — vale a
-pena para documentar por que cada entry exótico existe.
+Use `knip.jsonc` (schema `schema-jsonc.json`) if you want comments — worth it
+to document why each exotic entry exists.
 
-## Aliases de import
+## Import aliases
 
-Maior fonte isolada de falso positivo em massa. O knip inclui
-`compilerOptions.paths` do tsconfig automaticamente, mas **não** aliases de
-webpack, Babel, vite ou jest moduleNameMapper. Declare na mão:
+The single largest source of mass false positives. knip includes the tsconfig's
+`compilerOptions.paths` automatically, but **not** webpack, Babel, vite or jest
+`moduleNameMapper` aliases. Declare those by hand:
 
 ```jsonc
 {
@@ -65,40 +65,41 @@ webpack, Babel, vite ou jest moduleNameMapper. Declare na mão:
 }
 ```
 
-Semântica igual à do TypeScript: valores são arrays de caminhos relativos, e
-padrões sem `*` são match exato. Cada workspace pode ter seus próprios `paths`.
+Same semantics as TypeScript: values are arrays of relative paths, and patterns
+without `*` are exact matches. Each workspace can have its own `paths`.
 
-## Modo produção
+## Production mode
 
 ```bash
 npx knip --production
 ```
 
-Exclui testes e devDependencies automaticamente. É o que separa "vivo" de "vivo
-só para os testes" — código que só existe para satisfazer a suíte é dívida, não
-funcionalidade.
+Excludes tests and devDependencies automatically. This is what separates "alive"
+from "alive only for the tests" — code that exists only to satisfy the suite is
+debt, not functionality.
 
-**Nunca** tente obter o mesmo efeito com `ignore` em `**/*.test.ts`.
+**Never** try to get the same effect with `ignore` on `**/*.test.ts`.
 
-## Quando precisar suprimir algo
+## When you need to suppress something
 
-Evite `ignore`: ele não exclui da análise, só suprime o report, criando ponto
-cego. Sempre existe opção mais cirúrgica:
+Avoid `ignore`: it does not exclude anything from the analysis, it only
+suppresses the report, creating a blind spot. There is always a more surgical
+option:
 
-| Situação | Opção |
+| Situation | Option |
 |---|---|
-| Código gerado, não deve contar como arquivo morto | `ignoreFiles` |
-| Dep usada de forma invisível ao grafo | `ignoreDependencies` |
-| Só certos tipos de issue em arquivos gerados | `ignoreIssues` |
-| Export usado apenas dentro do próprio arquivo | `ignoreExportsUsedInFile` |
-| Binário chamado em script, sem pacote correspondente | `ignoreBinaries` |
-| Membro de enum/namespace | `ignoreMembers` |
-| Especificador que não resolve | `ignoreUnresolved` |
-| Testes atrapalhando | `--production` (nunca `ignore`) |
+| Generated code, should not count as a dead file | `ignoreFiles` |
+| Dep used in a way invisible to the graph | `ignoreDependencies` |
+| Only certain issue types in generated files | `ignoreIssues` |
+| Export used only inside its own file | `ignoreExportsUsedInFile` |
+| Binary called from a script, with no matching package | `ignoreBinaries` |
+| Enum/namespace member | `ignoreMembers` |
+| Specifier that does not resolve | `ignoreUnresolved` |
+| Tests getting in the way | `--production` (never `ignore`) |
 
-`ignoreFiles` difere de `ignore` por afetar só a seção de arquivos não usados —
-o arquivo continua analisado para exports, deps e imports não resolvidos. É
-quase sempre o que se queria ao pensar em `ignore`.
+`ignoreFiles` differs from `ignore` by affecting only the unused-files section —
+the file is still analyzed for exports, deps and unresolved imports. It is
+almost always what you meant when you reached for `ignore`.
 
 ```jsonc
 {
@@ -111,10 +112,10 @@ quase sempre o que se queria ao pensar em `ignore`.
 }
 ```
 
-`ignoreDependencies`, `ignoreBinaries`, `ignoreUnresolved` e `ignoreMembers`
-aceitam regex. Regex de verdade (não string) só em config dinâmica `.ts`.
+`ignoreDependencies`, `ignoreBinaries`, `ignoreUnresolved` and `ignoreMembers`
+accept regex. Real regex (not a string) works only in a dynamic `.ts` config.
 
-Alternativa a suprimir por padrão: tags JSDoc.
+An alternative to pattern-based suppression: JSDoc tags.
 
 ```ts
 /** @internal */
@@ -129,8 +130,8 @@ export const x = 1;
 
 ```jsonc
 {
-  "playwright": true,                    // força habilitar
-  "webpack": false,                      // desabilita
+  "playwright": true,                    // force enable
+  "webpack": false,                      // disable
   "mocha": {
     "config": "config/mocha.config.js",
     "entry": ["**/*.spec.js"]
@@ -138,15 +139,14 @@ export const x = 1;
 }
 ```
 
-Raramente é necessário sobrescrever `entry` de plugin — eles já leem os padrões
-customizados da configuração da própria ferramenta. Configuração de plugin
-funciona em raiz e por workspace, e um nível pode desabilitar o que o outro
-habilitou.
+Overriding a plugin's `entry` is rarely necessary — plugins already read the
+custom patterns from each tool's own configuration. Plugin configuration works
+at the root and per workspace, and one level can disable what another enabled.
 
 ## Monorepo
 
-Pegadinha que quebra silenciosamente: **num projeto com workspaces, `entry` e
-`project` no nível raiz são ignorados.** Use o workspace `"."`.
+A gotcha that breaks silently: **in a project with workspaces, root-level
+`entry` and `project` are ignored.** Use the `"."` workspace.
 
 ```jsonc
 {
@@ -158,19 +158,20 @@ Pegadinha que quebra silenciosamente: **num projeto com workspaces, `entry` e
 }
 ```
 
-- workspace = diretório com `package.json`
-- workspaces declarados aqui e ausentes do `package.json`/`pnpm-workspace.yaml`
-  são **adicionados** à análise
-- opções só de raiz: `include`, `exclude`, `ignoreWorkspaces`, `workspaces`
-- workspaces não aninham na config (mas podem aninhar no filesystem)
-- projeto com um único `package.json` na raiz → ver "integrated monorepos" na
-  doc, não workspaces
+- a workspace is a directory with a `package.json`
+- workspaces declared here and absent from `package.json`/`pnpm-workspace.yaml`
+  are **added** to the analysis
+- root-only options: `include`, `exclude`, `ignoreWorkspaces`, `workspaces`
+- workspaces do not nest in the config (but they can nest on the filesystem)
+- a project with a single root `package.json` → see "integrated monorepos" in
+  the docs, not workspaces
 
-Em monorepo, considere `--isolate-workspaces` ao investigar um pacote só.
+In a monorepo, consider `--isolate-workspaces` when investigating a single
+package.
 
-## Detecção de ciclos
+## Cycle detection
 
-Nativa no v6 — dispensa madge para a maioria dos casos.
+Native in v6 — no need for madge in most cases.
 
 ```jsonc
 {
@@ -181,28 +182,30 @@ Nativa no v6 — dispensa madge para a maioria dos casos.
 }
 ```
 
-Arestas de import dinâmico ficam **fora** por padrão: um import dinâmico adia a
-avaliação, então não causa o hazard de inicialização que a detecção de ciclos
-existe para pegar. Ligue `dynamicImports` só se quiser o grafo completo para a
-fase 3.
+Dynamic-import edges are **out** by default: a dynamic import defers
+evaluation, so it does not cause the initialization hazard that cycle detection
+exists to catch. Turn `dynamicImports` on only if you want the full graph for
+phase 3.
 
-Caminhos em `allow` são relativos à raiz e omitem a repetição final do primeiro
-arquivo.
+Paths in `allow` are relative to the root and omit the trailing repetition of
+the first file.
 
-## Armadilhas
+## Pitfalls
 
-**`--fix` cedo demais.** Rodar antes da config assentar é destrutivo. Espere
-duas ou três rodadas em que o output já não surpreende.
+**`--fix` too early.** Running it before the config settles is destructive.
+Wait for two or three rounds where the output no longer surprises you.
 
-**Auto-imports e auto-mocking** (Nuxt, Jest) fazem código parecer órfão. Solução
-é estender os padrões de `entry`, não ignorar.
+**Auto-imports and auto-mocking** (Nuxt, Jest) make code look orphaned. The fix
+is to extend the `entry` patterns, not to ignore.
 
-**Rotas por convenção** (pages do Next, handlers registrados por glob) e imports
-dinâmicos com string montada em runtime são invisíveis ao grafo. Declare como
-entry explicitamente.
+**Convention-based routes** (Next pages, handlers registered by glob) and
+dynamic imports with a string built at runtime are invisible to the graph.
+Declare them as entries explicitly.
 
-**Múltiplos `.eslintrc`/`jest.config.js`** num repo com um só `package.json`
-aparecem como não usados. É caso de integrated monorepo, não de ignore.
+**Multiple `.eslintrc`/`jest.config.js`** in a repo with a single
+`package.json` show up as unused. That is an integrated monorepo case, not an
+ignore case.
 
-**`treatConfigHintsAsErrors: true`** é bom para CI depois que a config
-estabilizou — garante que ninguém mexe no build e deixa o grafo furado.
+**`treatConfigHintsAsErrors: true`** is good for CI once the config has
+stabilized — it stops anyone from changing the build and leaving the graph
+full of holes unnoticed.

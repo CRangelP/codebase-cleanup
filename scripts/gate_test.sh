@@ -1,90 +1,94 @@
 #!/usr/bin/env bash
-# Testes de contrato do gate.sh: exit codes 0/1/3, linha checks= e PARCIAL.
-# Stacks sem toolchain na máquina são cobertos por stubs no PATH — o contrato
-# não depende do toolchain real, só do exit code dele.
-# Uso: gate_test.sh   (exit 0 = matriz inteira passou)
+# Contract tests for gate.sh: exit codes 0/1/3, the checks= line and PARTIAL.
+# Stacks whose toolchain is absent from the machine are covered by PATH stubs —
+# the contract does not depend on the real toolchain, only on its exit code.
+# Usage: gate_test.sh   (exit 0 = the whole matrix passed)
 set -u
 
 GATE="$(cd "$(dirname "$0")" && pwd)/gate.sh"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-falhas=0
+failures=0
 total=0
 
 BASE="/usr/bin:/bin"
 
-stub() { # stub <dir> <nome> <exit>
+stub() { # stub <dir> <name> <exit>
   mkdir -p "$1"
   printf '#!/bin/sh\nexit %s\n' "$3" > "$1/$2"
   chmod +x "$1/$2"
 }
 
-caso() { # caso <nome> <exit_esperado> <dir> <PATH|-> <padrao_grep...>
-  local nome=$1 esperado=$2 dir=$3 caminho=$4; shift 4
+case_run() { # case_run <name> <expected_exit> <dir> <PATH|-> <grep_pattern...>
+  local name=$1 expected=$2 dir=$3 path=$4; shift 4
   local out rc p ok=1
-  if [[ $caminho == - ]]; then out=$(bash "$GATE" "$dir" 2>&1); rc=$?
-  else out=$(PATH="$caminho" bash "$GATE" "$dir" 2>&1); rc=$?; fi
-  [[ $rc -eq $esperado ]] || ok=0
+  if [[ $path == - ]]; then out=$(bash "$GATE" "$dir" 2>&1); rc=$?
+  else out=$(PATH="$path" bash "$GATE" "$dir" 2>&1); rc=$?; fi
+  [[ $rc -eq $expected ]] || ok=0
   for p in "$@"; do grep -q "$p" <<<"$out" || ok=0; done
   total=$((total+1))
-  if [[ $ok -eq 1 ]]; then echo "ok: $nome"
+  if [[ $ok -eq 1 ]]; then echo "ok: $name"
   else
-    falhas=$((falhas+1))
-    echo "FALHOU: $nome (exit=$rc, esperado=$esperado)"
+    failures=$((failures+1))
+    echo "FAILED: $name (exit=$rc, expected=$expected)"
     printf '%s\n' "$out" | sed 's/^/    /'
   fi
 }
 
 # fixtures -------------------------------------------------------------
-mkdir -p "$TMP/vazio"
+mkdir -p "$TMP/empty"
 
-mkdir -p "$TMP/js-verde"
-cat > "$TMP/js-verde/package.json" <<'EOF'
+mkdir -p "$TMP/js-green"
+cat > "$TMP/js-green/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e 0"}}
 EOF
 
-mkdir -p "$TMP/js-so-test"
-cat > "$TMP/js-so-test/package.json" <<'EOF'
+mkdir -p "$TMP/js-test-only"
+cat > "$TMP/js-test-only/package.json" <<'EOF'
 {"name":"f","scripts":{"test":"node -e 0"}}
 EOF
 
-mkdir -p "$TMP/js-vermelho"
-cat > "$TMP/js-vermelho/package.json" <<'EOF'
+mkdir -p "$TMP/js-red"
+cat > "$TMP/js-red/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e 'process.exit(1)'"}}
 EOF
 
-mkdir -p "$TMP/poliglota/tests"
-touch "$TMP/poliglota/pyproject.toml" "$TMP/poliglota/tests/test_x.py"
-printf 'module f\n\ngo 1.21\n' > "$TMP/poliglota/go.mod"
+mkdir -p "$TMP/polyglot/tests"
+touch "$TMP/polyglot/pyproject.toml" "$TMP/polyglot/tests/test_x.py"
+printf 'module f\n\ngo 1.21\n' > "$TMP/polyglot/go.mod"
 
-mkdir -p "$TMP/dotnet-raiz" "$TMP/dotnet-sub/src/App"
-touch "$TMP/dotnet-raiz/App.csproj" "$TMP/dotnet-sub/src/App/App.fsproj"
+mkdir -p "$TMP/dotnet-root" "$TMP/dotnet-sub/src/App"
+touch "$TMP/dotnet-root/App.csproj" "$TMP/dotnet-sub/src/App/App.fsproj"
 
-mkdir -p "$TMP/jvm-hibrido"
-touch "$TMP/jvm-hibrido/pom.xml" "$TMP/jvm-hibrido/build.gradle"
+mkdir -p "$TMP/jvm-hybrid"
+touch "$TMP/jvm-hybrid/pom.xml" "$TMP/jvm-hybrid/build.gradle"
 
 mkdir -p "$TMP/py-setupcfg/test"
 printf '[mypy]\n' > "$TMP/py-setupcfg/setup.cfg"
 touch "$TMP/py-setupcfg/test/test_x.py"
+
+mkdir -p "$TMP/go-only"
+printf 'module f\n\ngo 1.21\n' > "$TMP/go-only/go.mod"
 
 # stubs ----------------------------------------------------------------
 OK="$TMP/stubs-ok"; FAIL="$TMP/stubs-fail"
 for t in pytest mypy dotnet mvn gradle; do stub "$OK" "$t" 0; done
 stub "$FAIL" dotnet 1
 
-# matriz ---------------------------------------------------------------
-caso vazio            3 "$TMP/vazio"       -                    "nenhum check"
-caso js-verde         0 "$TMP/js-verde"    -                    "checks=typecheck,test" "VERDE"
-caso js-so-test       0 "$TMP/js-so-test"  -                    "checks=test" "AMARELO"
-caso js-vermelho      1 "$TMP/js-vermelho" -                    "VERMELHO"
-caso js-sem-node      3 "$TMP/js-verde"    "$BASE"              "ausente"
-caso poliglota-parcial 3 "$TMP/poliglota"  "$OK:$BASE"          "checks=test" "PARCIAL"
-caso dotnet-verde     0 "$TMP/dotnet-raiz" "$OK:$BASE"          "checks=typecheck,test" "VERDE"
-caso dotnet-vermelho  1 "$TMP/dotnet-raiz" "$FAIL:$BASE"        "VERMELHO"
-caso dotnet-subdir    0 "$TMP/dotnet-sub"  "$OK:$BASE"          "src/App/App.fsproj" "VERDE"
-caso jvm-hibrido      0 "$TMP/jvm-hibrido" "$OK:$BASE"          "mvn -q test" "gradle test" "VERDE"
-caso py-setupcfg      0 "$TMP/py-setupcfg" "$OK:$BASE"          "checks=typecheck,test" "VERDE"
+# matrix ---------------------------------------------------------------
+case_run empty            3 "$TMP/empty"        -             "no runnable checks"
+case_run js-green         0 "$TMP/js-green"     -             "checks=typecheck,test" "GREEN"
+case_run js-test-only     0 "$TMP/js-test-only" -             "checks=test" "YELLOW"
+case_run js-red           1 "$TMP/js-red"       -             "RED"
+case_run js-no-node       3 "$TMP/js-green"     "$BASE"       "toolchain 'node' missing"
+case_run polyglot-partial 3 "$TMP/polyglot"     "$OK:$BASE"   "checks=test" "some detected stack"
+case_run partial-none-ran 3 "$TMP/go-only"      "$BASE"       "nothing ran"
+case_run dotnet-green     0 "$TMP/dotnet-root"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
+case_run dotnet-red       1 "$TMP/dotnet-root"  "$FAIL:$BASE" "RED"
+case_run dotnet-subdir    0 "$TMP/dotnet-sub"   "$OK:$BASE"   "src/App/App.fsproj" "GREEN"
+case_run jvm-hybrid       0 "$TMP/jvm-hybrid"   "$OK:$BASE"   "mvn -q test" "gradle test" "GREEN"
+case_run py-setupcfg      0 "$TMP/py-setupcfg"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
 
 echo "----"
-echo "$((total-falhas))/$total casos passaram"
-[[ $falhas -eq 0 ]]
+echo "$((total-failures))/$total cases passed"
+[[ $failures -eq 0 ]]
