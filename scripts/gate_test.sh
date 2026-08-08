@@ -78,6 +78,9 @@ cat > "$TMP/js-red/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e 'process.exit(1)'"}}
 EOF
 
+mkdir -p "$TMP/js-bad-json"
+printf '{"name":"f",\n' > "$TMP/js-bad-json/package.json"
+
 mkdir -p "$TMP/polyglot/tests"
 touch "$TMP/polyglot/pyproject.toml" "$TMP/polyglot/tests/test_x.py"
 printf 'module f\n\ngo 1.21\n' > "$TMP/polyglot/go.mod"
@@ -107,6 +110,7 @@ case_run js-green         0 "$TMP/js-green"     -             "checks=typecheck,
 case_run js-test-only     0 "$TMP/js-test-only" -             "checks=test" "YELLOW"
 case_run js-red           1 "$TMP/js-red"       -             "RED"
 case_run js-no-node       3 "$TMP/js-green"     "$BASE"       "toolchain 'node' missing"
+case_run js-bad-json      3 "$TMP/js-bad-json"  -             "unparseable"
 case_run polyglot-partial 3 "$TMP/polyglot"     "$OK:$BASE"   "checks=test" "some detected stack"
 case_run partial-none-ran 3 "$TMP/go-only"      "$BASE"       "nothing ran"
 case_run dotnet-green     0 "$TMP/dotnet-root"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"

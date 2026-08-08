@@ -51,6 +51,11 @@ if [[ -f package.json ]]; then
   fi
   if ! command -v node >/dev/null; then missing package.json node
   elif ! command -v "$PM" >/dev/null; then missing package.json "$PM"
+  elif ! node -e "require('./package.json')" 2>/dev/null; then
+    # Without this probe the script lookup below fails silently and the whole
+    # JS/TS stack disappears from the verdict as if it did not exist.
+    echo "[gate] package.json unparseable — JS/TS checks skipped" >&2
+    incomplete=1
   else
     for script in typecheck test; do
       if node -e "const s=require('./package.json').scripts||{};process.exit(s['$script']?0:1)" 2>/dev/null; then
