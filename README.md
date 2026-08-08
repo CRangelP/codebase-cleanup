@@ -168,9 +168,9 @@ commita na main e nunca usa `git reset --hard` — o rollback dela é
 commitado e convive com hooks que bloqueiam comandos destrutivos.
 
 Note o "tudo": alteração sua que estava no diretório antes de a skill começar
-entraria nessa conta. É por isso que ela exige árvore limpa no início e para
-para perguntar quando não está — com a árvore limpa, o que o rollback descarta
-foi ela mesma que criou.
+entraria nessa conta. É por isso que ela exige árvore limpa no início e
+interrompe para perguntar quando não está — com a árvore limpa, o que o
+rollback joga fora foi ela mesma que criou.
 
 ## Limites conhecidos
 

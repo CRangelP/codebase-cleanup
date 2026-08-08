@@ -91,8 +91,9 @@ normally — it will branch off that commit, which is exactly what you want. Not
 in the final report that the work started from a detached HEAD, so the user
 knows where the branch came from.
 
-With a clean tree and a repo, run the baseline gate with `scripts/gate.sh` (path relative to this skill's
-directory; it accepts the project directory as an argument) and classify. The
+With a clean tree and a repo, run the baseline gate with `scripts/gate.sh`
+(path relative to this skill's directory; it accepts the project directory as
+an argument) and classify. The
 script detects the stack from the root manifest — `package.json`, `go.mod`,
 `Cargo.toml`, `pyproject.toml`/`setup.cfg`, `pom.xml`/`build.gradle`,
 `Gemfile`, `sln`/`csproj`/`fsproj` — and runs typecheck and tests for each one
@@ -414,9 +415,16 @@ git mv src/utils/format.ts src/features/billing/format.ts   # always git mv
 `git mv` preserves history — `rm` + `create` destroys that file's `git blame`,
 which is precisely the information someone will want six months from now.
 
-Prefer updating **path aliases** over rewriting 200 imports. If the project
-uses `@/features/*`, moving a folder can be one line in the tsconfig instead of
-a 3,000-line diff.
+Prefer updating **path aliases** over rewriting 200 imports — when every
+consumer honors `tsconfig.json` `paths`. If the project uses `@/features/*`,
+moving a folder can be one line in the tsconfig instead of a 3,000-line diff.
+Bundler, test runner, linter and Docker build each resolve paths on their own,
+though, so check the "Do not forget" list in
+`references/phase-3-structure.md` before relying on the one-liner.
+
+The move, the import or alias update and the `CLAUDE.md` update go in the
+**same commit**. Splitting them would put a commit that does not build in the
+history, and there is no gate that a half-done move can pass.
 
 `git add -A` and then `scripts/gate.sh` at the end of each folder — typecheck
 alone misses what a move actually breaks (config paths, dynamic imports; the
