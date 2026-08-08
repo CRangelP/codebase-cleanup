@@ -71,9 +71,11 @@ If rewriting imports is unavoidable, do it in a commit separate from the move:
 2. refactor: update imports for billing   (imports only)
 ```
 
-`git add -A` and then typecheck at the end of each folder — staged first, so
-that the rollback also undoes files created during the move. Failed →
-`git restore --staged --worktree .`, record it, next folder.
+`git add -A` and then `scripts/gate.sh` at the end of each folder — staged
+first, so that the rollback also undoes files created during the move. Typecheck
+alone is not enough here: the "Do not forget" list below is mostly made of
+things that only break at runtime, and the test suite is what catches part of
+them. Failed → `git restore --staged --worktree .`, record it, next folder.
 
 ## Do not forget
 

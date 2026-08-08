@@ -80,8 +80,13 @@ One candidate per session. Per consolidation:
 2. Migrate callers
 3. Remove the old modules
 4. `git add -A`
-5. Typecheck + tests
+5. `scripts/gate.sh` — once, here, not between the steps above
 6. Commit `refactor: consolidate X into Y`
+
+Steps 1–3 are red by construction: the new interface exists and its callers do
+not point at it yet. Running the gate in the middle only produces a failure you
+already predicted. One gate, on the finished state, is the one that is worth
+anything — and it guards exactly what goes into the commit.
 
 Step 4 is not bookkeeping. `git restore --staged --worktree .` brings back a
 deleted file and drops a staged new one, but an unstaged new file survives the

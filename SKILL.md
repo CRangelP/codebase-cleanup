@@ -372,9 +372,13 @@ with a simple interface is exactly what you *want*).
 
 ## Implementation
 
-After the choice, run on your own: one module at a time, typecheck and tests
-between each step, one commit per consolidation. Same rollback protocol as
-phase 1.
+After the choice, run on your own: one module at a time, one commit per
+consolidation, and `scripts/gate.sh` once — after `git add -A`, right before
+the commit. Do not gate between the intermediate steps: with the new interface
+in place and the callers not migrated yet, the build is red by construction,
+and a gate you expect to fail teaches nothing. The green that matters is the
+one at the end of the consolidation, which is exactly the state that gets
+committed. Same rollback protocol as phase 1.
 
 **One candidate per session.** Do not stack two — the second refactor inherits
 the dirty context of the first and the error rate goes up.
@@ -414,8 +418,10 @@ Prefer updating **path aliases** over rewriting 200 imports. If the project
 uses `@/features/*`, moving a folder can be one line in the tsconfig instead of
 a 3,000-line diff.
 
-`git add -A` and then typecheck at the end of each folder. Failed:
-`git restore --staged --worktree .`, record it, next folder.
+`git add -A` and then `scripts/gate.sh` at the end of each folder — typecheck
+alone misses what a move actually breaks (config paths, dynamic imports; the
+"Do not forget" list in `references/phase-3-structure.md` has the rest).
+Failed: `git restore --staged --worktree .`, record it, next folder.
 
 ---
 
