@@ -194,6 +194,18 @@ TESTPROJ='<Project><ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk"
 printf '%s\n' "$TESTPROJ" > "$TMP/dotnet-root/App.csproj"
 printf '%s\n' "$TESTPROJ" > "$TMP/dotnet-sub/src/App/App.fsproj"
 
+# One solution next to a project of a different base name: the gate has to name
+# the solution, or the real 'dotnet build' fails with MSB1011.
+mkdir -p "$TMP/dotnet-sln"
+printf '%s\n' "$TESTPROJ" > "$TMP/dotnet-sln/App.csproj"
+printf 'Microsoft Visual Studio Solution File\n' > "$TMP/dotnet-sln/MyApp.sln"
+
+# Two solutions is a choice the gate does not get to make: it abstains and
+# calls dotnet with no argument, exactly as before.
+mkdir -p "$TMP/dotnet-two-slns"
+printf 'Microsoft Visual Studio Solution File\n' > "$TMP/dotnet-two-slns/A.sln"
+printf 'Microsoft Visual Studio Solution File\n' > "$TMP/dotnet-two-slns/B.sln"
+
 mkdir -p "$TMP/dotnet-no-tests" "$TMP/dotnet-sub-no-tests/src/App"
 printf '<Project></Project>\n' > "$TMP/dotnet-no-tests/App.csproj"
 printf '<Project></Project>\n' > "$TMP/dotnet-sub-no-tests/src/App/App.fsproj"
@@ -329,6 +341,11 @@ case_run partial-none-ran 3 "$TMP/go-only"      "$BASE"       "nothing ran"
 case_run dotnet-green     0 "$TMP/dotnet-root"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
 case_run dotnet-red       1 "$TMP/dotnet-root"  "$FAIL:$BASE" "RED"
 case_run dotnet-subdir    0 "$TMP/dotnet-sub"   "$OK:$BASE"   "src/App/App.fsproj" "GREEN"
+case_run dotnet-sln       0 "$TMP/dotnet-sln"   "$OK:$BASE" \
+         "dotnet build --nologo -v minimal MyApp.sln" \
+         "dotnet test --nologo -v minimal MyApp.sln" "GREEN"
+case_run dotnet-two-slns  0 "$TMP/dotnet-two-slns" "$OK:$BASE" \
+         "dotnet build --nologo -v minimal$" "checks=typecheck"
 case_run jvm-hybrid       0 "$TMP/jvm-hybrid"   "$OK:$BASE"   "mvn -q test" "gradle test" "GREEN"
 case_run py-setupcfg      0 "$TMP/py-setupcfg"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
 case_run py-venv          0 "$TMP/py-venv"      "$BASE"       ".venv/bin/mypy" ".venv/bin/pytest" "GREEN"

@@ -332,9 +332,18 @@ fi
 # markers — on 10.0 the mstest template matches only through the MSTest token.
 DOTNET_TEST_MARKERS='Microsoft\.NET\.Test\.Sdk|<IsTestProject>|xunit|NUnit|MSTest'
 dotnet_targets=()
+dotnet_root_arg=""
 if compgen -G '*.sln' >/dev/null || compgen -G '*.slnx' >/dev/null \
     || compgen -G '*.??proj' >/dev/null; then
   dotnet_targets=(.)
+  # A root holding a solution and a project whose base names differ makes
+  # 'dotnet build' with no argument fail with MSB1011 (more than one target) on
+  # a repo that compiles. With exactly one solution there is nothing to choose:
+  # name it. Two or more is a real decision and the gate abstains — a lone
+  # .csproj is already unambiguous, so only sln/slnx count here.
+  slns=()
+  for f in *.sln *.slnx; do [[ -e $f ]] && slns+=("$f"); done
+  if [[ ${#slns[@]} -eq 1 ]]; then dotnet_root_arg=${slns[0]}; fi
 else
   for p in */*.??proj src/*/*.??proj; do
     [[ -e $p ]] && dotnet_targets+=("$p")
@@ -351,8 +360,11 @@ if [[ ${#dotnet_targets[@]} -gt 0 ]]; then
         # the verdict caps at YELLOW — fail-safe, promote by hand if so.
         grep -qsE "$DOTNET_TEST_MARKERS" ./*.??proj ./*/*.??proj ./src/*/*.??proj \
           && has_tests=1
-        run typecheck dotnet build --nologo -v minimal
-        if [[ $has_tests -eq 1 ]]; then run test dotnet test --nologo -v minimal
+        # shellcheck disable=SC2086  # the :+ expansion is one argument or none
+        run typecheck dotnet build --nologo -v minimal ${dotnet_root_arg:+"$dotnet_root_arg"}
+        if [[ $has_tests -eq 1 ]]; then
+          # shellcheck disable=SC2086  # same expansion, same reason
+          run test dotnet test --nologo -v minimal ${dotnet_root_arg:+"$dotnet_root_arg"}
         else no_tests dotnet "no test project found"; fi
       else
         run typecheck dotnet build --nologo -v minimal "$target"
