@@ -52,6 +52,7 @@ codebase-cleanup/
 ├── README.en.md                      versão em inglês
 ├── references/
 │   ├── knip-config.md                configuração do knip sem armadilhas
+│   ├── duplication.md                funções duplicadas e a regra do churn
 │   ├── phase-2-consolidation.md      protocolo de consolidação de módulos
 │   ├── phase-3-structure.md          padrões de organização de pastas
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
@@ -111,14 +112,20 @@ projeto com `scripts/gate.sh` e se classifica em um de três níveis:
 
 Com o nível anunciado, ela cria a branch de limpeza e segue:
 
-1. **Fase 1 — código morto.** Configura o knip até os hints zerarem, roda em
-   modo produção e deleta em commits atômicos, um por categoria: deps não
-   usadas, arquivos órfãos, exports mortos. Cada commit só entra com gate
-   verde. No fim, produz uma auditoria do que sobrou.
-2. **Fase 2 — consolidação.** Levanta até 5 candidatos de módulos rasos,
-   recomenda um e faz uma única pergunta. Respondeu "vai", ela implementa.
-3. **Fase 3 — estrutura.** Diagnóstico da árvore de pastas, plano, e movimentos
-   com `git mv`, uma pasta por commit.
+- **Fase 1 — código morto.** Configura o knip até os hints zerarem, roda em
+  modo produção e deleta em commits atômicos, um por categoria: deps não
+  usadas, arquivos órfãos, exports mortos. Cada commit só entra com gate
+  verde. No fim, produz uma auditoria do que sobrou.
+- **Fase 1.5 — funções duplicadas** (fecha a fase 1). Varre funções com nomes
+  diferentes fazendo a mesma coisa (similarity-ts ou fallow em JS/TS, jscpd
+  nos demais stacks) e aplica a regra do churn: par que muda junto no git é
+  duplicação real e vira candidato da fase 2; par que evolui separado é
+  coincidência estrutural e fica em paz. Só relatório — nada é deletado aqui.
+- **Fase 2 — consolidação.** Levanta até 5 candidatos de módulos rasos
+  (começando pelos pares da fase 1.5), recomenda um e faz uma única pergunta.
+  Respondeu "vai", ela implementa.
+- **Fase 3 — estrutura.** Diagnóstico da árvore de pastas, plano, e movimentos
+  com `git mv`, uma pasta por commit.
 
 Entre as fases a skill pede `/clear` — contexto acumulado de uma fase piora o
 julgamento da seguinte. O progresso fica em `CLEANUP_PROGRESS.md` na raiz do
@@ -158,8 +165,15 @@ commitado e convive com hooks que bloqueiam comandos destrutivos.
 Skills e materiais usados na construção desta:
 
 - [tech-debt-audit](https://github.com/ksimback/tech-debt-skill), de ksimback —
-  a fase 1.4 segue o protocolo dessa skill quando ela está instalada
+  as nove dimensões da auditoria da fase 1.4 e a seção obrigatória "parece
+  ruim mas está ok" vêm dela; instalada, a fase segue o protocolo completo
   (instalação na seção acima).
+- [codebase-design e improve-codebase-architecture](https://github.com/mattpocock/skills),
+  de Matt Pocock — o vocabulário de análise da fase 2 (module, interface,
+  depth, seam, adapter, locality), o teste da deleção e a definição de módulo
+  raso vêm dessas skills. Os conceitos de seam e profundidade de módulo
+  remontam a Michael Feathers e a John Ousterhout (*A Philosophy of Software
+  Design*).
 - [skill-creator](https://github.com/anthropics/claude-plugins-official),
   plugin oficial da Anthropic — conduziu a revisão de boas práticas, os evals
   comparativos e a otimização da description desta skill.
@@ -167,5 +181,6 @@ Skills e materiais usados na construção desta:
   do WikiProject AI Cleanup da Wikipedia — base da adaptação local
   `humanizer-pt-br`, usada na escrita deste README.
 
-As duas últimas foram ferramentas de desenvolvimento: não precisam estar
-instaladas para usar a codebase-cleanup.
+Só a primeira interage em runtime (fase 1.4); as demais foram fontes e
+ferramentas de desenvolvimento — não precisam estar instaladas para usar a
+codebase-cleanup.
