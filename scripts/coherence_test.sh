@@ -64,36 +64,69 @@ tree_scripts() {
   ' "$1" | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u
 }
 
-# gate_exit_codes — the exit literals in the *bash body* of gate.sh: comments
-# and single-quoted strings (the embedded perl watchdog has its own 124/127)
-# are stripped first, so only what the gate can really return is left.
-gate_exit_codes() {
+# strip_quotes — reads a shell script on stdin and prints its bash body with
+# quoted text and comments removed. One character-by-character pass does both,
+# because doing them in two passes is wrong: stripping comments first mutilates
+# a '# ...' that lives inside a string, and stripping strings first swallows a
+# quote (an apostrophe, say) that lives inside a comment. The quoting state
+# survives across lines, which is what the embedded multi-line perl watchdog of
+# gate.sh needs. Each quoted run collapses to a single space so nothing on
+# either side of it gets glued together.
+strip_quotes() {
   local q
   q=$(printf '\047')
-  sed -e 's/^[[:space:]]*#.*$//' -e 's/[[:space:]]#.*$//' scripts/gate.sh |
   awk -v q="$q" '
     {
-      n = split($0, a, q) - 1
-      if (insq) {
-        if (n % 2 == 0) next          # still inside the quoted string
-        insq = 0
-        line = a[2]
-        for (i = 3; i <= n + 1; i++) line = line q a[i]
-        print line
-        next
+      out = ""; prev = ""; n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (insq) {                       # nothing escapes inside '\''...'\''
+          if (c == q) insq = 0
+        } else if (indq) {
+          if (c == "\\") i++              # backslash escapes the next char
+          else if (c == "\"") indq = 0
+        } else {
+          if (c == "#" && (i == 1 || prev == " " || prev == "\t")) break
+          if (c == q) { insq = 1; out = out " " }
+          else if (c == "\"") { indq = 1; out = out " " }
+          else out = out c
+        }
+        prev = c
       }
-      if (n % 2 == 1) {               # opens a string that stays open
-        insq = 1
-        line = a[1]
-        for (i = 2; i <= n; i++) line = line q a[i]
-        print line
-        next
-      }
-      print
+      print out
     }
-  ' | grep -oE '(^|[^A-Za-z0-9_])exit[[:space:]]+[0-9]+' |
+  '
+}
+
+# exit_codes — the exit literals in the *bash body* read from stdin, so only
+# what the script can really return is left (the perl watchdog's own 124/127
+# live inside a quoted string and do not count).
+exit_codes() {
+  strip_quotes |
+  grep -oE '(^|[^A-Za-z0-9_])exit[[:space:]]+[0-9]+' |
   grep -oE '[0-9]+$' | sort -u
 }
+
+gate_exit_codes() { exit_codes < scripts/gate.sh; }
+
+# 0. The suite's own scanners work. ------------------------------------------
+# Every invariant below is only as trustworthy as the extractor that feeds it,
+# so the extractor is exercised here on a synthetic script — a heredoc, never
+# a file on disk — whose single real exit is 7.
+got=$(exit_codes <<'SYNTH'
+X="exit 99"
+Y='exit 98'
+# exit 97
+echo hi # exit 96
+exit 7
+Z='first line
+second # exit 95
+exit 94'
+SYNTH
+)
+check "exit-code extractor sees past quotes and comments" \
+      "$([[ $got == 7 ]] && echo 0 || echo 1)" \
+      "extracted [$(printf '%s' "$got" | tr '\n' ' ')], expected [7]"
 
 # 1. The rollback command is one string, in every file that documents it. -----
 for f in $ROLLBACK_FILES; do
