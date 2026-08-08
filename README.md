@@ -4,8 +4,11 @@
 
 Skill de limpeza de codebase para Claude Code. Trabalha em três fases, nessa
 ordem: remove código morto, consolida módulos rasos e reorganiza a estrutura
-de pastas. A ordem importa — organizar pastas antes de apagar o que está morto
-é arrumar lixo em gaveta bonita.
+de pastas. Entre a primeira e a segunda entra a fase 1.5, que procura arquivos
+e funções duplicados — a mesma ideia implementada duas vezes com nomes
+diferentes — e entrega os pares como candidatos à consolidação. A ordem
+importa — organizar pastas antes de apagar o que está morto é arrumar lixo em
+gaveta bonita.
 
 A skill executa sozinha o que dá para executar com segurança. Ela para e
 pergunta em dois casos: na escolha do candidato de consolidação da fase 2,

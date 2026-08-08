@@ -4,8 +4,11 @@
 
 Codebase cleanup skill for Claude Code. It works in three phases, in this
 order: remove dead code, consolidate shallow modules, reorganize the folder
-structure. The order matters — reorganizing folders before deleting what is
-dead is tidying garbage into a nice drawer.
+structure. Between the first and the second sits phase 1.5, which looks for
+duplicate files and functions — the same idea implemented twice under
+different names — and hands the pairs over as consolidation candidates. The
+order matters — reorganizing folders before deleting what is dead is tidying
+garbage into a nice drawer.
 
 The skill runs everything it can safely run on its own. It stops and asks in
 two situations: the choice of consolidation candidate in phase 2, because a
