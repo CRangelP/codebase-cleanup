@@ -242,11 +242,26 @@ if [[ -f package.json ]]; then
     echo "[gate] package.json unparseable — JS/TS checks skipped" >&2
     incomplete=1
   else
-    for script in typecheck test; do
-      if node -e "const s=require('./package.json').scripts||{};process.exit(s['$script']?0:1)" 2>/dev/null; then
-        if [[ $PM == yarn ]]; then run "$script" yarn "$script"
-        else run "$script" "$PM" run "$script"; fi
-      fi
+    # Each entry is "<kind>:<script names in precedence order>". Projects name
+    # these scripts freely ('type-check', 'test:unit'), and refusing anything
+    # but the canonical spelling made a fully covered repo look uncheckable.
+    # Two rules hold the semantics together: exactly one script runs per kind —
+    # the first name the project defines wins, the rest are ignored, so nothing
+    # runs or counts twice — and what reaches run() is the *kind*, never the
+    # alias, because run() classifies by kind and an unknown word there would
+    # run the check and count nothing. The alias stays visible in the human
+    # '[gate] <cmd>' line; checks= keeps its canonical vocabulary.
+    for js_spec in "typecheck:typecheck type-check tsc check-types" \
+                   "test:test test:unit"; do
+      js_kind=${js_spec%%:*}
+      # shellcheck disable=SC2086  # the name list is split on purpose (bash 3.2, no arrays)
+      for script in ${js_spec#*:}; do
+        if node -e "const s=require('./package.json').scripts||{};process.exit(s['$script']?0:1)" 2>/dev/null; then
+          if [[ $PM == yarn ]]; then run "$js_kind" yarn "$script"
+          else run "$js_kind" "$PM" run "$script"; fi
+          break
+        fi
+      done
     done
   fi
 fi

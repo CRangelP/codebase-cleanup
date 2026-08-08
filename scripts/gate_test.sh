@@ -186,6 +186,44 @@ EOF
 mkdir -p "$TMP/js-bad-json"
 printf '{"name":"f",\n' > "$TMP/js-bad-json/package.json"
 
+# Alias fixtures: a project that names its scripts 'type-check'/'test:unit' has
+# the same safety net as one that spells them canonically, and must reach the
+# same verdict — with checks= still using the canonical words.
+mkdir -p "$TMP/js-alias"
+cat > "$TMP/js-alias/package.json" <<'EOF'
+{"name":"f","scripts":{"type-check":"node -e 0","test:unit":"node -e 0"}}
+EOF
+
+mkdir -p "$TMP/js-alias-test-only"
+cat > "$TMP/js-alias-test-only/package.json" <<'EOF'
+{"name":"f","scripts":{"test:unit":"node -e 0"}}
+EOF
+
+mkdir -p "$TMP/js-alias-tsc"
+cat > "$TMP/js-alias-tsc/package.json" <<'EOF'
+{"name":"f","scripts":{"tsc":"node -e 0"}}
+EOF
+
+# Canonical and alias side by side: precedence says 'typecheck' wins and
+# 'type-check' never runs. The alias prints a marker so its silence is provable.
+mkdir -p "$TMP/js-alias-both"
+cat > "$TMP/js-alias-both/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","type-check":"node -e \"console.log('ALIAS_TYPECHECK_RAN')\"","test":"node -e 0"}}
+EOF
+
+mkdir -p "$TMP/js-alias-red"
+cat > "$TMP/js-alias-red/package.json" <<'EOF'
+{"name":"f","scripts":{"type-check":"node -e 0","test:unit":"node -e 'process.exit(1)'"}}
+EOF
+
+# yarn.lock picks the 'yarn <script>' invocation instead of '<pm> run <script>';
+# no fixture exercised that branch before, alias or not.
+mkdir -p "$TMP/js-yarn-alias"
+cat > "$TMP/js-yarn-alias/package.json" <<'EOF'
+{"name":"f","scripts":{"type-check":"node -e 0","test:unit":"node -e 0"}}
+EOF
+touch "$TMP/js-yarn-alias/yarn.lock"
+
 mkdir -p "$TMP/polyglot/tests"
 touch "$TMP/polyglot/pyproject.toml" "$TMP/polyglot/tests/test_x.py"
 printf 'module f\n\ngo 1.21\n' > "$TMP/polyglot/go.mod"
@@ -297,6 +335,12 @@ stub "$FAIL" dotnet 1
 stub_body "$HANG" go 'sleep 30'
 stub "$UV" uv 0
 GO="$TMP/stubs-go"; stub "$GO" go 0
+# yarn is not on every machine, and the branch under test is only *how* the
+# gate invokes it: a stub that always succeeds is enough, since the invocation
+# itself is echoed by run(). node stays real — the gate parses package.json with it.
+YARN="$TMP/stubs-yarn"
+link_bin "$YARN" bash sh env node perl ps find grep sleep true
+stub "$YARN" yarn 0
 CARGO="$TMP/stubs-cargo"; stub "$CARGO" cargo 0
 # pytest's "no tests collected" code, with a passing mypy next to it.
 PY5="$TMP/stubs-py5"; stub "$PY5" pytest 5; stub "$PY5" mypy 0
@@ -373,6 +417,15 @@ case_run js-test-only     0 "$TMP/js-test-only" -             "checks=test" "YEL
 case_run js-red           1 "$TMP/js-red"       -             "RED"
 case_run js-no-node       3 "$TMP/js-green"     "$NOTOOL"     "toolchain 'node' missing"
 case_run js-bad-json      3 "$TMP/js-bad-json"  -             "unparseable"
+case_run js-alias         0 "$TMP/js-alias"     -             "run type-check" "run test:unit" \
+         "checks=typecheck,test" "GREEN"
+case_run js-alias-test-only 0 "$TMP/js-alias-test-only" -     "run test:unit" "checks=test" "YELLOW"
+case_run js-alias-tsc     0 "$TMP/js-alias-tsc" -             "run tsc" "checks=typecheck" "YELLOW"
+case_run js-alias-both    0 "$TMP/js-alias-both" -            "run typecheck$" \
+         "checks=typecheck,test" "GREEN" '!run type-check' '!ALIAS_TYPECHECK_RAN'
+case_run js-alias-red     1 "$TMP/js-alias-red" -             "RED at 'npm run test:unit'"
+case_run js-yarn-alias    0 "$TMP/js-yarn-alias" "$YARN"      "yarn type-check" "yarn test:unit" \
+         "checks=typecheck,test" "GREEN" '!yarn run'
 case_run polyglot-partial 3 "$TMP/polyglot"     "$OK:$NOTOOL" "checks=test" "some detected stack"
 case_run partial-none-ran 3 "$TMP/go-only"      "$NOTOOL"     "nothing ran"
 case_run dotnet-green     0 "$TMP/dotnet-root"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
