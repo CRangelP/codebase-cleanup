@@ -28,8 +28,10 @@ incomplete=0
 # A hanging check (a test waiting on a port, a REPL, a prompt) would freeze the
 # gate forever. Resolve one backend up front; all three exit 124 on timeout,
 # copying GNU timeout so run() only has to know that number.
-# Limit: a child that leaves the process group on its own (setsid) escapes the
-# kill. The watchdog bounds the well-behaved case, it does not promise more.
+# Limit: what still escapes the kill is a double fork already reparented to
+# init/launchd when the alarm fires, and anything created between the snapshot
+# and the kill. A plain setsid does not escape: it changes the group, not the
+# parent, so the descendant sweep below still finds it.
 GATE_TIMEOUT=${GATE_TIMEOUT:-900}
 case $GATE_TIMEOUT in
   ''|*[!0-9]*)
@@ -37,12 +39,36 @@ case $GATE_TIMEOUT in
     GATE_TIMEOUT=900 ;;
 esac
 
-# fork + setpgrp so the whole group dies, not just the direct child.
+# fork + setpgrp so the whole group dies, not just the direct child. The alarm
+# handler first snapshots the descendants of the child (ps, walked transitively)
+# and only then kills the group: after the kill the survivors are reparented and
+# the link that identifies them is gone, so the order matters.
 PERL_WATCHDOG='my $t = shift;
 my $pid = fork();
 if (!defined $pid) { exit 127; }
 if (!$pid) { setpgrp(0,0); exec @ARGV; exit 127; }
-$SIG{ALRM} = sub { kill "TERM", -$pid; sleep 2; kill "KILL", -$pid; exit 124; };
+$SIG{ALRM} = sub {
+  my (%kids, @tree, @queue, %seen);
+  if (open(my $ps, "-|", "ps", "-eo", "pid=,ppid=")) {
+    while (<$ps>) {
+      my ($c, $p) = /^\s*(\d+)\s+(\d+)/ or next;
+      push @{$kids{$p}}, $c;
+    }
+    close $ps;
+  }
+  @queue = ($pid); $seen{$pid} = 1;
+  while (@queue) {
+    my $cur = shift @queue;
+    for my $k (@{$kids{$cur} || []}) {
+      next if $seen{$k}++;
+      push @tree, $k; push @queue, $k;
+    }
+  }
+  kill "TERM", -$pid; sleep 2; kill "KILL", -$pid;
+  @tree = grep { $_ > 1 && $_ != $$ && kill(0, $_) } @tree;
+  if (@tree) { kill "TERM", @tree; sleep 1; kill "KILL", grep { kill(0, $_) } @tree; }
+  exit 124;
+};
 alarm $t;
 waitpid($pid, 0);
 alarm 0;

@@ -7,7 +7,16 @@ set -u
 
 GATE="$(cd "$(dirname "$0")" && pwd)/gate.sh"
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+# The escapee case spawns a process outside the gate's process group on
+# purpose; the suite kills it on the way out so a failure never leaks it.
+ESCAPEE_PID_FILE=""
+cleanup() {
+  if [[ -n $ESCAPEE_PID_FILE && -s $ESCAPEE_PID_FILE ]]; then
+    kill -KILL "$(cat "$ESCAPEE_PID_FILE")" 2>/dev/null
+  fi
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
 failures=0
 total=0
 
@@ -78,6 +87,29 @@ assert_no_log() { # assert_no_log <name> <file>
     failures=$((failures+1))
     echo "FAILED: $name (log should not exist, holds: $(cat "$file"))"
   fi
+  return 0
+}
+
+assert_reaped() { # assert_reaped <name> <pidfile> — polls up to 10s for death
+  local name=$1 file=$2 pid i=0
+  total=$((total+1))
+  if [[ ! -s $file ]]; then
+    failures=$((failures+1))
+    echo "FAILED: $name (the escapee never recorded its pid: $file)"
+    return 0
+  fi
+  pid=$(cat "$file")
+  while [[ $i -lt 20 ]]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      : > "$file"   # dead and accounted for: nothing left for the exit trap
+      echo "ok: $name"
+      return 0
+    fi
+    sleep 0.5
+    i=$((i+1))
+  done
+  failures=$((failures+1))
+  echo "FAILED: $name (pid $pid survived the watchdog)"
   return 0
 }
 
@@ -209,6 +241,22 @@ link_bin "$MINI" bash sh perl ps find grep sleep
 
 reset_logs() { rm -f "$WD_LOG_T" "$WD_LOG_G"; }
 
+# A check whose grandchild calls setsid: it leaves the gate's process group, so
+# 'kill -PGID' alone would leave it running past the timeout. It records its own
+# pid and sleeps for a bounded time, never longer than the suite. Its output goes
+# to /dev/null on purpose: holding the case's pipe open would make case_run wait
+# for it, which hides the very leak this case is about.
+ESCAPE="$TMP/stubs-escape"
+ESCAPEE_PID_FILE="$TMP/escapee.pid"
+mkdir -p "$ESCAPE"
+cat > "$ESCAPE/go" <<EOF
+#!/bin/sh
+perl -e 'use POSIX; POSIX::setsid(); open(F, ">", "$ESCAPEE_PID_FILE") or exit 1;
+         print F \$\$; close F; sleep 60' >/dev/null 2>&1 &
+sleep 45
+EOF
+chmod +x "$ESCAPE/go"
+
 # matrix ---------------------------------------------------------------
 case_run bad-path         2 "$TMP/nope"         -             "bad path"
 case_run empty            3 "$TMP/empty"        -             "no runnable checks"
@@ -264,6 +312,14 @@ if command -v perl >/dev/null; then
   GATE_ENV="GATE_TIMEOUT=2"
   case_run wd-perl-forced 4 "$TMP/go-hang" "$HANG:$MINI" "TIMEOUT after 2s"
   elapsed_lt wd-perl-is-bounded 10
+
+  # Regression: killing the process group is not enough — a descendant that
+  # called setsid keeps running after the gate reports TIMEOUT unless the
+  # watchdog snapshots the tree before the kill and sweeps the survivors.
+  GATE_ENV="GATE_TIMEOUT=2"
+  case_run wd-escapee 4 "$TMP/go-hang" "$ESCAPE:$MINI" "TIMEOUT after 2s"
+  elapsed_lt wd-escapee-is-bounded 10
+  assert_reaped wd-escapee-reaped "$ESCAPEE_PID_FILE"
 else
   echo "skip: wd-perl-forced (no perl on this machine)"
 fi
