@@ -31,6 +31,56 @@ stub_body() { # stub_body <dir> <name> <shell body>
   chmod +x "$1/$2"
 }
 
+# link_bin <dir> <name...> — symlinks real binaries into a sandbox dir, so a
+# case can build a minimal PATH (one without timeout/gtimeout, say) and still
+# have what the gate needs to run. A name absent from the machine is skipped.
+link_bin() {
+  local dir=$1 name p
+  shift
+  mkdir -p "$dir"
+  for name in "$@"; do
+    p=$(command -v "$name") || continue
+    ln -sf "$p" "$dir/$name"
+  done
+}
+
+# stub_log <dir> <name> <log> <exit> — deterministic watchdog delegator: writes
+# the arguments it received to <log> and exits with <exit>, never sleeping.
+# It is how a case observes which backend gate.sh picked and with what timeout.
+stub_log() {
+  mkdir -p "$1"
+  printf '#!/bin/sh\nprintf %%s "$*" > "%s"\nexit %s\n' "$3" "$4" > "$1/$2"
+  chmod +x "$1/$2"
+}
+
+assert_log() { # assert_log <name> <file> <expected content>
+  local name=$1 file=$2 want=$3 got
+  total=$((total+1))
+  if [[ ! -f $file ]]; then
+    failures=$((failures+1))
+    echo "FAILED: $name (log not written: $file)"
+    return 0
+  fi
+  got=$(cat "$file")
+  if [[ $got == "$want" ]]; then echo "ok: $name"
+  else
+    failures=$((failures+1))
+    echo "FAILED: $name (log='$got', want='$want')"
+  fi
+  return 0
+}
+
+assert_no_log() { # assert_no_log <name> <file>
+  local name=$1 file=$2
+  total=$((total+1))
+  if [[ ! -e $file ]]; then echo "ok: $name"
+  else
+    failures=$((failures+1))
+    echo "FAILED: $name (log should not exist, holds: $(cat "$file"))"
+  fi
+  return 0
+}
+
 case_run() { # case_run <name> <expected_exit> <dir> <PATH|-> <grep_pattern...>
   local name=$1 expected=$2 dir=$3 path=$4; shift 4
   local out rc p ok=1 start=$SECONDS
@@ -147,6 +197,18 @@ stub_body "$HANG" go 'sleep 30'
 stub "$UV" uv 0
 GO="$TMP/stubs-go"; stub "$GO" go 0
 
+# watchdog sandbox: delegators that record how gate.sh called them, plus a
+# minimal PATH with no timeout/gtimeout so the perl backend can be forced.
+WD_T="$TMP/wd-timeout"; WD_LOG_T="$TMP/wd-timeout.log"
+WD_G="$TMP/wd-gtimeout"; WD_LOG_G="$TMP/wd-gtimeout.log"
+stub_log "$WD_T" timeout "$WD_LOG_T" 124
+stub_log "$WD_G" gtimeout "$WD_LOG_G" 124
+GO124="$TMP/stubs-go-124"; stub "$GO124" go 124
+MINI="$TMP/mini-path"
+link_bin "$MINI" bash sh perl ps find grep sleep
+
+reset_logs() { rm -f "$WD_LOG_T" "$WD_LOG_G"; }
+
 # matrix ---------------------------------------------------------------
 case_run bad-path         2 "$TMP/nope"         -             "bad path"
 case_run empty            3 "$TMP/empty"        -             "no runnable checks"
@@ -174,6 +236,49 @@ case_run dotnet-sub-no-t  0 "$TMP/dotnet-sub-no-tests" "$OK:$BASE" "checks=typec
 GATE_ENV="GATE_TIMEOUT=2"
 case_run hang             4 "$TMP/go-hang"      "$HANG:$BASE" "TIMEOUT after 2s"
 elapsed_lt hang-is-bounded 10
+
+# watchdog resolution ---------------------------------------------------
+# Which backend the gate picks, and with which timeout, is contract: all three
+# have to exit 124, and the order timeout > gtimeout > perl must hold on any
+# machine. The delegators make that observable without waiting for a real hang.
+reset_logs
+GATE_ENV="GATE_TIMEOUT=2"
+case_run wd-timeout-dispatch 4 "$TMP/go-hang" "$WD_T:$GO:$BASE" "TIMEOUT after 2s"
+assert_log wd-timeout-args "$WD_LOG_T" "2 go build ./..."
+
+reset_logs
+GATE_ENV="GATE_TIMEOUT=2"
+case_run wd-order-timeout-wins 4 "$TMP/go-hang" "$WD_T:$WD_G:$GO:$BASE" "TIMEOUT after 2s"
+assert_log wd-order-timeout-log "$WD_LOG_T" "2 go build ./..."
+assert_no_log wd-order-gtimeout-idle "$WD_LOG_G"
+
+reset_logs
+GATE_ENV="GATE_TIMEOUT=2"
+case_run wd-gtimeout-over-perl 4 "$TMP/go-hang" "$WD_G:$GO:$MINI" "TIMEOUT after 2s"
+assert_log wd-gtimeout-args "$WD_LOG_G" "2 go build ./..."
+
+# The perl backend is the one that only shows up on a machine without coreutils;
+# a minimal PATH keeps it covered even when the suite runs on Linux.
+if command -v perl >/dev/null; then
+  reset_logs
+  GATE_ENV="GATE_TIMEOUT=2"
+  case_run wd-perl-forced 4 "$TMP/go-hang" "$HANG:$MINI" "TIMEOUT after 2s"
+  elapsed_lt wd-perl-is-bounded 10
+else
+  echo "skip: wd-perl-forced (no perl on this machine)"
+fi
+
+# 0 disables the watchdog: a check that exits 124 on its own is RED, not
+# TIMEOUT, and no backend is invoked at all.
+reset_logs
+GATE_ENV="GATE_TIMEOUT=0"
+case_run wd-disabled 1 "$TMP/go-hang" "$WD_T:$GO124:$BASE" "RED at 'go build"
+assert_no_log wd-disabled-no-dispatch "$WD_LOG_T"
+
+reset_logs
+GATE_ENV="GATE_TIMEOUT=abc"
+case_run wd-bad-value 4 "$TMP/go-hang" "$WD_T:$GO:$BASE" "is not a number — using 900"
+assert_log wd-bad-value-args "$WD_LOG_T" "900 go build ./..."
 
 echo "----"
 echo "$((total-failures))/$total cases passed"
