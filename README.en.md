@@ -51,8 +51,11 @@ codebase-cleanup/
 ├── SKILL.md                          main instructions
 ├── README.md                         readme in Portuguese
 ├── README.en.md                      this file
+├── LICENSE                           MIT
 ├── references/
+│   ├── audit.md                      phase 1.4 audit protocol
 │   ├── knip-config.md                knip configuration without pitfalls
+│   ├── duplication.md                duplicate functions and the churn rule
 │   ├── phase-2-consolidation.md      module consolidation protocol
 │   ├── phase-3-structure.md          folder organization patterns
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
@@ -64,30 +67,15 @@ codebase-cleanup/
 To check the installation, open a new session (or run `/reload-skills`) and
 see whether `codebase-cleanup` shows up in the list of available skills.
 
-### Companion skill (optional, but worth installing first)
+### No other skill is required
 
-At the end of phase 1, the skill produces an audit of what is left after the
-cleanup. If [tech-debt-audit](https://github.com/ksimback/tech-debt-skill) is
-installed, codebase-cleanup follows its protocol in that step instead of
-improvising the report — the result comes out in a stable format, with
-severity and effort estimate per finding.
-
-The command below is pinned to a specific commit, because the downloaded file
-is not data: it is instruction that Claude executes with the permissions of
-your session. Read the file before using it, and review it again if you ever
-update to a newer version of the repository:
-
-```bash
-mkdir -p ~/.claude/skills/tech-debt-audit
-curl -fSL -o ~/.claude/skills/tech-debt-audit/SKILL.md \
-  https://raw.githubusercontent.com/ksimback/tech-debt-skill/5a15c1ca4a929b2759461c218478de391a8bda0f/SKILL.md
-shasum -a 256 ~/.claude/skills/tech-debt-audit/SKILL.md
-# expected: 60bb907377d11cd71e3b0aa6bb67a3128de8ad6230352ff61c621a9d8bea441f
-```
-
-Nothing breaks without it: the audit is generated inline, only in a less
-predictable format. This is the only dependency between skills — no other one
-needs to exist for codebase-cleanup to run.
+codebase-cleanup is self-contained by design. The pipeline calls tools
+(knip, similarity-ts, jscpd, gate.sh), not other skills — and the knowledge
+that came from third-party skills was absorbed into this one's files: the
+phase 1.4 audit protocol lives in `references/audit.md`, and the phase 2
+consolidation vocabulary in `references/phase-2-consolidation.md`.
+Installing the skills named in the credits changes nothing at runtime; they
+are sources, not dependencies.
 
 ## Usage
 
@@ -112,14 +100,21 @@ Before touching any file, the skill measures the project's safety net with
 
 With the level announced, it creates the cleanup branch and proceeds:
 
-1. **Phase 1 — dead code.** Configures knip until the hints reach zero, runs
-   in production mode and deletes in atomic commits, one per category: unused
-   deps, orphan files, dead exports. Each commit only lands with a green gate.
-   At the end, it produces an audit of what is left.
-2. **Phase 2 — consolidation.** Surfaces up to 5 shallow module candidates,
-   recommends one and asks a single question. Answer "go" and it implements.
-3. **Phase 3 — structure.** Diagnosis of the folder tree, plan, and moves with
-   `git mv`, one folder per commit.
+- **Phase 1 — dead code.** Configures knip until the hints reach zero, runs
+  in production mode and deletes in atomic commits, one per category: unused
+  deps, orphan files, dead exports. Each commit only lands with a green gate.
+  At the end, it produces an audit of what is left.
+- **Phase 1.5 — duplicate functions** (closes phase 1). Sweeps for functions
+  with different names doing the same thing (similarity-ts or fallow on
+  JS/TS, jscpd on other stacks) and applies the churn rule: a pair that
+  changes together in git is real duplication and becomes a phase 2
+  candidate; a pair that evolves independently is structural coincidence and
+  is left alone. Report only — nothing is deleted here.
+- **Phase 2 — consolidation.** Surfaces up to 5 shallow module candidates
+  (starting from the phase 1.5 pairs), recommends one and asks a single
+  question. Answer "go" and it implements.
+- **Phase 3 — structure.** Diagnosis of the folder tree, plan, and moves with
+  `git mv`, one folder per commit.
 
 Between phases the skill asks for `/clear` — context accumulated from one
 phase degrades the judgment of the next. Progress lives in
@@ -160,8 +155,15 @@ commands.
 Skills and materials used in building this one:
 
 - [tech-debt-audit](https://github.com/ksimback/tech-debt-skill), by ksimback
-  — phase 1.4 follows this skill's protocol when it is installed
-  (installation in the section above).
+  (MIT) — the phase 1.4 audit protocol (`references/audit.md`) is distilled
+  from it: the nine dimensions, the report template and the required "looks
+  bad but is fine" section.
+- [codebase-design and improve-codebase-architecture](https://github.com/mattpocock/skills),
+  by Matt Pocock — phase 2's analysis vocabulary (module, interface,
+  implementation, depth, seam, adapter, locality), the deletion test and the
+  definition of a shallow module come from these skills. Seam and module
+  depth trace back to Michael Feathers and John Ousterhout (*A Philosophy of
+  Software Design*).
 - [skill-creator](https://github.com/anthropics/claude-plugins-official),
   Anthropic's official plugin — it drove the best-practice review, the
   comparative evals and the description optimization of this skill.
@@ -169,5 +171,11 @@ Skills and materials used in building this one:
   from Wikipedia's WikiProject AI Cleanup — the basis of the local adaptation
   `humanizer-pt-br`, used to write this README.
 
-The last two were development tools: they do not need to be installed to use
+None of them is a runtime dependency: they were sources and development
+tools — nothing beyond this folder needs to be installed to use
 codebase-cleanup.
+
+## License
+
+MIT — use, copy, modify and redistribute freely. Full text in
+[LICENSE](LICENSE).

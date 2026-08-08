@@ -39,11 +39,17 @@ Imagine deleting the module.
 
 ## Survey
 
+0. **Start from the phase 1.5 pair list.** Duplicate-function pairs that
+   passed the pair-level co-change rule outrank anything below — two
+   implementations of one intent are the consolidation candidate in its
+   purest form.
 1. **Map.** Import graph (knip's `cycles` already covers a good part of it),
    module sizes, who calls whom.
-2. **Cross with churn.** `git log --format=%H --name-only | sort | uniq -c |
-   sort -rn` — the intersection between "changed a lot" and "heavily coupled"
-   is where consolidation pays the most.
+2. **Cross with churn volume (file-level).** `git log --format=%H
+   --name-only | sort | uniq -c | sort -rn` — the intersection between
+   "changed a lot" and "heavily coupled" is where consolidation pays the
+   most. This is a different, weaker signal than the pair-level co-change of
+   step 0: it says a file is hot, not that two files move together.
 3. **Actually read the candidate clusters.** Do not judge by file name.
 4. **Rank by confidence**, not by size.
 

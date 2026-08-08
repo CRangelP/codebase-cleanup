@@ -50,8 +50,11 @@ codebase-cleanup/
 ├── SKILL.md                          instruções principais
 ├── README.md                         este arquivo
 ├── README.en.md                      versão em inglês
+├── LICENSE                           MIT
 ├── references/
+│   ├── audit.md                      protocolo de auditoria da fase 1.4
 │   ├── knip-config.md                configuração do knip sem armadilhas
+│   ├── duplication.md                funções duplicadas e a regra do churn
 │   ├── phase-2-consolidation.md      protocolo de consolidação de módulos
 │   ├── phase-3-structure.md          padrões de organização de pastas
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
@@ -63,30 +66,16 @@ codebase-cleanup/
 Para conferir a instalação, abra uma sessão nova (ou rode `/reload-skills`) e
 veja se `codebase-cleanup` aparece na lista de skills disponíveis.
 
-### Skill complementar (opcional, mas vale instalar antes)
+### Nenhuma outra skill é obrigatória
 
-Ao fim da fase 1, a skill produz uma auditoria do que sobrou depois da
-limpeza. Se a [tech-debt-audit](https://github.com/ksimback/tech-debt-skill)
-estiver instalada, a codebase-cleanup segue o protocolo dela nessa etapa em
-vez de improvisar o relatório — o resultado sai num formato estável, com
-severidade e estimativa de esforço por achado.
-
-O comando abaixo está pinado num commit específico, porque o arquivo baixado
-não é dado: é instrução que o Claude executa com as permissões da sua sessão.
-Leia o arquivo antes de usar, e revise de novo se um dia atualizar para uma
-versão mais nova do repositório:
-
-```bash
-mkdir -p ~/.claude/skills/tech-debt-audit
-curl -fSL -o ~/.claude/skills/tech-debt-audit/SKILL.md \
-  https://raw.githubusercontent.com/ksimback/tech-debt-skill/5a15c1ca4a929b2759461c218478de391a8bda0f/SKILL.md
-shasum -a 256 ~/.claude/skills/tech-debt-audit/SKILL.md
-# esperado: 60bb907377d11cd71e3b0aa6bb67a3128de8ad6230352ff61c621a9d8bea441f
-```
-
-Sem ela nada quebra: a auditoria é gerada inline, só com formato menos
-previsível. É a única dependência entre skills — nenhuma outra precisa existir
-para a codebase-cleanup rodar.
+A codebase-cleanup é autossuficiente por design. O pipeline chama
+ferramentas (knip, similarity-ts, jscpd, gate.sh), não outras skills — e o
+conhecimento que veio de skills de terceiros foi absorvido nos arquivos
+desta: o protocolo de auditoria da fase 1.4 vive em `references/audit.md`, e
+o vocabulário de consolidação da fase 2 em
+`references/phase-2-consolidation.md`. Instalar as skills citadas nos
+créditos não muda o comportamento em runtime; elas são fonte, não
+dependência.
 
 ## Uso
 
@@ -111,14 +100,20 @@ projeto com `scripts/gate.sh` e se classifica em um de três níveis:
 
 Com o nível anunciado, ela cria a branch de limpeza e segue:
 
-1. **Fase 1 — código morto.** Configura o knip até os hints zerarem, roda em
-   modo produção e deleta em commits atômicos, um por categoria: deps não
-   usadas, arquivos órfãos, exports mortos. Cada commit só entra com gate
-   verde. No fim, produz uma auditoria do que sobrou.
-2. **Fase 2 — consolidação.** Levanta até 5 candidatos de módulos rasos,
-   recomenda um e faz uma única pergunta. Respondeu "vai", ela implementa.
-3. **Fase 3 — estrutura.** Diagnóstico da árvore de pastas, plano, e movimentos
-   com `git mv`, uma pasta por commit.
+- **Fase 1 — código morto.** Configura o knip até os hints zerarem, roda em
+  modo produção e deleta em commits atômicos, um por categoria: deps não
+  usadas, arquivos órfãos, exports mortos. Cada commit só entra com gate
+  verde. No fim, produz uma auditoria do que sobrou.
+- **Fase 1.5 — funções duplicadas** (fecha a fase 1). Varre funções com nomes
+  diferentes fazendo a mesma coisa (similarity-ts ou fallow em JS/TS, jscpd
+  nos demais stacks) e aplica a regra do churn: par que muda junto no git é
+  duplicação real e vira candidato da fase 2; par que evolui separado é
+  coincidência estrutural e fica em paz. Só relatório — nada é deletado aqui.
+- **Fase 2 — consolidação.** Levanta até 5 candidatos de módulos rasos
+  (começando pelos pares da fase 1.5), recomenda um e faz uma única pergunta.
+  Respondeu "vai", ela implementa.
+- **Fase 3 — estrutura.** Diagnóstico da árvore de pastas, plano, e movimentos
+  com `git mv`, uma pasta por commit.
 
 Entre as fases a skill pede `/clear` — contexto acumulado de uma fase piora o
 julgamento da seguinte. O progresso fica em `CLEANUP_PROGRESS.md` na raiz do
@@ -157,9 +152,16 @@ commitado e convive com hooks que bloqueiam comandos destrutivos.
 
 Skills e materiais usados na construção desta:
 
-- [tech-debt-audit](https://github.com/ksimback/tech-debt-skill), de ksimback —
-  a fase 1.4 segue o protocolo dessa skill quando ela está instalada
-  (instalação na seção acima).
+- [tech-debt-audit](https://github.com/ksimback/tech-debt-skill), de ksimback
+  (MIT) — o protocolo de auditoria da fase 1.4 (`references/audit.md`) é
+  destilado dela: as nove dimensões, o template do relatório e a seção
+  obrigatória "parece ruim mas está ok".
+- [codebase-design e improve-codebase-architecture](https://github.com/mattpocock/skills),
+  de Matt Pocock — o vocabulário de análise da fase 2 (module, interface,
+  implementation, depth, seam, adapter, locality), o teste da deleção e a
+  definição de módulo raso vêm dessas skills. Os conceitos de seam e
+  profundidade de módulo remontam a Michael Feathers e a John Ousterhout
+  (*A Philosophy of Software Design*).
 - [skill-creator](https://github.com/anthropics/claude-plugins-official),
   plugin oficial da Anthropic — conduziu a revisão de boas práticas, os evals
   comparativos e a otimização da description desta skill.
@@ -167,5 +169,11 @@ Skills e materiais usados na construção desta:
   do WikiProject AI Cleanup da Wikipedia — base da adaptação local
   `humanizer-pt-br`, usada na escrita deste README.
 
-As duas últimas foram ferramentas de desenvolvimento: não precisam estar
-instaladas para usar a codebase-cleanup.
+Nenhuma delas é dependência de runtime: são fontes e ferramentas de
+desenvolvimento — nada além desta pasta precisa estar instalado para usar a
+codebase-cleanup.
+
+## Licença
+
+MIT — use, copie, modifique e redistribua à vontade. Texto completo em
+[LICENSE](LICENSE).
