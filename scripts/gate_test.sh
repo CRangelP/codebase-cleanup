@@ -62,6 +62,19 @@ stub_log() {
   chmod +x "$1/$2"
 }
 
+# stub_log_probe <dir> <name> <log> — same delegator, but it answers the -k
+# capability probe the way GNU timeout does: 'timeout -k 2 1 true' exits 0 and
+# leaves no trace, so the log only ever holds the real invocation that follows.
+stub_log_probe() {
+  mkdir -p "$1"
+  {
+    printf '#!/bin/sh\n'
+    printf 'if [ "$1" = -k ] && [ "$3" = 1 ] && [ "$4" = true ]; then exit 0; fi\n'
+    printf 'printf %%s "$*" > "%s"\nexit 124\n' "$3"
+  } > "$1/$2"
+  chmod +x "$1/$2"
+}
+
 assert_log() { # assert_log <name> <file> <expected content>
   local name=$1 file=$2 want=$3 got
   total=$((total+1))
@@ -262,11 +275,13 @@ WD_T="$TMP/wd-timeout"; WD_LOG_T="$TMP/wd-timeout.log"
 WD_G="$TMP/wd-gtimeout"; WD_LOG_G="$TMP/wd-gtimeout.log"
 stub_log "$WD_T" timeout "$WD_LOG_T" 124
 stub_log "$WD_G" gtimeout "$WD_LOG_G" 124
+WD_K="$TMP/wd-kill-after"; WD_LOG_K="$TMP/wd-kill-after.log"
+stub_log_probe "$WD_K" timeout "$WD_LOG_K"
 GO124="$TMP/stubs-go-124"; stub "$GO124" go 124
 MINI="$TMP/mini-path"
 link_bin "$MINI" bash sh perl ps find grep sleep
 
-reset_logs() { rm -f "$WD_LOG_T" "$WD_LOG_G"; }
+reset_logs() { rm -f "$WD_LOG_T" "$WD_LOG_G" "$WD_LOG_K"; }
 
 # A check whose grandchild calls setsid: it leaves the gate's process group, so
 # 'kill -PGID' alone would leave it running past the timeout. It records its own
@@ -323,6 +338,9 @@ elapsed_lt hang-is-bounded 10
 # Which backend the gate picks, and with which timeout, is contract: all three
 # have to exit 124, and the order timeout > gtimeout > perl must hold on any
 # machine. The delegators make that observable without waiting for a real hang.
+# These first delegators fail the -k capability probe (they exit 124 for every
+# argument list, the probe included), so they also pin the degraded shape: a
+# backend without -k is called exactly as before, with no extra flag.
 reset_logs
 GATE_ENV="GATE_TIMEOUT=2"
 case_run wd-timeout-dispatch 4 "$TMP/go-hang" "$WD_T:$GO:$BASE" "TIMEOUT after 2s"
@@ -338,6 +356,13 @@ reset_logs
 GATE_ENV="GATE_TIMEOUT=2"
 case_run wd-gtimeout-over-perl 4 "$TMP/go-hang" "$WD_G:$GO:$MINI" "TIMEOUT after 2s"
 assert_log wd-gtimeout-args "$WD_LOG_G" "2 go build ./..."
+
+# A backend that does answer the probe gets -k: TERM at the timeout, KILL 2s
+# later, so a check that ignores TERM cannot hold the gate open.
+reset_logs
+GATE_ENV="GATE_TIMEOUT=2"
+case_run wd-kill-after-passthrough 4 "$TMP/go-hang" "$WD_K:$GO:$BASE" "TIMEOUT after 2s"
+assert_log wd-kill-after-args "$WD_LOG_K" "-k 2 2 go build ./..."
 
 # The perl backend is the one that only shows up on a machine without coreutils;
 # a minimal PATH keeps it covered even when the suite runs on Linux.

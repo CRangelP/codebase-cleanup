@@ -80,6 +80,7 @@ my $rc = $?;
 exit(($rc & 127) ? 128 + ($rc & 127) : ($rc >> 8));'
 
 WATCHDOG=""
+WD_KILL_AFTER=""
 if [[ $GATE_TIMEOUT -gt 0 ]]; then
   if command -v timeout >/dev/null; then WATCHDOG=timeout
   elif command -v gtimeout >/dev/null; then WATCHDOG=gtimeout
@@ -88,10 +89,23 @@ if [[ $GATE_TIMEOUT -gt 0 ]]; then
   fi
 fi
 
+# GNU timeout only sends TERM: a check that ignores it stays alive and the gate
+# waits for it forever. -k asks for a KILL 2s later, the same escalation the perl
+# backend already does by hand. Not every timeout has the flag (BusyBox does
+# not), so probe it once, here, with a command that cannot hang. Failing the
+# probe — including a PATH without 'true' — means running without -k, which is
+# exactly today's behaviour.
+case $WATCHDOG in
+  timeout|gtimeout)
+    if "$WATCHDOG" -k 2 1 true >/dev/null 2>&1; then WD_KILL_AFTER="-k 2"; fi ;;
+esac
+
 # guard <cmd...> — runs the command under the resolved watchdog, if any
 guard() {
   case $WATCHDOG in
-    timeout|gtimeout) "$WATCHDOG" "$GATE_TIMEOUT" "$@" ;;
+    timeout|gtimeout)
+      # shellcheck disable=SC2086  # WD_KILL_AFTER is a flag pair or empty, by design
+      "$WATCHDOG" $WD_KILL_AFTER "$GATE_TIMEOUT" "$@" ;;
     perl) perl -e "$PERL_WATCHDOG" "$GATE_TIMEOUT" "$@" ;;
     *) "$@" ;;
   esac
