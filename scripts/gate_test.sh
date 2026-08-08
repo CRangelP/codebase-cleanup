@@ -25,6 +25,7 @@ total=0
 
 BASE="/usr/bin:/bin"
 
+
 # Extra environment for the next case_run only ("VAR=value VAR2=value2").
 # A single string instead of an array: bash 3.2 has no associative arrays and
 # word splitting is enough for the assignments used here.
@@ -312,6 +313,12 @@ GO124="$TMP/stubs-go-124"; stub "$GO124" go 124
 MINI="$TMP/mini-path"
 link_bin "$MINI" bash sh perl ps find grep sleep
 
+# Sandbox with the gate's own needs and ZERO stack toolchains. The PARTIAL
+# and missing-toolchain cases must not depend on what the host happens to
+# have in /usr/bin — a GitHub ubuntu runner ships go there, a laptop does not.
+NOTOOL="$TMP/notool-path"
+link_bin "$NOTOOL" bash sh env grep find xargs head perl ps sleep true
+
 # The same sandbox without ps: the perl watchdog cannot map the process tree,
 # so the sweep degrades to killing the group. The timeout itself must not.
 NOPS="$TMP/nops-path"
@@ -364,10 +371,10 @@ case_run empty            3 "$TMP/empty"        -             "no runnable check
 case_run js-green         0 "$TMP/js-green"     -             "checks=typecheck,test" "GREEN"
 case_run js-test-only     0 "$TMP/js-test-only" -             "checks=test" "YELLOW"
 case_run js-red           1 "$TMP/js-red"       -             "RED"
-case_run js-no-node       3 "$TMP/js-green"     "$BASE"       "toolchain 'node' missing"
+case_run js-no-node       3 "$TMP/js-green"     "$NOTOOL"     "toolchain 'node' missing"
 case_run js-bad-json      3 "$TMP/js-bad-json"  -             "unparseable"
-case_run polyglot-partial 3 "$TMP/polyglot"     "$OK:$BASE"   "checks=test" "some detected stack"
-case_run partial-none-ran 3 "$TMP/go-only"      "$BASE"       "nothing ran"
+case_run polyglot-partial 3 "$TMP/polyglot"     "$OK:$NOTOOL" "checks=test" "some detected stack"
+case_run partial-none-ran 3 "$TMP/go-only"      "$NOTOOL"     "nothing ran"
 case_run dotnet-green     0 "$TMP/dotnet-root"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
 case_run dotnet-red       1 "$TMP/dotnet-root"  "$FAIL:$BASE" "RED"
 case_run dotnet-subdir    0 "$TMP/dotnet-sub"   "$OK:$BASE"   "src/App/App.fsproj" "GREEN"
