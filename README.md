@@ -7,14 +7,18 @@ ordem: remove código morto, consolida módulos rasos e reorganiza a estrutura
 de pastas. A ordem importa — organizar pastas antes de apagar o que está morto
 é arrumar lixo em gaveta bonita.
 
-A skill executa sozinha o que dá para executar com segurança. O único ponto em
-que ela para e pergunta é a escolha do candidato de consolidação na fase 2,
-porque fronteira de módulo é decisão de domínio, não de código.
+A skill executa sozinha o que dá para executar com segurança. Ela para e
+pergunta em dois casos: na escolha do candidato de consolidação da fase 2,
+porque fronteira de módulo é decisão de domínio, não de código; e logo no
+começo, se a árvore de trabalho estiver suja — aí você decide entre `git stash`,
+commitar o que está pendente ou abortar, e nada acontece antes da sua resposta.
 
 ## Requisitos
 
 - Claude Code com suporte a skills.
-- `git` — todo o trabalho acontece numa branch `cleanup/YYYYMMDD`, nunca na main.
+- `git` — todo o trabalho acontece numa branch `cleanup/YYYYMMDD`, nunca na
+  main. Sem repositório git a skill só diagnostica: o rollback dela depende de
+  ter um commit bom para onde voltar.
 - Para projetos JS/TS: Node com `npx` (o knip roda via `npx knip`, sem
   instalação prévia).
 - Outros stacks usam as ferramentas de cada ecossistema (vulture, deadcode,
@@ -109,8 +113,11 @@ categoria pedida e registra o resto como fora de escopo.
 
 ### O que acontece ao rodar
 
-Antes de tocar em qualquer arquivo, a skill mede a rede de segurança do
-projeto com `scripts/gate.sh` e se classifica em um de três níveis:
+Antes de qualquer coisa ela confere o terreno: se a árvore de trabalho tem
+alteração não commitada, ela para e pergunta o que fazer (stash, commitar ou
+abortar) em vez de arriscar o seu trabalho em progresso no primeiro rollback.
+Com a árvore limpa, mede a rede de segurança do projeto com `scripts/gate.sh`
+e se classifica em um de três níveis:
 
 | Nível | Condição | O que ela faz |
 |---|---|---|
@@ -171,6 +178,9 @@ commitado e convive com hooks que bloqueiam comandos destrutivos.
 - Nível RED devolve relatório, não limpeza. Se o projeto não tem teste nem
   typecheck, o primeiro passo é criar uma verificação mínima; a skill aponta o
   caminho no próprio relatório.
+- Pasta sem git também cai em RED, mesmo com typecheck e testes passando. Sem
+  commit não existe rollback, e é o rollback que sustenta a autonomia do resto
+  do pipeline.
 
 ## Créditos
 

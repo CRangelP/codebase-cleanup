@@ -7,14 +7,19 @@ order: remove dead code, consolidate shallow modules, reorganize the folder
 structure. The order matters — reorganizing folders before deleting what is
 dead is tidying garbage into a nice drawer.
 
-The skill runs everything it can safely run on its own. The one place where it
-stops and asks is the choice of consolidation candidate in phase 2, because a
-module boundary is a domain decision, not a code decision.
+The skill runs everything it can safely run on its own. It stops and asks in
+two situations: the choice of consolidation candidate in phase 2, because a
+module boundary is a domain decision, not a code decision; and right at the
+start, if the working tree is dirty — then you pick between `git stash`,
+committing the pending work or aborting, and nothing happens before your
+answer.
 
 ## Requirements
 
 - Claude Code with skill support.
-- `git` — all work happens on a `cleanup/YYYYMMDD` branch, never on main.
+- `git` — all work happens on a `cleanup/YYYYMMDD` branch, never on main. With
+  no git repository the skill only diagnoses: its rollback depends on having a
+  good commit to go back to.
 - For JS/TS projects: Node with `npx` (knip runs via `npx knip`, no prior
   installation).
 - Other stacks use the tools of each ecosystem (vulture, deadcode,
@@ -109,8 +114,11 @@ requested category and records the rest as out of scope.
 
 ### What happens when it runs
 
-Before touching any file, the skill measures the project's safety net with
-`scripts/gate.sh` and classifies itself into one of three levels:
+Before anything else it checks the ground: if the working tree has uncommitted
+changes, it stops and asks what to do (stash, commit or abort) instead of
+risking your work in progress on the first rollback. With a clean tree, it
+measures the project's safety net with `scripts/gate.sh` and classifies itself
+into one of three levels:
 
 | Level | Condition | What it does |
 |---|---|---|
@@ -173,6 +181,9 @@ commands.
 - RED level returns a report, not a cleanup. If the project has neither tests
   nor typecheck, the first step is to create a minimal verification; the skill
   points the way in the report itself.
+- A folder with no git falls into RED as well, even with typecheck and tests
+  passing. With no commit there is no rollback, and the rollback is what holds
+  up the autonomy of the rest of the pipeline.
 
 ## Credits
 

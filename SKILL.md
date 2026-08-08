@@ -36,8 +36,9 @@ creation, file deletion), do not work around it: record the pending item in
 the next step that does not depend on it. A guard is environment policy, not an
 obstacle.
 
-There is **one mandatory checkpoint** in the entire pipeline (phase 2, choosing
-the consolidation candidate). Everything else runs on its own.
+There is **one scheduled checkpoint** in the entire pipeline (phase 2, choosing
+the consolidation candidate) and **one conditional stop** at Step 0, when the
+working tree is dirty before anything starts. Everything else runs on its own.
 
 ---
 
@@ -47,12 +48,41 @@ Before anything else, measure the safety net. The autonomy level is a function
 of it, not a preference.
 
 ```bash
-git status --porcelain                    # clean working tree?
-git rev-parse --abbrev-ref HEAD           # current branch
+git rev-parse --is-inside-work-tree       # is there a repo at all?
+git status --porcelain                    # anything uncommitted?
+git rev-parse --abbrev-ref HEAD           # current branch (HEAD = detached)
 [ -f package.json ] && grep -E '"(test|typecheck|lint|build)"' package.json
 ```
 
-Run the baseline gate with `scripts/gate.sh` (path relative to this skill's
+Read those three answers before running anything else:
+
+**No git repository** (`--is-inside-work-tree` fails). The level is **RED**,
+diagnosis only, whatever the gate says afterwards. Without commits there is no
+rollback, and the whole safety argument of this skill rests on being able to
+return to a good HEAD. Say so in one line and produce a report.
+
+**Dirty working tree** (`git status --porcelain` prints anything). **Stop and
+ask.** This is the conditional stop, and it is not negotiable: the rollback of
+this pipeline is `git restore --staged --worktree .`, which throws away
+uncommitted work in the tracked files — including work that was already there
+when you arrived. Present the three ways out and wait for the user to pick one:
+
+1. `git stash push -u` — parks everything and gives you a clean tree;
+2. commit the pending work first, on the current branch, and then start;
+3. abort the cleanup.
+
+Do not choose on the user's behalf, do not stash "to be helpful", do not start
+anyway because "the diff looks small". Only an explicit answer unblocks the
+pipeline. If they pick 1 or 2, run `git status --porcelain` again and confirm
+it is empty before moving on.
+
+**Detached HEAD** (`--abbrev-ref HEAD` prints `HEAD`). Not a blocker: record
+the current commit in `CLEANUP_PROGRESS.md` and create the cleanup branch
+normally — it will branch off that commit, which is exactly what you want. Note
+in the final report that the work started from a detached HEAD, so the user
+knows where the branch came from.
+
+With a clean tree and a repo, run the baseline gate with `scripts/gate.sh` (path relative to this skill's
 directory; it accepts the project directory as an argument) and classify. The
 script detects the stack from the root manifest — `package.json`, `go.mod`,
 `Cargo.toml`, `pyproject.toml`/`setup.cfg`, `pom.xml`/`build.gradle`,
@@ -80,6 +110,7 @@ autonomously.
 | Typecheck **and** tests pass | **GREEN** | Runs phases 1 and 3 in full without asking. Phase 2 stops at the checkpoint. |
 | Tests exist but fail, or typecheck only | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Stops before phase 2 and reports. |
 | No tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. Delivers a report. |
+| No git repository | **RED** | Diagnoses only, regardless of the gate result — there is no HEAD to roll back to. |
 
 `checks=typecheck` because the stack has **no test file** is YELLOW, not GREEN,
 even though the gate exits 0 — a suite that does not exist cannot pass. The
@@ -97,6 +128,13 @@ the level.
 ```bash
 git checkout -b cleanup/$(date +%Y%m%d)
 ```
+
+Two cleanups on the same day collide on that name, and `checkout -b` fails
+instead of overwriting anything. Resolve it without asking: if the existing
+branch has a `CLEANUP_PROGRESS.md`, it is an interrupted run of this same skill
+— check it out and resume from the file. Otherwise, suffix the name (`-2`,
+`-3`, and so on) until `git rev-parse --verify` says the ref is free. Never
+force, never delete the branch that is in the way.
 
 ## Step 0.1 — Persistent state
 
