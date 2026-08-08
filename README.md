@@ -152,9 +152,14 @@ e se classifica em um de três níveis:
 
 | Nível | Condição | O que ela faz |
 |---|---|---|
-| GREEN | typecheck e testes passam | executa as fases inteiras sem perguntar |
+| GREEN | typecheck e testes passam | executa as fases sem perguntar; a fase 2 para no checkpoint |
 | YELLOW | rede parcial, ou nenhum arquivo de teste no stack | só deps e arquivos órfãos, sem mexer em exports |
-| RED | sem testes e sem typecheck | só diagnostica; nada é deletado |
+| RED | sem testes e sem typecheck, ou baseline já vermelho | só diagnostica; nada é deletado |
+
+Projeto que já chega com a suíte vermelha cai em RED, não em YELLOW: com o
+baseline quebrado não dá para separar o que a limpeza quebrou do que já estava
+quebrado, e como todo commit exige gate verde, nenhum deles aconteceria. A
+skill diz qual check falhou e para por aí.
 
 Stack sem nenhum arquivo de teste não conta como testado: o gate não roda a
 suíte vazia e o nível fica em YELLOW. Vale para Go e .NET sem arquivo de

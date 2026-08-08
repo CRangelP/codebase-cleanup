@@ -222,6 +222,8 @@ Typecheck at the end of each folder
 one mandatory checkpoint
 typecheck and tests between each step
 only what has not been committed
+"(test|typecheck|lint|build)"
+Tests exist but fail
 DEAD
 
 # The exception: phase-3-structure.md explains why a "pure git mv" commit is
@@ -315,6 +317,62 @@ for f in $moves; do
                 { prev = $0 }' "$f")
   check "git mv preceded by mkdir -p in $f" \
         "$([[ -z $orphan ]] && echo 0 || echo 1)" "$orphan"
+done
+
+# 7. The level table says the same thing in the three files. -----------------
+# The level is the whole dispatch of the skill: SKILL.md's table decides what
+# runs, and both READMEs promise the user that same behavior. They drifted once
+# — SKILL.md called a failing suite YELLOW and sent it into phase 1, while the
+# protocol a few lines below refuses to commit without a green gate, so the
+# announced level was one no run could ever honor. README.md is in Portuguese,
+# so byte equality across the three is out; what is asserted instead is the part
+# that has to hold in any language.
+LEVEL_FILES="SKILL.md README.md README.en.md"
+
+# level_names <file> — the level of each row of the file's level table, in
+# order. Table rows are the only lines that start with `|`, and the first level
+# word on a row is that row's level, whichever column the file puts it in.
+level_names() {
+  awk '/^\|/ && match($0, /GREEN|YELLOW|RED/) { print substr($0, RSTART, RLENGTH) }' "$1"
+}
+
+# Consecutive repeats collapse on purpose: SKILL.md carries a fourth row (no git
+# repository, which is RED before the gate even runs) that the READMEs keep as a
+# bullet under known limits. That asymmetry is deliberate — the table is what an
+# agent dispatches on, the READMEs are prose for a human who already read the
+# requirement. What may not differ is which levels exist and how they escalate.
+level_shape() {
+  level_names "$1" |
+  awk 'NR == 1 || $0 != prev { print } { prev = $0 }' |
+  tr '\n' ' ' | sed 's/[[:space:]]*$//'
+}
+
+for f in $LEVEL_FILES; do
+  shape=$(level_shape "$f")
+  check "level table of $f reads GREEN YELLOW RED" \
+        "$([[ $shape == 'GREEN YELLOW RED' ]] && echo 0 || echo 1)" \
+        "levels in order: [$shape]"
+done
+
+# The condition that puts a run at YELLOW, in each file's own language, checked
+# against the YELLOW row itself and not merely somewhere in the file — the row
+# is what gets read at classification time.
+yellow_row() { grep -E '^\|' "$1" | grep -F -m1 -- 'YELLOW'; }
+
+for pair in \
+  'SKILL.md|partial net, or no test file in the stack' \
+  'README.en.md|partial net, or no test file in the stack' \
+  'README.md|rede parcial, ou nenhum arquivo de teste no stack'
+do
+  f=${pair%%|*}
+  cond=${pair#*|}
+  row=$(yellow_row "$f")
+  if printf '%s' "$row" | grep -q -F -- "$cond"; then
+    pass "YELLOW row of $f states the canonical condition"
+  else
+    fail "YELLOW row of $f states the canonical condition" \
+         "expected [$cond] — row reads: ${row:-<no YELLOW row>}"
+  fi
 done
 
 echo "----"

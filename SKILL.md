@@ -60,7 +60,6 @@ of it, not a preference.
 git rev-parse --is-inside-work-tree       # is there a repo at all?
 git status --porcelain                    # anything uncommitted?
 git rev-parse --abbrev-ref HEAD           # current branch (HEAD = detached)
-[ -f package.json ] && grep -E '"(test|typecheck|lint|build)"' package.json
 ```
 
 Read those three answers before running anything else:
@@ -102,9 +101,10 @@ it finds (compiling counts as typecheck).
 Classify by the `[gate] checks=...` line, which lists what actually ran, and
 not by the exit code alone: GREEN requires `typecheck` and `test` in the list;
 a partial list caps at YELLOW, and the script itself says so. Exit 0 =
-everything that ran passed; 1 = something failed; 2 = bad path (the argument is
-not a directory the script can enter, so nothing was checked — fix the path and
-rerun); 3 = no runnable check **or** some detected stack had no toolchain
+everything that ran passed; 1 = something failed, which is RED whatever the
+list says; 2 = bad path (the argument is not a directory the script can enter,
+so nothing was checked — fix the path and rerun); 3 = no runnable check
+**or** some detected stack had no toolchain
 (`PARTIAL` — including in a polyglot repo where another stack passed); 4 = a
 check hit the watchdog (`GATE_TIMEOUT`, 900s per check by default, `0`
 disables). In the exit-3 cases, finish the gate by hand before classifying.
@@ -119,8 +119,8 @@ timeout: a check that legitimately exits 124 is read as a timeout.
 | Signal | Level | Behavior |
 |---|---|---|
 | Typecheck **and** tests pass | **GREEN** | Runs phases 1 and 3 in full without asking. Phase 2 stops at the checkpoint. |
-| Tests exist but fail, or typecheck only | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Stops before phase 2 and reports. |
-| No tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. Delivers a report. |
+| A partial net, or no test file in the stack | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Stops before phase 2 and reports. |
+| A check fails, or no tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. Delivers a report. |
 | No git repository | **RED** | Diagnoses only, regardless of the gate result — there is no HEAD to roll back to. |
 
 `checks=typecheck` because the stack has **no test file** is YELLOW, not GREEN,
@@ -129,9 +129,12 @@ script names the stack in the `'test' not counted` line. Only the user promotes
 it, by pointing at the suite that lives somewhere the gate does not look; the
 skill never promotes itself.
 
-If the baseline is already broken, **fix it or warn before touching
-anything**. You need an initial green to distinguish what you broke from what
-was already broken.
+**A baseline that already fails is RED, not YELLOW.** Exit 1 says a check
+broke, and a broken baseline leaves no way to tell what the cleanup broke from
+what was already broken. It also has nowhere to go: every commit here needs a
+green gate, so a run that starts red deletes, rolls back and commits nothing,
+category after category. **Fix it or warn before touching anything** — until
+then the deliverable is the diagnosis, naming the check that failed.
 
 Announce the detected level in one line and move on. Do not ask permission for
 the level.
@@ -537,4 +540,5 @@ regeneration settles the rest: whatever it still lists is what survived, and it
 belongs under "Failed / not done", along with any category that was skipped.
 
 If the level was RED, the report is diagnosis only: list what you would do and
-what needs to exist (tests, typecheck) to make it possible.
+what needs to exist or be fixed (tests, typecheck, a baseline that passes) to
+make it possible.

@@ -155,9 +155,14 @@ into one of three levels:
 
 | Level | Condition | What it does |
 |---|---|---|
-| GREEN | typecheck and tests pass | runs the full phases without asking |
+| GREEN | typecheck and tests pass | runs the phases without asking; phase 2 stops at the checkpoint |
 | YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports |
-| RED | no tests and no typecheck | diagnoses only; nothing is deleted |
+| RED | no tests and no typecheck, or a baseline already failing | diagnoses only; nothing is deleted |
+
+A project that arrives with a red suite falls into RED, not YELLOW: with a
+broken baseline there is no telling what the cleanup broke from what was
+already broken, and since every commit demands a green gate, none of them would
+happen. The skill names the failing check and stops there.
 
 A stack with no test file at all does not count as tested: the gate does not
 run the empty suite and the level stays at YELLOW. That covers Go and .NET
