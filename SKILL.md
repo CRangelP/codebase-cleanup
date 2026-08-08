@@ -210,14 +210,12 @@ with no surprises.
 
 ## 1.4 Full audit
 
-With the garbage gone, the graph is clean and the audit becomes precise. If the
-`tech-debt-audit` skill is installed, read its SKILL.md and follow the protocol
-— it is marked as user-invoked (`disable-model-invocation`), so do not try to
-invoke it as a skill; the value is in the protocol, which you run directly. If
-it is not installed, produce the equivalent: a whole-repo sweep citing
-`file:line` in every finding, with severity and effort, covering architectural
-decay, inconsistency, type debt, tests, deps and config, performance, error
-handling, security hygiene and outdated documentation.
+With the garbage gone, the graph is clean and the audit becomes precise.
+Follow the protocol in `references/audit.md` — nine dimensions with
+`file:line` citations, severity and effort per finding, and the deliverable
+template for `TECH_DEBT_AUDIT.md`. The protocol is distilled from ksimback's
+tech-debt-audit (MIT; credited in the README), so no other skill needs to be
+installed for this step.
 
 Always include a **"looks bad but is fine"** section — the calls you considered
 making and decided not to make, with the reason. If that section comes out

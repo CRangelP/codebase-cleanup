@@ -51,7 +51,9 @@ codebase-cleanup/
 ├── SKILL.md                          main instructions
 ├── README.md                         readme in Portuguese
 ├── README.en.md                      this file
+├── LICENSE                           MIT
 ├── references/
+│   ├── audit.md                      phase 1.4 audit protocol
 │   ├── knip-config.md                knip configuration without pitfalls
 │   ├── duplication.md                duplicate functions and the churn rule
 │   ├── phase-2-consolidation.md      module consolidation protocol
@@ -70,36 +72,10 @@ see whether `codebase-cleanup` shows up in the list of available skills.
 codebase-cleanup is self-contained by design. The pipeline calls tools
 (knip, similarity-ts, jscpd, gate.sh), not other skills — and the knowledge
 that came from third-party skills was absorbed into this one's files: the
-phase 1.4 audit protocol is summarized in SKILL.md itself, and the phase 2
-consolidation vocabulary lives in `references/phase-2-consolidation.md`.
+phase 1.4 audit protocol lives in `references/audit.md`, and the phase 2
+consolidation vocabulary in `references/phase-2-consolidation.md`.
 Installing the skills named in the credits changes nothing at runtime; they
-are sources, not dependencies. The only real runtime integration is
-tech-debt-audit below, optional and with a built-in fallback.
-
-### Companion skill (optional, but worth installing first)
-
-At the end of phase 1, the skill produces an audit of what is left after the
-cleanup. If [tech-debt-audit](https://github.com/ksimback/tech-debt-skill) is
-installed, codebase-cleanup follows its protocol in that step instead of
-improvising the report — the result comes out in a stable format, with
-severity and effort estimate per finding.
-
-The command below is pinned to a specific commit, because the downloaded file
-is not data: it is instruction that Claude executes with the permissions of
-your session. Read the file before using it, and review it again if you ever
-update to a newer version of the repository:
-
-```bash
-mkdir -p ~/.claude/skills/tech-debt-audit
-curl -fSL -o ~/.claude/skills/tech-debt-audit/SKILL.md \
-  https://raw.githubusercontent.com/ksimback/tech-debt-skill/5a15c1ca4a929b2759461c218478de391a8bda0f/SKILL.md
-shasum -a 256 ~/.claude/skills/tech-debt-audit/SKILL.md
-# expected: 60bb907377d11cd71e3b0aa6bb67a3128de8ad6230352ff61c621a9d8bea441f
-```
-
-Nothing breaks without it: the audit is generated inline, only in a less
-predictable format. This is the only dependency between skills — no other one
-needs to exist for codebase-cleanup to run.
+are sources, not dependencies.
 
 ## Usage
 
@@ -179,9 +155,9 @@ commands.
 Skills and materials used in building this one:
 
 - [tech-debt-audit](https://github.com/ksimback/tech-debt-skill), by ksimback
-  — the nine audit dimensions of phase 1.4 and the required "looks bad but is
-  fine" section come from it; when installed, the phase follows the full
-  protocol (installation in the section above).
+  (MIT) — the phase 1.4 audit protocol (`references/audit.md`) is distilled
+  from it: the nine dimensions, the report template and the required "looks
+  bad but is fine" section.
 - [codebase-design and improve-codebase-architecture](https://github.com/mattpocock/skills),
   by Matt Pocock — phase 2's analysis vocabulary (module, interface,
   implementation, depth, seam, adapter, locality), the deletion test and the
@@ -195,6 +171,11 @@ Skills and materials used in building this one:
   from Wikipedia's WikiProject AI Cleanup — the basis of the local adaptation
   `humanizer-pt-br`, used to write this README.
 
-Only the first one interacts at runtime (phase 1.4); the others were sources
-and development tools — they do not need to be installed to use
+None of them is a runtime dependency: they were sources and development
+tools — nothing beyond this folder needs to be installed to use
 codebase-cleanup.
+
+## License
+
+MIT — use, copy, modify and redistribute freely. Full text in
+[LICENSE](LICENSE).

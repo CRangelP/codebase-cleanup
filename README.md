@@ -50,7 +50,9 @@ codebase-cleanup/
 ├── SKILL.md                          instruções principais
 ├── README.md                         este arquivo
 ├── README.en.md                      versão em inglês
+├── LICENSE                           MIT
 ├── references/
+│   ├── audit.md                      protocolo de auditoria da fase 1.4
 │   ├── knip-config.md                configuração do knip sem armadilhas
 │   ├── duplication.md                funções duplicadas e a regra do churn
 │   ├── phase-2-consolidation.md      protocolo de consolidação de módulos
@@ -69,37 +71,11 @@ veja se `codebase-cleanup` aparece na lista de skills disponíveis.
 A codebase-cleanup é autossuficiente por design. O pipeline chama
 ferramentas (knip, similarity-ts, jscpd, gate.sh), não outras skills — e o
 conhecimento que veio de skills de terceiros foi absorvido nos arquivos
-desta: o protocolo de auditoria da fase 1.4 está resumido na própria
-SKILL.md, e o vocabulário de consolidação da fase 2 já vive em
+desta: o protocolo de auditoria da fase 1.4 vive em `references/audit.md`, e
+o vocabulário de consolidação da fase 2 em
 `references/phase-2-consolidation.md`. Instalar as skills citadas nos
 créditos não muda o comportamento em runtime; elas são fonte, não
-dependência. A única integração real de runtime é a tech-debt-audit abaixo,
-opcional e com fallback embutido.
-
-### Skill complementar (opcional, mas vale instalar antes)
-
-Ao fim da fase 1, a skill produz uma auditoria do que sobrou depois da
-limpeza. Se a [tech-debt-audit](https://github.com/ksimback/tech-debt-skill)
-estiver instalada, a codebase-cleanup segue o protocolo dela nessa etapa em
-vez de improvisar o relatório — o resultado sai num formato estável, com
-severidade e estimativa de esforço por achado.
-
-O comando abaixo está pinado num commit específico, porque o arquivo baixado
-não é dado: é instrução que o Claude executa com as permissões da sua sessão.
-Leia o arquivo antes de usar, e revise de novo se um dia atualizar para uma
-versão mais nova do repositório:
-
-```bash
-mkdir -p ~/.claude/skills/tech-debt-audit
-curl -fSL -o ~/.claude/skills/tech-debt-audit/SKILL.md \
-  https://raw.githubusercontent.com/ksimback/tech-debt-skill/5a15c1ca4a929b2759461c218478de391a8bda0f/SKILL.md
-shasum -a 256 ~/.claude/skills/tech-debt-audit/SKILL.md
-# esperado: 60bb907377d11cd71e3b0aa6bb67a3128de8ad6230352ff61c621a9d8bea441f
-```
-
-Sem ela nada quebra: a auditoria é gerada inline, só com formato menos
-previsível. É a única dependência entre skills — nenhuma outra precisa existir
-para a codebase-cleanup rodar.
+dependência.
 
 ## Uso
 
@@ -176,10 +152,10 @@ commitado e convive com hooks que bloqueiam comandos destrutivos.
 
 Skills e materiais usados na construção desta:
 
-- [tech-debt-audit](https://github.com/ksimback/tech-debt-skill), de ksimback —
-  as nove dimensões da auditoria da fase 1.4 e a seção obrigatória "parece
-  ruim mas está ok" vêm dela; instalada, a fase segue o protocolo completo
-  (instalação na seção acima).
+- [tech-debt-audit](https://github.com/ksimback/tech-debt-skill), de ksimback
+  (MIT) — o protocolo de auditoria da fase 1.4 (`references/audit.md`) é
+  destilado dela: as nove dimensões, o template do relatório e a seção
+  obrigatória "parece ruim mas está ok".
 - [codebase-design e improve-codebase-architecture](https://github.com/mattpocock/skills),
   de Matt Pocock — o vocabulário de análise da fase 2 (module, interface,
   implementation, depth, seam, adapter, locality), o teste da deleção e a
@@ -193,6 +169,11 @@ Skills e materiais usados na construção desta:
   do WikiProject AI Cleanup da Wikipedia — base da adaptação local
   `humanizer-pt-br`, usada na escrita deste README.
 
-Só a primeira interage em runtime (fase 1.4); as demais foram fontes e
-ferramentas de desenvolvimento — não precisam estar instaladas para usar a
+Nenhuma delas é dependência de runtime: são fontes e ferramentas de
+desenvolvimento — nada além desta pasta precisa estar instalado para usar a
 codebase-cleanup.
+
+## Licença
+
+MIT — use, copie, modifique e redistribua à vontade. Texto completo em
+[LICENSE](LICENSE).
