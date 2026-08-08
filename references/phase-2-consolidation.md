@@ -79,8 +79,15 @@ One candidate per session. Per consolidation:
 1. Create the new interface
 2. Migrate callers
 3. Remove the old modules
-4. Typecheck + tests
-5. Commit `refactor: consolidate X into Y`
+4. `git add -A`
+5. Typecheck + tests
+6. Commit `refactor: consolidate X into Y`
+
+Step 4 is not bookkeeping. `git restore --staged --worktree .` brings back a
+deleted file and drops a staged new one, but an unstaged new file survives the
+rollback and poisons the next step — so the new interface has to be staged
+before the gate runs. Staging everything is safe because the tree was clean
+when the pipeline started.
 
 Gate failed → `git restore --staged --worktree .`, record it, do not try to
 fix it.

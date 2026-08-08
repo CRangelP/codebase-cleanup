@@ -164,8 +164,13 @@ git revert <sha>           # desfaz só aquela categoria
 
 O merge da branch é decisão sua, no seu tempo. A skill nunca faz push, nunca
 commita na main e nunca usa `git reset --hard` — o rollback dela é
-`git restore --staged --worktree .`, que descarta apenas o que ainda não foi
+`git restore --staged --worktree .`, que joga fora tudo o que ainda não foi
 commitado e convive com hooks que bloqueiam comandos destrutivos.
+
+Note o "tudo": alteração sua que estava no diretório antes de a skill começar
+entraria nessa conta. É por isso que ela exige árvore limpa no início e para
+para perguntar quando não está — com a árvore limpa, o que o rollback descarta
+foi ela mesma que criou.
 
 ## Limites conhecidos
 

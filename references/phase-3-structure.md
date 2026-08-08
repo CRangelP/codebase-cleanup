@@ -71,8 +71,9 @@ If rewriting imports is unavoidable, do it in a commit separate from the move:
 2. refactor: update imports for billing   (imports only)
 ```
 
-Typecheck at the end of each folder. Failed → `git restore --staged --worktree .`,
-record it, next folder.
+`git add -A` and then typecheck at the end of each folder — staged first, so
+that the rollback also undoes files created during the move. Failed →
+`git restore --staged --worktree .`, record it, next folder.
 
 ## Do not forget
 

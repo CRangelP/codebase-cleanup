@@ -24,11 +24,20 @@ What makes this safe is not asking, it is the structure of the work: a
 dedicated branch, atomic commits per category, and a green gate (typecheck +
 tests) before every commit. If something breaks, the rollback is to discard
 whatever is not committed yet with `git restore --staged --worktree .` —
-without asking anyone, because the previous commit was already correct. Since every
-commit only happens on a green gate, HEAD is always a good state, and restoring
-the tracked files to HEAD is equivalent to a full rollback (never use
-`git reset --hard` or `git clean`: restore covers the case and survives
-environments with hooks that block destructive commands).
+without asking anyone, because the previous commit was already correct. Since
+every commit only happens on a green gate, HEAD is always a good state.
+
+Restoring the tracked files to HEAD is a full rollback under two conditions,
+and both are the pipeline's job to guarantee: the tree was clean when the work
+started (Step 0 stops if it was not), and everything the step changed is staged
+before the gate runs — `git restore --staged --worktree .` undoes a staged new
+file, but leaves an untracked one behind. Hence the rule that repeats at every
+step: **`git add -A` before the gate.**
+
+Never use `git reset --hard` or `git clean`. `restore` covers the case and
+survives environments with hooks that block destructive commands; `git clean`
+would additionally wipe untracked files that must survive — tool output,
+caches, local env files that never belonged to this cleanup.
 
 **If a security hook blocks a command from the protocol** (rollback, branch
 creation, file deletion), do not work around it: record the pending item in
@@ -138,10 +147,16 @@ force, never delete the branch that is in the way.
 
 ## Step 0.1 — Persistent state
 
-Create `CLEANUP_PROGRESS.md` at the root and keep it updated at the end of
-every step. Phases are separated by `/clear` (dirty context from one phase
-degrades the next), so this file is what allows resuming without the user
-re-explaining anything.
+Create `CLEANUP_PROGRESS.md` at the root and **commit it right away**
+(`chore: start cleanup log`), before any other work. It is the only artifact
+that has to outlive a rollback: an untracked file survives
+`git restore --staged --worktree .` by accident, a committed one survives by
+design, and a staged one would be thrown away with the failed step. Keep it
+updated at the end of every step, committed along with that step's changes.
+
+Phases are separated by `/clear` (dirty context from one phase degrades the
+next), so this file is what allows resuming without the user re-explaining
+anything.
 
 ```markdown
 # Cleanup Progress
@@ -216,6 +231,11 @@ many findings disappeared.
 Configuration details (entry, project, paths, monorepo, when to use each
 `ignore*`) are in `references/knip-config.md`. Read it before writing the file.
 
+When the hints reach zero, commit `knip.json` on its own
+(`chore: knip config`), before deleting anything. It cost several rounds to get
+right and it is the input to every deletion that follows — if the first
+category fails its gate, the rollback must not take the config with it.
+
 The rule that saves the most rework: **do not use the `ignore` option.** It
 does not exclude anything from the analysis, it only hides the report —
 creating a blind spot. If something shows up wrong, the fix is to teach the
@@ -237,9 +257,15 @@ Never exclude tests with `ignore` to get the same effect.
 ## 1.3 Delete in atomic commits, one per category
 
 Run all three without asking (GREEN level) or the first two (YELLOW). Each one
-is: delete → gate → commit. For the gate, use `scripts/gate.sh` (it detects the
-stack and the package manager and runs typecheck + tests in the right order);
-if it exits with code 3, run the stack's equivalent commands by hand.
+is: delete → `git add -A` → gate → commit. For the gate, use `scripts/gate.sh`
+(it detects the stack and the package manager and runs typecheck + tests in the
+right order); if it exits with code 3, run the stack's equivalent commands by
+hand.
+
+Staging before the gate is what makes the rollback complete, and it is safe
+here precisely because Step 0 refused to start on a dirty tree: everything
+`git add -A` picks up was produced by this step, so the `-A` cannot swallow work
+of the user's.
 
 ```
 1. unused deps        → "chore: remove unused deps"
@@ -388,8 +414,8 @@ Prefer updating **path aliases** over rewriting 200 imports. If the project
 uses `@/features/*`, moving a folder can be one line in the tsconfig instead of
 a 3,000-line diff.
 
-Typecheck at the end of each folder. Failed: `git restore --staged --worktree .`,
-record it, next folder.
+`git add -A` and then typecheck at the end of each folder. Failed:
+`git restore --staged --worktree .`, record it, next folder.
 
 ---
 

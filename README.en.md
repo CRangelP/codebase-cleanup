@@ -166,9 +166,14 @@ git revert <sha>           # undoes only that category
 
 Merging the branch is your decision, on your schedule. The skill never
 pushes, never commits on main and never uses `git reset --hard` — its
-rollback is `git restore --staged --worktree .`, which discards only what has
-not been committed yet and coexists with hooks that block destructive
+rollback is `git restore --staged --worktree .`, which throws away everything
+that has not been committed yet and coexists with hooks that block destructive
 commands.
+
+Note the "everything": a change of yours sitting in the working tree before the
+skill started would go with it. That is why it demands a clean tree up front
+and stops to ask when it does not find one — with a clean tree, what the
+rollback discards is what the skill itself created.
 
 ## Known limits
 
