@@ -64,11 +64,27 @@ codebase-cleanup/
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
     ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/2/3/4
-    └── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
+    ├── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
+    └── rollback_test.sh              prova executável do protocolo de rollback
 ```
 
 Para conferir a instalação, abra uma sessão nova (ou rode `/reload-skills`) e
 veja se `codebase-cleanup` aparece na lista de skills disponíveis.
+
+### Testes
+
+Duas suítes, sem dependência além de `bash` e `git`:
+
+```bash
+bash scripts/gate_test.sh       # contrato do gate: exit codes, linha checks=, PARTIAL
+bash scripts/rollback_test.sh   # o que `git restore` recupera e o que ele destrói
+```
+
+Cada uma sai 0 quando tudo passou e imprime o caso que falhou quando não.
+Nenhuma das duas toca o repositório em que você a rodou: o gate usa stubs de
+toolchain e o rollback cria repositórios descartáveis dentro de um `mktemp -d`,
+com `HOME` redirecionado e identidade de commit passada por `-c` — sua config
+do git não é lida nem escrita.
 
 ### Nenhuma outra skill é obrigatória
 
