@@ -246,8 +246,18 @@ graph (entry, project, paths, plugin), not to silence the output.
 ## 1.2 Run in production mode
 
 ```bash
-npx knip --production --reporter json > knip-report.json
+npx knip --production --no-exit-code --reporter json > knip-report.json.tmp && mv knip-report.json.tmp knip-report.json
 ```
+
+Write to a temp file and move only on success. A plain `> knip-report.json`
+truncates the file before knip even starts, so a crash leaves an empty report
+that 1.3 reads as "nothing to delete" — a silent failure. `--no-exit-code` is
+what makes the `&&` usable: knip exits 1 whenever it finds issues, which is the
+normal case here, and 2 only when it actually failed.
+
+Check the report before 1.3 consumes it: `test -s knip-report.json` and it has
+to parse as JSON. If it does not, knip failed — fix that instead of proceeding
+with an empty list.
 
 Production mode excludes tests and devDependencies automatically. That matters
 because a function imported only by a test is technically alive, but it is dead
