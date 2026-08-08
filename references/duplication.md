@@ -16,9 +16,9 @@ conclusions.
 Try in this order; each step down trades precision for availability.
 
 **1. similarity-ts** — compares functions by AST structure and reports pairs
-with a percentage. It is a Rust binary (`cargo install similarity-ts`); if it
-is not on PATH and there is no cargo, do not install a toolchain for it —
-step down the ladder.
+with a percentage. It is a Rust binary (`cargo install similarity-ts`, if the
+user wants it around); if it is not on PATH, do not install it — step down
+the ladder.
 
 ```bash
 similarity-ts ./src --threshold 0.85 --min-tokens 25 --print
@@ -65,6 +65,7 @@ npx jscpd src --reporters ai --min-tokens 50 --cross-formats "js-ts"
   `--min-tokens` on every invocation, or the runs are not comparable.
 - `--cross-formats "js-ts"` compares `.js` against `.ts` — a half-done
   JS→TS migration is a duplicate factory, and this is the flag that catches it.
+  On a non-JS/TS stack, drop the flag — there is nothing for it to pair.
 
 ## The churn rule
 
@@ -90,12 +91,12 @@ The verdict is exhaustive — every pair lands in one of two buckets:
 
 - `co / min(na,nb)` **≥ 1/3** → **real duplication**. Promote the pair to the
   phase 2 candidate list.
-- **Below 1/3** → **structural coincidence** (0 or 1 co-change is just the
+- **Below 1/3** → **structural coincidence** (zero co-changes is just the
   obvious end of this bucket). Leave it, and record it in the report as
   "left alone on purpose" with the `co/min` numbers — that entry is what
   stops the next cleanup from re-flagging the same pair.
 
-Two blind spots to keep in mind:
+Three blind spots to keep in mind:
 
 - **Granularity.** The detector reports function pairs; the recipe counts
   file co-changes. Two 500-line utility drawers that get touched weekly will
@@ -104,6 +105,10 @@ Two blind spots to keep in mind:
   `git log -L 10,20:src/utils.ts --format=%H`.
 - **Same-file pairs.** The churn test cannot separate them at all; judge
   those by the deletion test in phase 2.
+- **Thin history.** With `min(na,nb)` at 3 or less the ratio says little —
+  two files born in the same scaffold commit score 1/1 with zero shared
+  evolution. Read the pair before promoting it, and record the thin
+  denominator in the report.
 
 ## What the report contains
 

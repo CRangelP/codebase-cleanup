@@ -143,7 +143,7 @@ result. "This file looks unused" is a guess; "no entry point reaches this file
 in the module graph" is a fact.
 
 For non-JS/TS stacks, read `references/other-stacks.md`. The rest of this phase
-assumes JS/TS.
+assumes JS/TS (step 1.5 names its own fallback for other stacks).
 
 ## 1.1 Configure knip until the hints reach zero
 
