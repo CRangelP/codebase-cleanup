@@ -170,6 +170,12 @@ hits=$(repo_files | xargs grep -l -F -- "$GITMV" 2>/dev/null |
 check "\"$GITMV\" only in references/phase-3-structure.md" \
       "$([[ -z $hits ]] && echo 0 || echo 1)" "$hits"
 
+# Inside that file, exactly once: the explanatory paragraph. A second
+# occurrence would be the old instruction sneaking back past the file filter.
+n=$(grep -c -F -- "$GITMV" references/phase-3-structure.md 2>/dev/null)
+check "\"$GITMV\" appears exactly once in references/phase-3-structure.md" \
+      "$([[ ${n:-0} -eq 1 ]] && echo 0 || echo 1)" "count=${n:-0}"
+
 # 4. Whoever documents the gate as a step also documents staging. -------------
 # The gate reads the working tree, so a protocol that runs it without `git
 # add -A` first checks something the commit will not contain.

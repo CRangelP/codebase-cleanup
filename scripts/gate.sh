@@ -30,8 +30,12 @@ incomplete=0
 # copying GNU timeout so run() only has to know that number.
 # Limit: what still escapes the kill is a double fork already reparented to
 # init/launchd when the alarm fires, and anything created between the snapshot
-# and the kill. A plain setsid does not escape: it changes the group, not the
-# parent, so the descendant sweep below still finds it.
+# and the kill. The perl backend also sweeps descendants by parent pid (needs
+# ps; without it the sweep silently degrades to the group kill), so under perl
+# a plain setsid does not escape — it changes the group, not the parent. GNU
+# timeout/gtimeout kill the group only, with no sweep: there a setsid child
+# does escape. Residual race, accepted: a pid snapshotted and recycled during
+# the 2s TERM→KILL grace can be signalled by mistake.
 GATE_TIMEOUT=${GATE_TIMEOUT:-900}
 case $GATE_TIMEOUT in
   ''|*[!0-9]*)
