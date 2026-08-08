@@ -48,11 +48,12 @@ Imagine deleting the module.
    set — ask for it explicitly with `npx knip --cycles` (shortcut for
    `--include cycles`), or a plain `npx knip` will report nothing about
    circular dependencies.
-2. **Cross with churn volume (file-level).** `git log --format=%H
-   --name-only | sort | uniq -c | sort -rn` — the intersection between
+2. **Cross with churn volume (file-level).** The intersection between
    "changed a lot" and "heavily coupled" is where consolidation pays the
-   most. This is a different, weaker signal than the pair-level co-change of
-   step 0: it says a file is hot, not that two files move together.
+   most. Rank the files by
+   `git log --no-merges --format= --name-only | sed '/^$/d' | sort | uniq -c | sort -rn`.
+   This is a different, weaker signal than the pair-level co-change of step
+   0: it says a file is hot, not that two files move together.
 3. **Actually read the candidate clusters.** Do not judge by file name.
 4. **Rank by confidence**, not by size.
 

@@ -17,10 +17,12 @@ paragraph mental model of the architecture as it actually is — you built
 most of it while configuring the phase 1 dead-code tool. If the model
 contradicts the README, the contradiction is itself a finding.
 
-Pull churn data: `git log --stat --since="6 months ago"`. Intersect the 20
-largest files with the 20 most modified — that intersection is where debt
-usually hides, and it is what separates "actually has debt" from "just looks
-messy".
+Pull churn data: `git log --stat --since="6 months ago"`, ranking the most
+modified files with
+`git log --no-merges --format= --name-only | sed '/^$/d' | sort | uniq -c | sort -rn`.
+Intersect the 20 largest files with the 20 most modified — that intersection
+is where debt usually hides, and it is what separates "actually has debt"
+from "just looks messy".
 
 ## The nine dimensions
 
