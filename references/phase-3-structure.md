@@ -6,7 +6,10 @@ Before moving any file, produce:
 
 1. **Map of the current structure** — depth, what lives where, what has no
    clear owner
-2. **Circular dependencies** — from knip's `cycles` or from `madge --circular`
+2. **Circular dependencies** — from knip's `cycles` or from `madge --circular`.
+   `cycles` is not in knip's default issue set: run `npx knip --cycles`
+   (shortcut for `--include cycles`), otherwise the report comes back silent
+   on this point
 3. **God modules** — directories that everyone imports
 4. **Leaking abstractions** — a module's internal detail referenced from
    outside

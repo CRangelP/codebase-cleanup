@@ -43,8 +43,11 @@ Imagine deleting the module.
    passed the pair-level co-change rule outrank anything below — two
    implementations of one intent are the consolidation candidate in its
    purest form.
-1. **Map.** Import graph (knip's `cycles` already covers a good part of it),
-   module sizes, who calls whom.
+1. **Map.** Import graph, module sizes, who calls whom. knip's `cycles`
+   already covers a good part of it, but it is **not** in the default issue
+   set — ask for it explicitly with `npx knip --cycles` (shortcut for
+   `--include cycles`), or a plain `npx knip` will report nothing about
+   circular dependencies.
 2. **Cross with churn volume (file-level).** `git log --format=%H
    --name-only | sort | uniq -c | sort -rn` — the intersection between
    "changed a lot" and "heavily coupled" is where consolidation pays the
