@@ -73,6 +73,7 @@ codebase-cleanup/
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
     ├── gate.sh                       multi-stack typecheck + tests, exit 0/1/2/3/4
+    ├── test.sh                       runs the three suites in sequence
     ├── gate_test.sh                  gate contract tests (toolchain stubs)
     ├── rollback_test.sh              executable proof of the rollback protocol
     └── coherence_test.sh             coherence invariants between docs and code
@@ -86,13 +87,16 @@ see whether `codebase-cleanup` shows up in the list of available skills.
 Three suites, with nothing to install beyond `bash` and `git`:
 
 ```bash
+bash scripts/test.sh            # runs all three, stopping at the first failure
+
 bash scripts/gate_test.sh       # gate contract: exit codes, the checks= line, PARTIAL
 bash scripts/rollback_test.sh   # what `git restore` brings back and what it destroys
 bash scripts/coherence_test.sh  # docs and code saying the same thing
 ```
 
 Each exits 0 when everything passed and prints the failing case when it does
-not. None of them touches the repository you run it from: the gate suite uses
+not; `test.sh` only chains the three and stops at the first red. None of them
+touches the repository you run it from: the gate suite uses
 toolchain stubs, the rollback suite builds throwaway repositories inside a
 `mktemp -d`, with `HOME` redirected and the commit identity passed via `-c` —
 your git config is never read nor written —, and the coherence suite only
