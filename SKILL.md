@@ -121,9 +121,10 @@ The contract of each delegation:
 - the path to this skill (the subagent reads SKILL.md and follows it, with
   references/ and scripts/ alongside) and the path to the repo;
 - the instruction to read `CLEANUP_PROGRESS.md` before anything else;
-- the scope of **one** phase — and phase 2 becomes two delegations: the survey
-  returns the candidates, the implementation only starts after the user's
-  choice;
+- the scope of **one** phase — step 1.5 belongs to the phase 1 delegation
+  (the `/clear` at its end is the phase 1 → phase 2 boundary), and phase 2
+  becomes two delegations: the survey returns the candidates, the
+  implementation only starts after the user's choice;
 - returning a summary of what it did, with `CLEANUP_PROGRESS.md` updated as the
   canonical state.
 
@@ -222,8 +223,36 @@ Always include a **"looks bad but is fine"** section — the calls you considere
 making and decided not to make, with the reason. If that section comes out
 empty, the audit did not look deep enough and you must go back.
 
-Commit the report. Update `CLEANUP_PROGRESS.md`. **Tell the user to run
-`/clear` before phase 2.**
+Commit the report (GREEN/YELLOW; at RED nothing is committed — it goes into
+the final report instead). Update `CLEANUP_PROGRESS.md`.
+
+## 1.5 Duplicate functions (report only)
+
+Goal: functions with different names doing the same thing — duplicated
+intent. This runs here for a reason: earlier, the pair list would be full of
+code that 1.2–1.3 was about to delete anyway; later is too late, because
+these pairs are the best input the phase 2 survey will get. A 90% pair across
+two folders is a more obvious consolidation candidate than anything depth
+analysis surfaces alone.
+
+For JS/TS the ladder is: `similarity-ts` (AST comparison per function) if it
+is on PATH, else `npx fallow dupes` (no install needed); other stacks fall
+back to `jscpd`. Tools, flags, thresholds and the report format are in
+`references/duplication.md` — read it before running anything.
+
+**The churn rule.** High similarity is not a verdict. Check whether the pair
+changes together in git history: pairs that co-change are real duplication
+and become phase 2 candidates; pairs that evolve independently are structural
+coincidence — two domains that will diverge, where abstracting early costs
+more than duplicating. Record those as "left alone on purpose" with the churn
+evidence.
+
+Nothing is merged or deleted in this step — which of two duplicate functions
+survives is a naming-and-intent decision, and that belongs to the phase 2
+checkpoint. Commit the report (`chore: duplication survey`) on GREEN/YELLOW;
+at RED nothing is committed and the pair table goes into the final report
+instead. Update `CLEANUP_PROGRESS.md`. Step 1.5 closes phase 1: **tell the
+user to run `/clear` before phase 2.**
 
 ---
 
@@ -343,6 +372,7 @@ Branch: `cleanup/YYYYMMDD` · Level: GREEN · N commits
 | Phase | Result |
 |---|---|
 | 1 — dead code | 7 deps, 23 files, 41 exports removed |
+| 1.5 — duplicate functions | 6 pairs found, 2 real (churn), 4 left alone |
 | 2 — consolidation | 3 modules → 1 (`src/billing/`) |
 | 3 — structure | 4 folders reorganized, 2 cycles broken |
 

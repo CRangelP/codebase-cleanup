@@ -1,0 +1,122 @@
+# Phase 1.5 — finding duplicate functions
+
+The target is duplicated **intent**: functions with different names doing the
+same thing. That is the symptom phase 2 cares about — two implementations of
+one idea are the strongest consolidation candidate there is, stronger than
+anything depth analysis finds on its own.
+
+Honest ceiling first: true semantic detection (same purpose, entirely
+different implementation) is still an open goal for every tool below. What
+they catch reliably is the renamed clone — same structure, different names,
+different literals. Treat every list as candidates to read, never as
+conclusions.
+
+## The tool ladder (JS/TS)
+
+Try in this order; each step down trades precision for availability.
+
+**1. similarity-ts** — compares functions by AST structure and reports pairs
+with a percentage. It is a Rust binary (`cargo install similarity-ts`); if it
+is not on PATH and there is no cargo, do not install a toolchain for it —
+step down the ladder.
+
+```bash
+similarity-ts ./src --threshold 0.85 --min-tokens 25 --print
+```
+
+- `--threshold` 0.80–0.85: below that, noise dominates.
+- `--min-tokens` 20–30: filters trivial two-liners that are similar by accident.
+- `--print` shows the code, which saves a round of file opening.
+
+Output looks like this (upstream format — note the indentation and the
+`Score` suffix if you parse it):
+
+```
+Duplicates in src/utils.ts:
+────────────────────────────────────────────────────────────
+  src/utils.ts:10-20 calculateTotal <-> src/helpers.ts:5-15 computeSum
+  Similarity: 92.50%, Score: 9.2 points
+```
+
+The same author ships `similarity-py`/`similarity-rs` (beta) and
+`similarity-generic` (experimental); this reference sends other stacks to
+jscpd instead because it is the mature option, not because the family does
+not exist.
+
+**2. fallow** — runs without installing anything (`npx fallow dupes`) and
+finds clone families (not just pairs) with four modes: `strict` (exact
+tokens), `mild` (default), `weak` (different literals), `semantic` (renamed
+variables). Start on `mild`, escalate to `semantic` if the output is thin.
+Also covers dead code, complexity and boundaries in the same binary. TS/JS
+only.
+
+**3. jscpd** — the multi-language fallback (223 formats), and the only rung
+for non-JS/TS stacks:
+
+```bash
+npx jscpd src --reporters ai --min-tokens 50 --cross-formats "js-ts"
+```
+
+- Token-level: it finds copy-paste (including with edits), **not** renamed
+  intent. In Python, Go or Java this is the honest ceiling; say so in the
+  report instead of overselling the sweep.
+- The `ai` reporter is compact output (~79% fewer tokens than the default),
+  made to be read in-session without flooding context. Keep it and
+  `--min-tokens` on every invocation, or the runs are not comparable.
+- `--cross-formats "js-ts"` compares `.js` against `.ts` — a half-done
+  JS→TS migration is a duplicate factory, and this is the flag that catches it.
+
+## The churn rule
+
+High similarity alone does not mean "consolidate". Two look-alike
+implementations that belong to different domains and will diverge should stay
+separate — abstracting too early costs more than duplicating. The practical
+discriminator is whether the pair changes together. Compute numerator AND
+denominator (bash — uses process substitution):
+
+```bash
+a=$(git log --follow --format=%H -- pathA | sort -u)
+b=$(git log --follow --format=%H -- pathB | sort -u)
+co=$(comm -12 <(printf '%s\n' "$a") <(printf '%s\n' "$b") | grep -c .)
+na=$(printf '%s\n' "$a" | grep -c .); nb=$(printf '%s\n' "$b" | grep -c .)
+echo "co-changes: $co / min($na,$nb)"
+```
+
+`git log --follow` (one pathspec per side) survives renames — which matters
+here, because phase 3 of this very skill moves files; `rev-list -- path`
+would cut the history at the rename and undercount.
+
+The verdict is exhaustive — every pair lands in one of two buckets:
+
+- `co / min(na,nb)` **≥ 1/3** → **real duplication**. Promote the pair to the
+  phase 2 candidate list.
+- **Below 1/3** → **structural coincidence** (0 or 1 co-change is just the
+  obvious end of this bucket). Leave it, and record it in the report as
+  "left alone on purpose" with the `co/min` numbers — that entry is what
+  stops the next cleanup from re-flagging the same pair.
+
+Two blind spots to keep in mind:
+
+- **Granularity.** The detector reports function pairs; the recipe counts
+  file co-changes. Two 500-line utility drawers that get touched weekly will
+  pass the 1/3 cut for reasons unrelated to the duplicated pair. For pairs
+  inside big shared files, confirm with a line-range log before promoting:
+  `git log -L 10,20:src/utils.ts --format=%H`.
+- **Same-file pairs.** The churn test cannot separate them at all; judge
+  those by the deletion test in phase 2.
+
+## What the report contains
+
+One table, committed with the phase 1 artifacts (GREEN/YELLOW only — at RED
+nothing is committed; the table goes into the final report instead):
+
+| A | B | Similarity | Co-changes | Verdict |
+|---|---|---|---|---|
+| `src/utils.ts:10 calculateTotal` | `src/helpers.ts:5 computeSum` | 92% | 7/19 | phase 2 candidate |
+| `src/billing/round.ts:3` | `src/shipping/round.ts:3` | 88% | 0/14 | left alone: domains diverge |
+
+The "phase 2 candidate" rows feed the survey in
+`references/phase-2-consolidation.md` and outrank candidates found by depth
+analysis alone. Nothing gets merged or deleted in this phase — which of two
+duplicate functions survives is a naming-and-intent decision, and that is
+exactly what the phase 2 checkpoint exists for.
