@@ -154,6 +154,20 @@ nothing is committed; the table goes into the final report instead):
 | `src/utils.ts:10 calculateTotal` | `src/helpers.ts:5 computeSum` | 92% | 7/19 | phase 2 candidate |
 | `src/billing/round.ts:3` | `src/shipping/round.ts:3` | 88% | 0/14 | left alone: domains diverge |
 
+**Only step 1 fills `Similarity` with a percentage.** fallow reports clone
+families and jscpd reports token-level clones; neither gives a per-pair score,
+so inventing one is a lie the next cleanup will inherit. When the ladder
+degraded, write what the tool actually said and name the tool:
+
+| A | B | Similarity | Co-changes | Verdict |
+|---|---|---|---|---|
+| `src/a.ts:10 parseUser` | `src/b.ts:40 readUser` | fallow group #3 (semantic) | 5/12 | phase 2 candidate |
+| `src/a.py:1` | `src/b.py:1` | 74 tokens (jscpd) | 2/9 | left alone: domains diverge |
+
+A pair whose rows come from step 2 or 3 also carries a weaker claim — token
+or family membership, not measured structural similarity — and the report
+should say which rung produced it.
+
 The "phase 2 candidate" rows feed the survey in
 `references/phase-2-consolidation.md` and outrank candidates found by depth
 analysis alone. Nothing gets merged or deleted in this phase — which of two
