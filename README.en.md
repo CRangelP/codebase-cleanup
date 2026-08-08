@@ -1,4 +1,4 @@
-**English** · [Português](README.md)
+**English** · [Português](README.md) · [![ci](https://github.com/CRangelP/codebase-cleanup/actions/workflows/ci.yml/badge.svg)](https://github.com/CRangelP/codebase-cleanup/actions/workflows/ci.yml)
 
 # codebase-cleanup
 
@@ -102,13 +102,16 @@ toolchain stubs, the rollback suite builds throwaway repositories inside a
 your git config is never read nor written —, and the coherence suite only
 reads files.
 
+CI runs the three suites on every push and PR: ubuntu (real GNU `timeout`,
+procps) and macOS with the stock `/bin/bash` 3.2.
+
 The suites also run outside macOS. In a Linux container the hang case
 exercises the real GNU `timeout` instead of the perl backend:
 
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validated 2026-08: 40/40 cases, 5/5 properties, 43/43 invariants
+# validated 2026-08: 57/57 cases, 5/5 properties, 49/49 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -157,7 +160,9 @@ into one of three levels:
 | RED | no tests and no typecheck | diagnoses only; nothing is deleted |
 
 A stack with no test file at all does not count as tested: the gate does not
-run the empty suite and the level stays at YELLOW. If your suite lives outside
+run the empty suite and the level stays at YELLOW. That covers Go and .NET
+with no test file, a Rust crate with no `tests/*.rs` and no `#[test]`, and a
+pytest run that exits 5 having collected nothing. If your suite lives outside
 the usual place, promoting it is your call — the gate never promotes itself.
 
 With the level announced, it creates the cleanup branch and proceeds:
@@ -216,10 +221,15 @@ rollback discards is what the skill itself created.
 - RED level returns a report, not a cleanup. If the project has neither tests
   nor typecheck, the first step is to create a minimal verification; the skill
   points the way in the report itself.
-- A root with a `.sln` and a `.csproj` whose base names differ makes
-  `dotnet build` with no argument fail with MSB1011, and the gate reports RED
-  on a repo that compiles. It fails closed (nothing gets promoted unduly):
-  run the gate by hand pointing at the solution, or align the names.
+- Exit 124 is reserved for the watchdog, exactly as in GNU `timeout`: a
+  check that legitimately exits 124 under an active watchdog reads as TIMEOUT.
+- With a single `.sln`/`.slnx` at the root the gate passes it explicitly to
+  `dotnet`; with two or more it abstains and invokes with no argument, and
+  the ambiguity is MSBuild's again. It fails closed: run the gate by hand
+  pointing at the solution.
+- A Rust crate whose tests exist only as doc-tests (or come out of a macro)
+  falls to the YELLOW cap — the evidence searched for is `tests/*.rs` or
+  `#[test]` in the sources. Promote by hand if the suite lives elsewhere.
 - A folder with no git falls into RED as well, even with typecheck and tests
   passing. With no commit there is no rollback, and the rollback is what holds
   up the autonomy of the rest of the pipeline.

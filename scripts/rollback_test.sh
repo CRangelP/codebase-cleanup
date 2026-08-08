@@ -83,6 +83,16 @@ assert_status() { # assert_status <repo> <expected porcelain output>
   return 0
 }
 
+assert_status_has() { # assert_status_has <repo> <expected porcelain line>
+  # For cases where the property is one entry, not the whole report: an extra
+  # unrelated line is noise, and demanding equality would make the test brittle
+  # for no gain. Where emptiness itself is the property, assert_status stays.
+  local st; st=$(g "$1" status --porcelain)
+  printf '%s\n' "$st" | grep -qx -F -- "$2" ||
+    note_fail "git status --porcelain: got '$st', want a line '$2'"
+  return 0
+}
+
 # 1. A staged deletion is fully undone. -------------------------------------
 begin "staged deletion comes back"
 REPO=$(new_repo staged-deletion)
@@ -112,7 +122,7 @@ printf 'c1\n' > "$REPO/c.txt"
 rollback "$REPO"
 assert_exists "$REPO/c.txt"
 assert_content "$REPO/c.txt" c1
-assert_status "$REPO" "?? c.txt"
+assert_status_has "$REPO" "?? c.txt"
 end
 
 # 4. A rename is undone on both ends. ---------------------------------------

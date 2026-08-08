@@ -113,7 +113,8 @@ disables). In the exit-3 cases, finish the gate by hand before classifying.
 nothing about the code: treat it as red (rollback, record what timed out in
 `CLEANUP_PROGRESS.md`) and never promote it to GREEN. On the Step 0 baseline,
 exit 4 means the safety net could not be measured — report it and do not run
-autonomously.
+autonomously. Exit code 124 is reserved for the watchdog, exactly as in GNU
+timeout: a check that legitimately exits 124 is read as a timeout.
 
 | Signal | Level | Behavior |
 |---|---|---|

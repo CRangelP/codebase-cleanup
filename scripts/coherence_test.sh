@@ -3,8 +3,9 @@
 # than one file at once. A doc drift that used to be caught by reading — a
 # rollback command typed slightly differently, an exit code the READMEs never
 # heard of, a script missing from the file tree — fails here instead.
-# Read-only: it opens the repository's files and never writes, stages or runs
-# anything in it.
+# Read-only over the repository: it opens the repo's files and never writes,
+# stages or runs anything inside it. Its self-tests need files to scan, so they
+# build them in a mktemp -d of their own and delete it on the way out.
 # Usage: coherence_test.sh   (exit 0 = every invariant held)
 set -u
 
@@ -25,9 +26,13 @@ references/phase-2-consolidation.md references/phase-3-structure.md \
 scripts/rollback_test.sh"
 
 # Files that spell out the protocol step by step: whoever tells the reader to
-# run the gate also has to tell them to stage first.
-PROTOCOL_FILES="SKILL.md references/phase-2-consolidation.md \
-references/phase-3-structure.md"
+# run the gate also has to tell them to stage first. Derived, not listed — a
+# new reference that starts calling the gate has to answer for it too, and a
+# hand-kept list would silently leave it out. The READMEs are excluded on
+# purpose: they present the skill, they do not walk the reader through it.
+protocol_files() {
+  grep -l -F -- 'scripts/gate.sh' SKILL.md references/*.md 2>/dev/null | sort
+}
 
 pass() { total=$((total+1)); echo "ok: $1"; }
 
@@ -42,17 +47,31 @@ check() { # check <name> <ok:0|1> <detail>
   if [[ $2 -eq 0 ]]; then pass "$1"; else fail "$1" "$3"; fi
 }
 
-# repo_files — every file of the repo except .git and this suite. The suite
-# quotes the very strings it forbids, so scanning itself would fail on purpose.
+# repo_files [root] — every file under <root> (default: the repo) except .git
+# and this suite, NUL-separated. The suite quotes the very strings it forbids,
+# so scanning itself would fail on purpose. The root is a parameter so the
+# self-tests below can point the scanner at a throwaway directory.
+# NUL keeps names with spaces intact end to end; a name with a newline in it is
+# still out of reach (grep -l prints one path per line) and is not defended.
 repo_files() {
-  find . -type f -not -path './.git/*' -not -path "./$SELF" | sort
+  local root=${1:-.}
+  find "$root" -type f -not -path "$root/.git/*" -not -path "$root/$SELF" -print0
 }
 
-# count_matches <pattern> — occurrences (not lines) across repo_files
+# count_matches <pattern> [root] — occurrences (not lines) across repo_files.
+# /dev/null is passed to grep so it never falls back to reading stdin when the
+# scan comes up empty.
 count_matches() {
   local n
-  n=$(repo_files | xargs grep -o -F -- "$1" 2>/dev/null | wc -l)
+  n=$(repo_files "${2:-.}" | xargs -0 grep -o -F -- "$1" /dev/null 2>/dev/null | wc -l)
   printf '%s' "$((n))"
+}
+
+# files_with <string> [root] — the files under <root> that contain the fixed
+# string, one per line, sorted (the sort belongs here, not in find: the NUL
+# stream must stay in find's order all the way to grep).
+files_with() {
+  repo_files "${2:-.}" | xargs -0 grep -l -F -- "$1" /dev/null 2>/dev/null | sort
 }
 
 # tree_scripts <readme> — the *.sh names listed in the README's file tree
@@ -64,36 +83,79 @@ tree_scripts() {
   ' "$1" | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u
 }
 
-# gate_exit_codes — the exit literals in the *bash body* of gate.sh: comments
-# and single-quoted strings (the embedded perl watchdog has its own 124/127)
-# are stripped first, so only what the gate can really return is left.
-gate_exit_codes() {
+# bash_body — reads a shell script on stdin and prints its bash body with
+# quoted text and comments removed. One character-by-character pass does both,
+# because doing them in two passes is wrong: stripping comments first mutilates
+# a '# ...' that lives inside a string, and stripping strings first swallows a
+# quote (an apostrophe, say) that lives inside a comment. The quoting state
+# survives across lines, which is what the embedded multi-line perl watchdog of
+# gate.sh needs. Each quoted run collapses to a single space so nothing on
+# either side of it gets glued together.
+bash_body() {
   local q
   q=$(printf '\047')
-  sed -e 's/^[[:space:]]*#.*$//' -e 's/[[:space:]]#.*$//' scripts/gate.sh |
   awk -v q="$q" '
     {
-      n = split($0, a, q) - 1
-      if (insq) {
-        if (n % 2 == 0) next          # still inside the quoted string
-        insq = 0
-        line = a[2]
-        for (i = 3; i <= n + 1; i++) line = line q a[i]
-        print line
-        next
+      out = ""; prev = ""; n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (insq) {                       # nothing escapes inside '\''...'\''
+          if (c == q) insq = 0
+        } else if (indq) {
+          if (c == "\\") i++              # backslash escapes the next char
+          else if (c == "\"") indq = 0
+        } else {
+          if (c == "#" && (i == 1 || prev == " " || prev == "\t")) break
+          if (c == q) { insq = 1; out = out " " }
+          else if (c == "\"") { indq = 1; out = out " " }
+          else out = out c
+        }
+        prev = c
       }
-      if (n % 2 == 1) {               # opens a string that stays open
-        insq = 1
-        line = a[1]
-        for (i = 2; i <= n; i++) line = line q a[i]
-        print line
-        next
-      }
-      print
+      print out
     }
-  ' | grep -oE '(^|[^A-Za-z0-9_])exit[[:space:]]+[0-9]+' |
+  '
+}
+
+# exit_codes — the exit literals in the *bash body* read from stdin, so only
+# what the script can really return is left (the perl watchdog's own 124/127
+# live inside a quoted string and do not count).
+exit_codes() {
+  bash_body |
+  grep -oE '(^|[^A-Za-z0-9_])exit[[:space:]]+[0-9]+' |
   grep -oE '[0-9]+$' | sort -u
 }
+
+gate_exit_codes() { exit_codes < scripts/gate.sh; }
+
+# 0. The suite's own scanners work. ------------------------------------------
+# Every invariant below is only as trustworthy as the extractor that feeds it,
+# so the extractor is exercised here on a synthetic script — a heredoc, never
+# a file on disk — whose single real exit is 7.
+got=$(exit_codes <<'SYNTH'
+X="exit 99"
+Y='exit 98'
+# exit 97
+echo hi # exit 96
+exit 7
+Z='first line
+second # exit 95
+exit 94'
+SYNTH
+)
+check "exit-code extractor sees past quotes and comments" \
+      "$([[ $got == 7 ]] && echo 0 || echo 1)" \
+      "extracted [$(printf '%s' "$got" | tr '\n' ' ')], expected [7]"
+
+# The file scanner has to reach a file whose name has a space in it, or a dead
+# string could hide in one. Exercised on a throwaway tree, never in the repo.
+SELFTMP=$(mktemp -d)
+trap 'rm -rf "$SELFTMP"' EXIT
+printf '%s\n' '--isolate-workspaces' > "$SELFTMP/a b.txt"
+got=$(files_with '--isolate-workspaces' "$SELFTMP")
+check "file scanner reads a file name with a space" \
+      "$([[ $got == "$SELFTMP/a b.txt" ]] && echo 0 || echo 1)" \
+      "found [$got], expected [$SELFTMP/a b.txt]"
 
 # 1. The rollback command is one string, in every file that documents it. -----
 for f in $ROLLBACK_FILES; do
@@ -148,7 +210,7 @@ check "gate.sh only exits documented codes" \
 # Each one described a protocol that no longer exists; a copy left behind
 # contradicts the current one.
 while IFS= read -r dead; do
-  hits=$(repo_files | xargs grep -l -F -- "$dead" 2>/dev/null)
+  hits=$(files_with "$dead")
   if [[ -z $hits ]]; then
     pass "dead string absent: $dead"
   else
@@ -165,8 +227,7 @@ DEAD
 # The exception: phase-3-structure.md explains why a "pure git mv" commit is
 # not enough. Anywhere else the phrase would be the old, wrong instruction.
 GITMV='pure `git mv`'
-hits=$(repo_files | xargs grep -l -F -- "$GITMV" 2>/dev/null |
-       grep -v '^\./references/phase-3-structure\.md$')
+hits=$(files_with "$GITMV" | grep -v '^\./references/phase-3-structure\.md$')
 check "\"$GITMV\" only in references/phase-3-structure.md" \
       "$([[ -z $hits ]] && echo 0 || echo 1)" "$hits"
 
@@ -179,10 +240,22 @@ check "\"$GITMV\" appears exactly once in references/phase-3-structure.md" \
 # 4. Whoever documents the gate as a step also documents staging. -------------
 # The gate reads the working tree, so a protocol that runs it without `git
 # add -A` first checks something the commit will not contain.
-for f in $PROTOCOL_FILES; do
-  if ! grep -q -F -- 'scripts/gate.sh' "$f" 2>/dev/null; then
-    fail "gate step pairs with git add -A in $f" "no longer mentions scripts/gate.sh"
-  elif grep -q -F -- 'git add -A' "$f" 2>/dev/null; then
+derived=$(protocol_files)
+
+# Floor: the three files that carry the protocol today have to be in the
+# derived list. Without it, a rename or a dropped mention would empty the list
+# and the invariant would pass over nothing at all.
+for f in SKILL.md references/phase-2-consolidation.md references/phase-3-structure.md; do
+  if printf '%s\n' "$derived" | grep -qx -F -- "$f"; then
+    pass "$f is derived as a protocol file"
+  else
+    fail "$f is derived as a protocol file" \
+         "no longer mentions scripts/gate.sh — derived list: $(printf '%s' "$derived" | tr '\n' ' ')"
+  fi
+done
+
+for f in $derived; do
+  if grep -q -F -- 'git add -A' "$f" 2>/dev/null; then
     pass "gate step pairs with git add -A in $f"
   else
     fail "gate step pairs with git add -A in $f" \

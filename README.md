@@ -1,4 +1,4 @@
-[English](README.en.md) · **Português**
+[English](README.en.md) · **Português** · [![ci](https://github.com/CRangelP/codebase-cleanup/actions/workflows/ci.yml/badge.svg)](https://github.com/CRangelP/codebase-cleanup/actions/workflows/ci.yml)
 
 # codebase-cleanup
 
@@ -99,13 +99,16 @@ toolchain, o rollback cria repositórios descartáveis dentro de um `mktemp -d`,
 com `HOME` redirecionado e identidade de commit passada por `-c` — sua config
 do git não é lida nem escrita —, e a de coerência só lê arquivos.
 
+A CI roda as três suítes a cada push e PR: ubuntu (GNU `timeout` real,
+procps) e macOS com o `/bin/bash` 3.2 de fábrica.
+
 As suítes também rodam fora do macOS. Num container Linux, o caso de hang
 exercita o GNU `timeout` real em vez do backend perl:
 
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validado em 08/2026: 40/40 casos, 5/5 propriedades, 43/43 invariantes
+# validado em 08/2026: 57/57 casos, 5/5 propriedades, 49/49 invariantes
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -154,8 +157,10 @@ e se classifica em um de três níveis:
 | RED | sem testes e sem typecheck | só diagnostica; nada é deletado |
 
 Stack sem nenhum arquivo de teste não conta como testado: o gate não roda a
-suíte vazia e o nível fica em YELLOW. Se a sua suíte mora fora do lugar
-padrão, a promoção é sua — o gate não se promove sozinho.
+suíte vazia e o nível fica em YELLOW. Vale para Go e .NET sem arquivo de
+teste, para crate Rust sem `tests/*.rs` nem `#[test]`, e para pytest que sai
+5 sem coletar nada. Se a sua suíte mora fora do lugar padrão, a promoção é
+sua — o gate não se promove sozinho.
 
 Com o nível anunciado, ela cria a branch de limpeza e segue:
 
@@ -211,10 +216,15 @@ rollback joga fora foi ela mesma que criou.
 - Nível RED devolve relatório, não limpeza. Se o projeto não tem teste nem
   typecheck, o primeiro passo é criar uma verificação mínima; a skill aponta o
   caminho no próprio relatório.
-- Raiz com `.sln` e `.csproj` de nomes-base diferentes lado a lado faz o
-  `dotnet build` sem argumento falhar com MSB1011, e o gate dá RED num repo
-  que compila. A falha é fechada (nada é promovido indevidamente): rode o
-  gate manual apontando a solução, ou alinhe os nomes.
+- Exit 124 é reservado ao watchdog, igual ao GNU `timeout`: um check que
+  legitimamente sai 124 sob watchdog ativo é lido como TIMEOUT.
+- Com uma única `.sln`/`.slnx` na raiz o gate a passa explícita ao `dotnet`;
+  com duas ou mais ele se abstém e invoca sem argumento, e a ambiguidade
+  volta a ser do MSBuild. Falha fechada: rode o gate manual apontando a
+  solução.
+- Crate Rust cujos testes existem só como doc-tests (ou gerados por macro)
+  cai no cap YELLOW — a evidência procurada é `tests/*.rs` ou `#[test]` no
+  fonte. Promova à mão se a suíte vive em outro lugar.
 - Pasta sem git também cai em RED, mesmo com typecheck e testes passando. Sem
   commit não existe rollback, e é o rollback que sustenta a autonomia do resto
   do pipeline.

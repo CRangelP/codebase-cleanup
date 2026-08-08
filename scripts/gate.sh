@@ -27,15 +27,19 @@ incomplete=0
 # --- Watchdog ---------------------------------------------------------
 # A hanging check (a test waiting on a port, a REPL, a prompt) would freeze the
 # gate forever. Resolve one backend up front; all three exit 124 on timeout,
-# copying GNU timeout so run() only has to know that number.
+# copying GNU timeout so run() only has to know that number. Contract: 124 is
+# reserved for the watchdog, exactly as in GNU timeout — a check that
+# legitimately exits 124 under an active watchdog is read as TIMEOUT.
 # Limit: what still escapes the kill is a double fork already reparented to
 # init/launchd when the alarm fires, and anything created between the snapshot
 # and the kill. The perl backend also sweeps descendants by parent pid (needs
 # ps; without it the sweep silently degrades to the group kill), so under perl
 # a plain setsid does not escape — it changes the group, not the parent. GNU
 # timeout/gtimeout kill the group only, with no sweep: there a setsid child
-# does escape. Residual race, accepted: a pid snapshotted and recycled during
-# the 2s TERM→KILL grace can be signalled by mistake.
+# does escape. A pid recycled during the TERM→KILL grace is no longer signalled
+# by mistake: the snapshot records each process start time and the sweep only
+# touches a survivor whose start time still matches. Where ps has no lstart
+# (BusyBox), the sweep falls back to matching by pid alone, as before.
 GATE_TIMEOUT=${GATE_TIMEOUT:-900}
 case $GATE_TIMEOUT in
   ''|*[!0-9]*)
@@ -52,13 +56,26 @@ my $pid = fork();
 if (!defined $pid) { exit 127; }
 if (!$pid) { setpgrp(0,0); exec @ARGV; exit 127; }
 $SIG{ALRM} = sub {
-  my (%kids, @tree, @queue, %seen);
-  if (open(my $ps, "-|", "ps", "-eo", "pid=,ppid=")) {
+  my (%kids, %start, %now, @tree, @queue, %seen);
+  my $have_start = 0;
+  if (open(my $ps, "-|", "ps", "-eo", "pid=,ppid=,lstart=")) {
     while (<$ps>) {
-      my ($c, $p) = /^\s*(\d+)\s+(\d+)/ or next;
+      my ($c, $p, $st) = /^\s*(\d+)\s+(\d+)\s+(.*?)\s*$/ or next;
       push @{$kids{$p}}, $c;
+      $start{$c} = $st;
+      $have_start = 1;
     }
     close $ps;
+  }
+  if (!$have_start) {
+    %kids = ();
+    if (open(my $ps, "-|", "ps", "-eo", "pid=,ppid=")) {
+      while (<$ps>) {
+        my ($c, $p) = /^\s*(\d+)\s+(\d+)/ or next;
+        push @{$kids{$p}}, $c;
+      }
+      close $ps;
+    }
   }
   @queue = ($pid); $seen{$pid} = 1;
   while (@queue) {
@@ -69,7 +86,17 @@ $SIG{ALRM} = sub {
     }
   }
   kill "TERM", -$pid; sleep 2; kill "KILL", -$pid;
-  @tree = grep { $_ > 1 && $_ != $$ && kill(0, $_) } @tree;
+  if ($have_start && @tree) {
+    if (open(my $ps, "-|", "ps", "-eo", "pid=,ppid=,lstart=")) {
+      while (<$ps>) {
+        my ($c, $p, $st) = /^\s*(\d+)\s+(\d+)\s+(.*?)\s*$/ or next;
+        $now{$c} = $st;
+      }
+      close $ps;
+    }
+  }
+  @tree = grep { $_ > 1 && $_ != $$ && kill(0, $_) &&
+                 (!$have_start || !exists $start{$_} || $now{$_} eq $start{$_}) } @tree;
   if (@tree) { kill "TERM", @tree; sleep 1; kill "KILL", grep { kill(0, $_) } @tree; }
   exit 124;
 };
@@ -80,6 +107,7 @@ my $rc = $?;
 exit(($rc & 127) ? 128 + ($rc & 127) : ($rc >> 8));'
 
 WATCHDOG=""
+WD_KILL_AFTER=""
 if [[ $GATE_TIMEOUT -gt 0 ]]; then
   if command -v timeout >/dev/null; then WATCHDOG=timeout
   elif command -v gtimeout >/dev/null; then WATCHDOG=gtimeout
@@ -88,25 +116,53 @@ if [[ $GATE_TIMEOUT -gt 0 ]]; then
   fi
 fi
 
+# GNU timeout only sends TERM: a check that ignores it stays alive and the gate
+# waits for it forever. -k asks for a KILL 2s later, the same escalation the perl
+# backend already does by hand. Not every timeout has the flag (BusyBox does
+# not), so probe it once, here, with a command that cannot hang. Failing the
+# probe — including a PATH without 'true' — means running without -k, which is
+# exactly today's behaviour.
+case $WATCHDOG in
+  timeout|gtimeout)
+    if "$WATCHDOG" -k 2 1 true >/dev/null 2>&1; then WD_KILL_AFTER="-k 2"; fi ;;
+esac
+
 # guard <cmd...> — runs the command under the resolved watchdog, if any
 guard() {
   case $WATCHDOG in
-    timeout|gtimeout) "$WATCHDOG" "$GATE_TIMEOUT" "$@" ;;
+    timeout|gtimeout)
+      # shellcheck disable=SC2086  # WD_KILL_AFTER is a flag pair or empty, by design
+      "$WATCHDOG" $WD_KILL_AFTER "$GATE_TIMEOUT" "$@" ;;
     perl) perl -e "$PERL_WATCHDOG" "$GATE_TIMEOUT" "$@" ;;
     *) "$@" ;;
   esac
 }
 
-# run <typecheck|test|both> <cmd...>
+# run <kind> <cmd...>
+# <kind> is typecheck|test|both, optionally extended as <kind>:<rc>:<stack>:
+# that <rc> is the runner's "I collected nothing" code, and it is a YELLOW cap
+# (the check did not run) instead of RED. pytest is the case: exit 5 means zero
+# tests collected, which would otherwise sink a repo whose suite lives elsewhere.
 run() {
   local kind=$1; shift
   local rc
+  local no_tests_rc="" nt_label=""
+  case $kind in
+    *:*) nt_label=${kind#*:}; no_tests_rc=${nt_label%%:*}; nt_label=${nt_label#*:}
+         kind=${kind%%:*} ;;
+  esac
   echo "[gate] $*"
   guard "$@"
   rc=$?
+  # The watchdog keeps absolute priority: a check killed at the timeout is
+  # inconclusive, never "no tests collected", whatever code it happens to share.
   if [[ -n $WATCHDOG && $rc -eq 124 ]]; then
     echo "[gate] TIMEOUT after ${GATE_TIMEOUT}s at '$*'" >&2
     exit 4
+  fi
+  if [[ -n $no_tests_rc && $rc -eq $no_tests_rc ]]; then
+    no_tests "$nt_label" "no tests collected (exit $rc)"
+    return 0
   fi
   if [[ $rc -ne 0 ]]; then
     echo "[gate] RED at '$*'" >&2
@@ -213,7 +269,25 @@ fi
 if [[ -f Cargo.toml ]]; then
   if command -v cargo >/dev/null; then
     run typecheck cargo check --all-targets --quiet
-    run test cargo test --quiet
+    # 'cargo test' on a crate with no test exits 0 reporting "0 passed" — the
+    # same trap as 'go test'. A Rust test is either an integration file under
+    # tests/ or a #[test]/#[cfg(test)] item in the sources; target/ and vendor/ are
+    # output and never evidence. /dev/null keeps grep off stdin when the scan
+    # comes up empty, and head -1 is what makes the result the whole scan's,
+    # not the last xargs batch's.
+    rust_tests=$(find . -name '*.rs' -path '*/tests/*' -not -path './target/*' \
+        -not -path './vendor/*' \
+                   -print -quit 2>/dev/null)
+    if [[ -z $rust_tests ]]; then
+      rust_tests=$(find . -name '*.rs' -not -path './target/*' \
+        -not -path './vendor/*' -print0 2>/dev/null \
+        | xargs -0 grep -lE '#\[test\]|#\[cfg\(test\)\]' /dev/null 2>/dev/null | head -1)
+    fi
+    if [[ -n $rust_tests ]]; then
+      run test cargo test --quiet
+    else
+      no_tests rust "no #[test] or tests/*.rs found"
+    fi
   else missing Cargo.toml cargo; fi
 fi
 
@@ -228,7 +302,7 @@ if [[ -f pyproject.toml || -f setup.py || -f setup.cfg || -f requirements.txt ]]
   fi
   if [[ -f pytest.ini || -d tests || -d test ]] || grep -qs '^\[tool\.pytest' pyproject.toml \
       || grep -qs '^\[tool:pytest\]' setup.cfg || grep -qs '^\[pytest\]' tox.ini; then
-    py_run test python-tests pytest -q
+    py_run "test:5:python" python-tests pytest -q
   fi
 fi
 
@@ -262,9 +336,18 @@ fi
 # markers — on 10.0 the mstest template matches only through the MSTest token.
 DOTNET_TEST_MARKERS='Microsoft\.NET\.Test\.Sdk|<IsTestProject>|xunit|NUnit|MSTest'
 dotnet_targets=()
+dotnet_root_arg=""
 if compgen -G '*.sln' >/dev/null || compgen -G '*.slnx' >/dev/null \
     || compgen -G '*.??proj' >/dev/null; then
   dotnet_targets=(.)
+  # A root holding a solution and a project whose base names differ makes
+  # 'dotnet build' with no argument fail with MSB1011 (more than one target) on
+  # a repo that compiles. With exactly one solution there is nothing to choose:
+  # name it. Two or more is a real decision and the gate abstains — a lone
+  # .csproj is already unambiguous, so only sln/slnx count here.
+  slns=()
+  for f in *.sln *.slnx; do [[ -e $f ]] && slns+=("$f"); done
+  if [[ ${#slns[@]} -eq 1 ]]; then dotnet_root_arg=${slns[0]}; fi
 else
   for p in */*.??proj src/*/*.??proj; do
     [[ -e $p ]] && dotnet_targets+=("$p")
@@ -277,12 +360,23 @@ if [[ ${#dotnet_targets[@]} -gt 0 ]]; then
       # 0 — same trap as 'go test' on a repo with no _test.go file.
       if [[ $target == . ]]; then
         has_tests=0
-        # Three fixed depths only; a test project nested deeper is missed and
-        # the verdict caps at YELLOW — fail-safe, promote by hand if so.
-        grep -qsE "$DOTNET_TEST_MARKERS" ./*.??proj ./*/*.??proj ./src/*/*.??proj \
-          && has_tests=1
-        run typecheck dotnet build --nologo -v minimal
-        if [[ $has_tests -eq 1 ]]; then run test dotnet test --nologo -v minimal
+        # Walks the tree down to five levels instead of three fixed globs, so a
+        # test project under src/App/Tests/ still counts. bin/obj/node_modules
+        # and .git are pruned: a marker in build output is leftover, not the
+        # repo's suite. /dev/null keeps grep from reading stdin when the scan
+        # comes back empty, and head -1 closes the pipe on the first hit.
+        if [[ -n $(find . -maxdepth 5 \
+              \( -name bin -o -name obj -o -name node_modules -o -name .git \) \
+              -prune -o -name '*.??proj' -print0 \
+              | xargs -0 grep -lE "$DOTNET_TEST_MARKERS" /dev/null 2>/dev/null \
+              | head -1) ]]; then
+          has_tests=1
+        fi
+        # shellcheck disable=SC2086  # the :+ expansion is one argument or none
+        run typecheck dotnet build --nologo -v minimal ${dotnet_root_arg:+"$dotnet_root_arg"}
+        if [[ $has_tests -eq 1 ]]; then
+          # shellcheck disable=SC2086  # same expansion, same reason
+          run test dotnet test --nologo -v minimal ${dotnet_root_arg:+"$dotnet_root_arg"}
         else no_tests dotnet "no test project found"; fi
       else
         run typecheck dotnet build --nologo -v minimal "$target"

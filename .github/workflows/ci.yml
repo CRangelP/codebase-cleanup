@@ -1,0 +1,26 @@
+# The three suites on both target platforms. Linux exercises the GNU timeout
+# backend (with -k) and procps; macOS proves bash 3.2 compatibility with the
+# stock /bin/bash — never the Homebrew bash the runner also ships.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: bash scripts/test.sh
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: /bin/bash --version && /bin/bash scripts/test.sh
