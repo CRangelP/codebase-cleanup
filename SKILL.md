@@ -1,6 +1,6 @@
 ---
 name: codebase-cleanup
-description: Full three-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules and reorganizes the folder structure, running autonomously with atomic commits and automatic rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, messy folders, confusing structure or a bloated codebase; asks to "give the codebase a deep clean", to "reorganiza essas pastas", or for an audit or health check; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the three phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
+description: Full three-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules and reorganizes the folder structure, running autonomously with atomic commits and automatic rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, messy folders, confusing structure or a bloated codebase; mentions duplicated code, duplicate functions, copy-paste code, "código duplicado" or "função repetida"; asks to "give the codebase a deep clean", to "reorganiza essas pastas", or for an audit or health check; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the three phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
 ---
 
 # Codebase Cleanup
@@ -24,11 +24,20 @@ What makes this safe is not asking, it is the structure of the work: a
 dedicated branch, atomic commits per category, and a green gate (typecheck +
 tests) before every commit. If something breaks, the rollback is to discard
 whatever is not committed yet with `git restore --staged --worktree .` —
-without asking anyone, because the previous commit was already correct. Since every
-commit only happens on a green gate, HEAD is always a good state, and restoring
-the tracked files to HEAD is equivalent to a full rollback (never use
-`git reset --hard` or `git clean`: restore covers the case and survives
-environments with hooks that block destructive commands).
+without asking anyone, because the previous commit was already correct. Since
+every commit only happens on a green gate, HEAD is always a good state.
+
+Restoring the tracked files to HEAD is a full rollback under two conditions,
+and both are the pipeline's job to guarantee: the tree was clean when the work
+started (Step 0 stops if it was not), and everything the step changed is staged
+before the gate runs — `git restore --staged --worktree .` undoes a staged new
+file, but leaves an untracked one behind. Hence the rule that repeats at every
+step: **`git add -A` before the gate.**
+
+Never use `git reset --hard` or `git clean`. `restore` covers the case and
+survives environments with hooks that block destructive commands; `git clean`
+would additionally wipe untracked files that must survive — tool output,
+caches, local env files that never belonged to this cleanup.
 
 **If a security hook blocks a command from the protocol** (rollback, branch
 creation, file deletion), do not work around it: record the pending item in
@@ -36,8 +45,9 @@ creation, file deletion), do not work around it: record the pending item in
 the next step that does not depend on it. A guard is environment policy, not an
 obstacle.
 
-There is **one mandatory checkpoint** in the entire pipeline (phase 2, choosing
-the consolidation candidate). Everything else runs on its own.
+There is **one scheduled checkpoint** in the entire pipeline (phase 2, choosing
+the consolidation candidate) and **one conditional stop** at Step 0, when the
+working tree is dirty before anything starts. Everything else runs on its own.
 
 ---
 
@@ -47,13 +57,43 @@ Before anything else, measure the safety net. The autonomy level is a function
 of it, not a preference.
 
 ```bash
-git status --porcelain                    # clean working tree?
-git rev-parse --abbrev-ref HEAD           # current branch
+git rev-parse --is-inside-work-tree       # is there a repo at all?
+git status --porcelain                    # anything uncommitted?
+git rev-parse --abbrev-ref HEAD           # current branch (HEAD = detached)
 [ -f package.json ] && grep -E '"(test|typecheck|lint|build)"' package.json
 ```
 
-Run the baseline gate with `scripts/gate.sh` (path relative to this skill's
-directory; it accepts the project directory as an argument) and classify. The
+Read those three answers before running anything else:
+
+**No git repository** (`--is-inside-work-tree` fails). The level is **RED**,
+diagnosis only, whatever the gate says afterwards. Without commits there is no
+rollback, and the whole safety argument of this skill rests on being able to
+return to a good HEAD. Say so in one line and produce a report.
+
+**Dirty working tree** (`git status --porcelain` prints anything). **Stop and
+ask.** This is the conditional stop, and it is not negotiable: the rollback of
+this pipeline is `git restore --staged --worktree .`, which throws away
+uncommitted work in the tracked files — including work that was already there
+when you arrived. Present the three ways out and wait for the user to pick one:
+
+1. `git stash push -u` — parks everything and gives you a clean tree;
+2. commit the pending work first, on the current branch, and then start;
+3. abort the cleanup.
+
+Do not choose on the user's behalf, do not stash "to be helpful", do not start
+anyway because "the diff looks small". Only an explicit answer unblocks the
+pipeline. If they pick 1 or 2, run `git status --porcelain` again and confirm
+it is empty before moving on.
+
+**Detached HEAD** (`--abbrev-ref HEAD` prints `HEAD`). Not a blocker: record
+the current commit in `CLEANUP_PROGRESS.md` and create the cleanup branch
+normally — it will branch off that commit, which is exactly what you want. Note
+in the final report that the work started from a detached HEAD, so the user
+knows where the branch came from.
+
+With a clean tree and a repo, run the baseline gate with `scripts/gate.sh`
+(path relative to this skill's directory; it accepts the project directory as
+an argument) and classify. The
 script detects the stack from the root manifest — `package.json`, `go.mod`,
 `Cargo.toml`, `pyproject.toml`/`setup.cfg`, `pom.xml`/`build.gradle`,
 `Gemfile`, `sln`/`csproj`/`fsproj` — and runs typecheck and tests for each one
@@ -62,16 +102,31 @@ it finds (compiling counts as typecheck).
 Classify by the `[gate] checks=...` line, which lists what actually ran, and
 not by the exit code alone: GREEN requires `typecheck` and `test` in the list;
 a partial list caps at YELLOW, and the script itself says so. Exit 0 =
-everything that ran passed; 1 = something failed; 3 = no runnable check **or**
-some detected stack had no toolchain (`PARTIAL` — including in a polyglot repo
-where another stack passed). In the exit-3 cases, finish the gate by hand
-before classifying.
+everything that ran passed; 1 = something failed; 2 = bad path (the argument is
+not a directory the script can enter, so nothing was checked — fix the path and
+rerun); 3 = no runnable check **or** some detected stack had no toolchain
+(`PARTIAL` — including in a polyglot repo where another stack passed); 4 = a
+check hit the watchdog (`GATE_TIMEOUT`, 900s per check by default, `0`
+disables). In the exit-3 cases, finish the gate by hand before classifying.
+
+**Exit 4 is an inconclusive gate, not a green one.** A timed-out check says
+nothing about the code: treat it as red (rollback, record what timed out in
+`CLEANUP_PROGRESS.md`) and never promote it to GREEN. On the Step 0 baseline,
+exit 4 means the safety net could not be measured — report it and do not run
+autonomously.
 
 | Signal | Level | Behavior |
 |---|---|---|
 | Typecheck **and** tests pass | **GREEN** | Runs phases 1 and 3 in full without asking. Phase 2 stops at the checkpoint. |
 | Tests exist but fail, or typecheck only | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Stops before phase 2 and reports. |
 | No tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. Delivers a report. |
+| No git repository | **RED** | Diagnoses only, regardless of the gate result — there is no HEAD to roll back to. |
+
+`checks=typecheck` because the stack has **no test file** is YELLOW, not GREEN,
+even though the gate exits 0 — a suite that does not exist cannot pass. The
+script names the stack in the `'test' not counted` line. Only the user promotes
+it, by pointing at the suite that lives somewhere the gate does not look; the
+skill never promotes itself.
 
 If the baseline is already broken, **fix it or warn before touching
 anything**. You need an initial green to distinguish what you broke from what
@@ -84,12 +139,25 @@ the level.
 git checkout -b cleanup/$(date +%Y%m%d)
 ```
 
+Two cleanups on the same day collide on that name, and `checkout -b` fails
+instead of overwriting anything. Resolve it without asking: if the existing
+branch has a `CLEANUP_PROGRESS.md`, it is an interrupted run of this same skill
+— check it out and resume from the file. Otherwise, suffix the name (`-2`,
+`-3`, and so on) until `git rev-parse --verify` says the ref is free. Never
+force, never delete the branch that is in the way.
+
 ## Step 0.1 — Persistent state
 
-Create `CLEANUP_PROGRESS.md` at the root and keep it updated at the end of
-every step. Phases are separated by `/clear` (dirty context from one phase
-degrades the next), so this file is what allows resuming without the user
-re-explaining anything.
+Create `CLEANUP_PROGRESS.md` at the root and **commit it right away**
+(`chore: start cleanup log`), before any other work. It is the only artifact
+that has to outlive a rollback: an untracked file survives
+`git restore --staged --worktree .` by accident, a committed one survives by
+design, and a staged one would be thrown away with the failed step. Keep it
+updated at the end of every step, committed along with that step's changes.
+
+Phases are separated by `/clear` (dirty context from one phase degrades the
+next), so this file is what allows resuming without the user re-explaining
+anything.
 
 ```markdown
 # Cleanup Progress
@@ -164,6 +232,11 @@ many findings disappeared.
 Configuration details (entry, project, paths, monorepo, when to use each
 `ignore*`) are in `references/knip-config.md`. Read it before writing the file.
 
+When the hints reach zero, commit `knip.json` on its own
+(`chore: knip config`), before deleting anything. It cost several rounds to get
+right and it is the input to every deletion that follows — if the first
+category fails its gate, the rollback must not take the config with it.
+
 The rule that saves the most rework: **do not use the `ignore` option.** It
 does not exclude anything from the analysis, it only hides the report —
 creating a blind spot. If something shows up wrong, the fix is to teach the
@@ -185,9 +258,15 @@ Never exclude tests with `ignore` to get the same effect.
 ## 1.3 Delete in atomic commits, one per category
 
 Run all three without asking (GREEN level) or the first two (YELLOW). Each one
-is: delete → gate → commit. For the gate, use `scripts/gate.sh` (it detects the
-stack and the package manager and runs typecheck + tests in the right order);
-if it exits with code 3, run the stack's equivalent commands by hand.
+is: delete → `git add -A` → gate → commit. For the gate, use `scripts/gate.sh`
+(it detects the stack and the package manager and runs typecheck + tests in the
+right order); if it exits with code 3, run the stack's equivalent commands by
+hand.
+
+Staging before the gate is what makes the rollback complete, and it is safe
+here precisely because Step 0 refused to start on a dirty tree: everything
+`git add -A` picks up was produced by this step, so the `-A` cannot swallow work
+of the user's.
 
 ```
 1. unused deps        → "chore: remove unused deps"
@@ -294,9 +373,13 @@ with a simple interface is exactly what you *want*).
 
 ## Implementation
 
-After the choice, run on your own: one module at a time, typecheck and tests
-between each step, one commit per consolidation. Same rollback protocol as
-phase 1.
+After the choice, run on your own: one module at a time, one commit per
+consolidation, and `scripts/gate.sh` once — after `git add -A`, right before
+the commit. Do not gate between the intermediate steps: with the new interface
+in place and the callers not migrated yet, the build is red by construction,
+and a gate you expect to fail teaches nothing. The green that matters is the
+one at the end of the consolidation, which is exactly the state that gets
+committed. Same rollback protocol as phase 1.
 
 **One candidate per session.** Do not stack two — the second refactor inherits
 the dirty context of the first and the error rate goes up.
@@ -332,12 +415,21 @@ git mv src/utils/format.ts src/features/billing/format.ts   # always git mv
 `git mv` preserves history — `rm` + `create` destroys that file's `git blame`,
 which is precisely the information someone will want six months from now.
 
-Prefer updating **path aliases** over rewriting 200 imports. If the project
-uses `@/features/*`, moving a folder can be one line in the tsconfig instead of
-a 3,000-line diff.
+Prefer updating **path aliases** over rewriting 200 imports — when every
+consumer honors `tsconfig.json` `paths`. If the project uses `@/features/*`,
+moving a folder can be one line in the tsconfig instead of a 3,000-line diff.
+Bundler, test runner, linter and Docker build each resolve paths on their own,
+though, so check the "Do not forget" list in
+`references/phase-3-structure.md` before relying on the one-liner.
 
-Typecheck at the end of each folder. Failed: `git restore --staged --worktree .`,
-record it, next folder.
+The move, the import or alias update and the `CLAUDE.md` update go in the
+**same commit**. Splitting them would put a commit that does not build in the
+history, and there is no gate that a half-done move can pass.
+
+`git add -A` and then `scripts/gate.sh` at the end of each folder — typecheck
+alone misses what a move actually breaks (config paths, dynamic imports; the
+"Do not forget" list in `references/phase-3-structure.md` has the rest).
+Failed: `git restore --staged --worktree .`, record it, next folder.
 
 ---
 
@@ -354,7 +446,9 @@ prevents that.
 
 **A red gate means rollback, not repair.** If typecheck or tests fail, the
 previous commit was already correct. Revert, record, move on. Trying to fix it
-turns a cleanup into an unsolicited debugging session.
+turns a cleanup into an unsolicited debugging session. A gate that times out
+(exit 4) follows the same path: it is inconclusive, so it rolls back like a red
+one and is recorded as a timeout — never as a green.
 
 **Never force push, never commit on main.** All the work lives on the cleanup
 branch. Merging is the user's decision, on their own schedule.

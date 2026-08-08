@@ -72,10 +72,31 @@ npx jscpd src --reporters ai --min-tokens 50 --cross-formats "js-ts"
 High similarity alone does not mean "consolidate". Two look-alike
 implementations that belong to different domains and will diverge should stay
 separate — abstracting too early costs more than duplicating. The practical
-discriminator is whether the pair changes together. Compute numerator AND
-denominator (bash — uses process substitution):
+discriminator is whether the pair changes together.
+
+**Check the repository once, before any pair.** The recipe reads history, so
+it is only as good as the history present locally:
 
 ```bash
+git rev-parse --is-shallow-repository   # true → no usable history
+git rev-list --count HEAD               # total commits on the branch
+```
+
+On `true` (or on a repo with a handful of commits), the churn rule produces
+**no signal**: do not compute ratios, mark every pair as "churn unavailable
+(shallow clone)" in the report and decide by reading the code. Either deepen
+the clone first (`git fetch --unshallow`) or say in the report that the
+discriminator was unavailable. A history made of squash merges is the milder
+version of the same problem: every file touched by a PR co-changes in one
+single commit, which inflates `co` for pairs that never moved together — read
+the pair before trusting a high ratio there.
+
+Then compute numerator AND denominator, validating each side first (bash —
+uses process substitution):
+
+```bash
+git ls-files --error-unmatch -- "pathA" >/dev/null || echo "pathA not tracked"
+git ls-files --error-unmatch -- "pathB" >/dev/null || echo "pathB not tracked"
 a=$(git log --follow --format=%H -- pathA | sort -u)
 b=$(git log --follow --format=%H -- pathB | sort -u)
 co=$(comm -12 <(printf '%s\n' "$a") <(printf '%s\n' "$b") | grep -c .)
@@ -87,7 +108,16 @@ echo "co-changes: $co / min($na,$nb)"
 here, because phase 3 of this very skill moves files; `rev-list -- path`
 would cut the history at the rename and undercount.
 
-The verdict is exhaustive — every pair lands in one of two buckets:
+**`min(na,nb) == 0` is a measurement error, never a verdict.** A tracked file
+always has at least one commit, so a zero denominator means the path was
+wrong (typo, path relative to the wrong directory, file not committed yet) or
+the history is missing — which is exactly what `git ls-files
+--error-unmatch` catches before the log runs. Fix the path and re-measure; if
+it cannot be fixed, the pair goes to the report as "no signal", **not** as
+structural coincidence.
+
+With both denominators above zero, the verdict is exhaustive — every pair
+lands in one of two buckets:
 
 - `co / min(na,nb)` **≥ 1/3** → **real duplication**. Promote the pair to the
   phase 2 candidate list.
@@ -102,13 +132,17 @@ Three blind spots to keep in mind:
   file co-changes. Two 500-line utility drawers that get touched weekly will
   pass the 1/3 cut for reasons unrelated to the duplicated pair. For pairs
   inside big shared files, confirm with a line-range log before promoting:
-  `git log -L 10,20:src/utils.ts --format=%H`.
+  `git log -L 10,20:src/utils.ts -s --format=%H`. The `-s` matters: without
+  it `-L` prints the full diff of every matching commit, not just the hashes.
 - **Same-file pairs.** The churn test cannot separate them at all; judge
   those by the deletion test in phase 2.
 - **Thin history.** With `min(na,nb)` at 3 or less the ratio says little —
   two files born in the same scaffold commit score 1/1 with zero shared
   evolution. Read the pair before promoting it, and record the thin
-  denominator in the report.
+  denominator in the report. This is the same axis as the repository
+  pre-check above: a shallow clone or a squash-merge history gives every pair
+  a thin or fake denominator, and the honest output there is "no signal", not
+  a ratio.
 
 ## What the report contains
 
@@ -119,6 +153,20 @@ nothing is committed; the table goes into the final report instead):
 |---|---|---|---|---|
 | `src/utils.ts:10 calculateTotal` | `src/helpers.ts:5 computeSum` | 92% | 7/19 | phase 2 candidate |
 | `src/billing/round.ts:3` | `src/shipping/round.ts:3` | 88% | 0/14 | left alone: domains diverge |
+
+**Only step 1 fills `Similarity` with a percentage.** fallow reports clone
+families and jscpd reports token-level clones; neither gives a per-pair score,
+so inventing one is a lie the next cleanup will inherit. When the ladder
+degraded, write what the tool actually said and name the tool:
+
+| A | B | Similarity | Co-changes | Verdict |
+|---|---|---|---|---|
+| `src/a.ts:10 parseUser` | `src/b.ts:40 readUser` | fallow group #3 (semantic) | 5/12 | phase 2 candidate |
+| `src/a.py:1` | `src/b.py:1` | 74 tokens (jscpd) | 2/9 | left alone: domains diverge |
+
+A pair whose rows come from step 2 or 3 also carries a weaker claim — token
+or family membership, not measured structural similarity — and the report
+should say which rung produced it.
 
 The "phase 2 candidate" rows feed the survey in
 `references/phase-2-consolidation.md` and outrank candidates found by depth

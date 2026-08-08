@@ -166,8 +166,14 @@ A gotcha that breaks silently: **in a project with workspaces, root-level
 - a project with a single root `package.json` → see "integrated monorepos" in
   the docs, not workspaces
 
-In a monorepo, consider `--isolate-workspaces` when investigating a single
-package.
+In a monorepo, to investigate a single package use `-W <dir>` (long form
+`--workspace <dir>`), which narrows the analysis to that workspace and the
+ones it depends on. Add `--strict` so each dependency is required to be in
+that workspace's own `package.json` instead of being resolved from the root:
+
+```bash
+npx knip -W packages/api --strict
+```
 
 ## Cycle detection
 

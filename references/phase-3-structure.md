@@ -6,7 +6,10 @@ Before moving any file, produce:
 
 1. **Map of the current structure** — depth, what lives where, what has no
    clear owner
-2. **Circular dependencies** — from knip's `cycles` or from `madge --circular`
+2. **Circular dependencies** — from knip's `cycles` or from `madge --circular`.
+   `cycles` is not in knip's default issue set: run `npx knip --cycles`
+   (shortcut for `--include cycles`), otherwise the report comes back silent
+   on this point
 3. **God modules** — directories that everyone imports
 4. **Leaking abstractions** — a module's internal detail referenced from
    outside
@@ -60,19 +63,29 @@ git mv src/utils/format.ts src/features/billing/format.ts
 exactly the information someone will want six months from now when asking "why
 is this like this".
 
-**Prefer updating path aliases over rewriting imports.** If the project uses
-`@/features/*`, moving a folder can be one line in `tsconfig.json` instead of a
-3,000-line diff nobody can review.
+**Prefer updating path aliases over rewriting imports** when every consumer of
+the code honors `tsconfig.json` `paths`. If the project uses `@/features/*`,
+moving a folder can be one line of config instead of a 3,000-line diff nobody
+can review. The catch is that the alias only holds where it is read: the
+bundler, the test runner, the linter and the Docker build each resolve paths
+their own way, and `paths` in `tsconfig.json` does not reach any of them by
+itself. Check the "Do not forget" list below before betting the move on a
+one-line change.
 
-If rewriting imports is unavoidable, do it in a commit separate from the move:
+**One commit per folder, and everything the move needs goes in it**: the
+`git mv`, the import or alias update, and the `CLAUDE.md`/docs update. Do not
+split the move from the import rewrite. A "pure `git mv`" commit does not
+compile — every import pointing at the old path is broken — so it cannot pass
+the gate, and committing it anyway puts a state in history that the user cannot
+revert to. A commit per folder keeps the useful property: something broke after
+the merge, `git revert <sha>` takes that folder back with its imports and its
+docs, in one shot.
 
-```
-1. refactor: move billing to features/    (pure git mv)
-2. refactor: update imports for billing   (imports only)
-```
-
-Typecheck at the end of each folder. Failed → `git restore --staged --worktree .`,
-record it, next folder.
+`git add -A` and then `scripts/gate.sh` at the end of each folder — staged
+first, so that the rollback also undoes files created during the move. Typecheck
+alone is not enough here: the "Do not forget" list below is mostly made of
+things that only break at runtime, and the test suite is what catches part of
+them. Failed → `git restore --staged --worktree .`, record it, next folder.
 
 ## Do not forget
 

@@ -43,8 +43,11 @@ Imagine deleting the module.
    passed the pair-level co-change rule outrank anything below — two
    implementations of one intent are the consolidation candidate in its
    purest form.
-1. **Map.** Import graph (knip's `cycles` already covers a good part of it),
-   module sizes, who calls whom.
+1. **Map.** Import graph, module sizes, who calls whom. knip's `cycles`
+   already covers a good part of it, but it is **not** in the default issue
+   set — ask for it explicitly with `npx knip --cycles` (shortcut for
+   `--include cycles`), or a plain `npx knip` will report nothing about
+   circular dependencies.
 2. **Cross with churn volume (file-level).** `git log --format=%H
    --name-only | sort | uniq -c | sort -rn` — the intersection between
    "changed a lot" and "heavily coupled" is where consolidation pays the
@@ -79,8 +82,20 @@ One candidate per session. Per consolidation:
 1. Create the new interface
 2. Migrate callers
 3. Remove the old modules
-4. Typecheck + tests
-5. Commit `refactor: consolidate X into Y`
+4. `git add -A`
+5. `scripts/gate.sh` — once, here, not between the steps above
+6. Commit `refactor: consolidate X into Y`
+
+Steps 1–3 are red by construction: the new interface exists and its callers do
+not point at it yet. Running the gate in the middle only produces a failure you
+already predicted. One gate, on the finished state, is the one that is worth
+anything — and it guards exactly what goes into the commit.
+
+Step 4 is not bookkeeping. `git restore --staged --worktree .` brings back a
+deleted file and drops a staged new one, but an unstaged new file survives the
+rollback and poisons the next step — so the new interface has to be staged
+before the gate runs. Staging everything is safe because the tree was clean
+when the pipeline started.
 
 Gate failed → `git restore --staged --worktree .`, record it, do not try to
 fix it.

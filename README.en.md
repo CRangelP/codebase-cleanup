@@ -4,26 +4,38 @@
 
 Codebase cleanup skill for Claude Code. It works in three phases, in this
 order: remove dead code, consolidate shallow modules, reorganize the folder
-structure. The order matters — reorganizing folders before deleting what is
-dead is tidying garbage into a nice drawer.
+structure. Between the first and the second sits phase 1.5, which looks for
+duplicate files and functions — the same idea implemented twice under
+different names — and hands the pairs over as consolidation candidates. The
+order matters — reorganizing folders before deleting what is dead is tidying
+garbage into a nice drawer.
 
-The skill runs everything it can safely run on its own. The one place where it
-stops and asks is the choice of consolidation candidate in phase 2, because a
-module boundary is a domain decision, not a code decision.
+The skill runs everything it can safely run on its own. It stops and asks in
+two situations: the choice of consolidation candidate in phase 2, because a
+module boundary is a domain decision, not a code decision; and right at the
+start, if the working tree is dirty — then you pick between `git stash`,
+committing the pending work or aborting, and nothing happens before your
+answer.
 
 ## Requirements
 
 - Claude Code with skill support.
-- `git` — all work happens on a `cleanup/YYYYMMDD` branch, never on main.
+- `git` — all work happens on a `cleanup/YYYYMMDD` branch, never on main. With
+  no git repository the skill only diagnoses: its rollback depends on having a
+  good commit to go back to.
 - For JS/TS projects: Node with `npx` (knip runs via `npx knip`, no prior
   installation).
 - Other stacks use the tools of each ecosystem (vulture, deadcode,
   cargo-udeps, ReferenceTrimmer). Whatever is missing, the skill reports
   instead of installing on its own.
 - The gate (`scripts/gate.sh`) detects the stack from the manifest and runs
-  typecheck + tests for JS/TS, Go, Rust, Python, JVM, Ruby and .NET — the
-  toolchain only has to be on PATH. It is a bash script (the bash 3.2 shipped
-  with macOS is enough); on Windows, use WSL.
+  typecheck + tests for JS/TS, Go, Rust, Python, JVM, Ruby and .NET. The
+  toolchain has to be reachable: on PATH for most stacks and, for Python, also
+  from `$VIRTUAL_ENV/bin`, `.venv/bin`, `venv/bin` or the `uv run` and
+  `poetry run` runners (in that order). Every check runs under a watchdog
+  (`GATE_TIMEOUT`, 900s by default, `0` disables it): if it runs out of time,
+  the gate exits 4 and counts as inconclusive. It is a bash script (the bash
+  3.2 shipped with macOS is enough); on Windows, use WSL.
 
 ## Installation
 
@@ -60,12 +72,28 @@ codebase-cleanup/
 │   ├── phase-3-structure.md          folder organization patterns
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
-    ├── gate.sh                       multi-stack typecheck + tests, exit 0/1/3
-    └── gate_test.sh                  gate contract tests (toolchain stubs)
+    ├── gate.sh                       multi-stack typecheck + tests, exit 0/1/2/3/4
+    ├── gate_test.sh                  gate contract tests (toolchain stubs)
+    └── rollback_test.sh              executable proof of the rollback protocol
 ```
 
 To check the installation, open a new session (or run `/reload-skills`) and
 see whether `codebase-cleanup` shows up in the list of available skills.
+
+### Tests
+
+Two suites, with nothing to install beyond `bash` and `git`:
+
+```bash
+bash scripts/gate_test.sh       # gate contract: exit codes, the checks= line, PARTIAL
+bash scripts/rollback_test.sh   # what `git restore` brings back and what it destroys
+```
+
+Each exits 0 when everything passed and prints the failing case when it does
+not. Neither touches the repository you run it from: the gate suite uses
+toolchain stubs, and the rollback suite builds throwaway repositories inside a
+`mktemp -d`, with `HOME` redirected and the commit identity passed via `-c` —
+your git config is never read nor written.
 
 ### No other skill is required
 
@@ -89,14 +117,21 @@ requested category and records the rest as out of scope.
 
 ### What happens when it runs
 
-Before touching any file, the skill measures the project's safety net with
-`scripts/gate.sh` and classifies itself into one of three levels:
+Before anything else it checks the ground: if the working tree has uncommitted
+changes, it stops and asks what to do (stash, commit or abort) instead of
+risking your work in progress on the first rollback. With a clean tree, it
+measures the project's safety net with `scripts/gate.sh` and classifies itself
+into one of three levels:
 
 | Level | Condition | What it does |
 |---|---|---|
 | GREEN | typecheck and tests pass | runs the full phases without asking |
-| YELLOW | partial net | only deps and orphan files, no touching exports |
+| YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports |
 | RED | no tests and no typecheck | diagnoses only; nothing is deleted |
+
+A stack with no test file at all does not count as tested: the gate does not
+run the empty suite and the level stays at YELLOW. If your suite lives outside
+the usual place, promoting it is your call — the gate never promotes itself.
 
 With the level announced, it creates the cleanup branch and proceeds:
 
@@ -134,9 +169,14 @@ git revert <sha>           # undoes only that category
 
 Merging the branch is your decision, on your schedule. The skill never
 pushes, never commits on main and never uses `git reset --hard` — its
-rollback is `git restore --staged --worktree .`, which discards only what has
-not been committed yet and coexists with hooks that block destructive
+rollback is `git restore --staged --worktree .`, which throws away everything
+that has not been committed yet and coexists with hooks that block destructive
 commands.
+
+Note the "everything": a change of yours sitting in the working tree before the
+skill started would go with it. That is why it demands a clean tree up front
+and stops to ask when it does not find one — with a clean tree, what the
+rollback discards is what the skill itself created.
 
 ## Known limits
 
@@ -149,6 +189,9 @@ commands.
 - RED level returns a report, not a cleanup. If the project has neither tests
   nor typecheck, the first step is to create a minimal verification; the skill
   points the way in the report itself.
+- A folder with no git falls into RED as well, even with typecheck and tests
+  passing. With no commit there is no rollback, and the rollback is what holds
+  up the autonomy of the rest of the pipeline.
 
 ## Credits
 

@@ -9,7 +9,7 @@ Detect the stack from the manifest: `package.json`, `pyproject.toml`/`requiremen
 ## Python
 
 ```bash
-pip install vulture pip-audit ruff --quiet
+pip install vulture pip-audit ruff deptry --quiet
 vulture src/ --min-confidence 80     # dead code
 pip-audit                            # CVEs
 ruff check --select F401,F841 src/   # unused imports and variables

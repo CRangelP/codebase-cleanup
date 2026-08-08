@@ -4,25 +4,36 @@
 
 Skill de limpeza de codebase para Claude Code. Trabalha em três fases, nessa
 ordem: remove código morto, consolida módulos rasos e reorganiza a estrutura
-de pastas. A ordem importa — organizar pastas antes de apagar o que está morto
-é arrumar lixo em gaveta bonita.
+de pastas. Entre a primeira e a segunda entra a fase 1.5, que procura arquivos
+e funções duplicados — a mesma ideia implementada duas vezes com nomes
+diferentes — e entrega os pares como candidatos à consolidação. A ordem
+importa — organizar pastas antes de apagar o que está morto é arrumar lixo em
+gaveta bonita.
 
-A skill executa sozinha o que dá para executar com segurança. O único ponto em
-que ela para e pergunta é a escolha do candidato de consolidação na fase 2,
-porque fronteira de módulo é decisão de domínio, não de código.
+A skill executa sozinha o que dá para executar com segurança. Ela para e
+pergunta em dois casos: na escolha do candidato de consolidação da fase 2,
+porque fronteira de módulo é decisão de domínio, não de código; e logo no
+começo, se a árvore de trabalho estiver suja — aí você decide entre `git stash`,
+commitar o que está pendente ou abortar, e nada acontece antes da sua resposta.
 
 ## Requisitos
 
 - Claude Code com suporte a skills.
-- `git` — todo o trabalho acontece numa branch `cleanup/YYYYMMDD`, nunca na main.
+- `git` — todo o trabalho acontece numa branch `cleanup/YYYYMMDD`, nunca na
+  main. Sem repositório git a skill só diagnostica: o rollback dela depende de
+  ter um commit bom para onde voltar.
 - Para projetos JS/TS: Node com `npx` (o knip roda via `npx knip`, sem
   instalação prévia).
 - Outros stacks usam as ferramentas de cada ecossistema (vulture, deadcode,
   cargo-udeps, ReferenceTrimmer). O que faltar, a skill aponta em vez de
   instalar por conta.
 - O gate (`scripts/gate.sh`) detecta o stack pelo manifesto e roda typecheck +
-  testes em JS/TS, Go, Rust, Python, JVM, Ruby e .NET — basta o toolchain
-  estar no PATH. É script bash (o 3.2 do macOS serve); no Windows, use WSL.
+  testes em JS/TS, Go, Rust, Python, JVM, Ruby e .NET. O toolchain precisa
+  estar alcançável: no PATH na maioria dos stacks e, em Python, também vale
+  `$VIRTUAL_ENV/bin`, `.venv/bin`, `venv/bin` ou os runners `uv run` e
+  `poetry run` (nessa ordem). Cada check roda sob um watchdog (`GATE_TIMEOUT`, 900s por
+  padrão, `0` desliga): estourou o tempo, o gate sai 4 e vale como não
+  conclusivo. É script bash (o 3.2 do macOS serve); no Windows, use WSL.
 
 ## Instalação
 
@@ -59,12 +70,28 @@ codebase-cleanup/
 │   ├── phase-3-structure.md          padrões de organização de pastas
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
-    ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/3
-    └── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
+    ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/2/3/4
+    ├── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
+    └── rollback_test.sh              prova executável do protocolo de rollback
 ```
 
 Para conferir a instalação, abra uma sessão nova (ou rode `/reload-skills`) e
 veja se `codebase-cleanup` aparece na lista de skills disponíveis.
+
+### Testes
+
+Duas suítes, sem dependência além de `bash` e `git`:
+
+```bash
+bash scripts/gate_test.sh       # contrato do gate: exit codes, linha checks=, PARTIAL
+bash scripts/rollback_test.sh   # o que `git restore` recupera e o que ele destrói
+```
+
+Cada uma sai 0 quando tudo passou e imprime o caso que falhou quando não.
+Nenhuma das duas toca o repositório em que você a rodou: o gate usa stubs de
+toolchain e o rollback cria repositórios descartáveis dentro de um `mktemp -d`,
+com `HOME` redirecionado e identidade de commit passada por `-c` — sua config
+do git não é lida nem escrita.
 
 ### Nenhuma outra skill é obrigatória
 
@@ -89,14 +116,21 @@ categoria pedida e registra o resto como fora de escopo.
 
 ### O que acontece ao rodar
 
-Antes de tocar em qualquer arquivo, a skill mede a rede de segurança do
-projeto com `scripts/gate.sh` e se classifica em um de três níveis:
+Antes de qualquer coisa ela confere o terreno: se a árvore de trabalho tem
+alteração não commitada, ela para e pergunta o que fazer (stash, commitar ou
+abortar) em vez de arriscar o seu trabalho em progresso no primeiro rollback.
+Com a árvore limpa, mede a rede de segurança do projeto com `scripts/gate.sh`
+e se classifica em um de três níveis:
 
 | Nível | Condição | O que ela faz |
 |---|---|---|
 | GREEN | typecheck e testes passam | executa as fases inteiras sem perguntar |
-| YELLOW | rede parcial | só deps e arquivos órfãos, sem mexer em exports |
+| YELLOW | rede parcial, ou nenhum arquivo de teste no stack | só deps e arquivos órfãos, sem mexer em exports |
 | RED | sem testes e sem typecheck | só diagnostica; nada é deletado |
+
+Stack sem nenhum arquivo de teste não conta como testado: o gate não roda a
+suíte vazia e o nível fica em YELLOW. Se a sua suíte mora fora do lugar
+padrão, a promoção é sua — o gate não se promove sozinho.
 
 Com o nível anunciado, ela cria a branch de limpeza e segue:
 
@@ -133,8 +167,13 @@ git revert <sha>           # desfaz só aquela categoria
 
 O merge da branch é decisão sua, no seu tempo. A skill nunca faz push, nunca
 commita na main e nunca usa `git reset --hard` — o rollback dela é
-`git restore --staged --worktree .`, que descarta apenas o que ainda não foi
+`git restore --staged --worktree .`, que joga fora tudo o que ainda não foi
 commitado e convive com hooks que bloqueiam comandos destrutivos.
+
+Note o "tudo": alteração sua que estava no diretório antes de a skill começar
+entraria nessa conta. É por isso que ela exige árvore limpa no início e
+interrompe para perguntar quando não está — com a árvore limpa, o que o
+rollback joga fora foi ela mesma que criou.
 
 ## Limites conhecidos
 
@@ -147,6 +186,9 @@ commitado e convive com hooks que bloqueiam comandos destrutivos.
 - Nível RED devolve relatório, não limpeza. Se o projeto não tem teste nem
   typecheck, o primeiro passo é criar uma verificação mínima; a skill aponta o
   caminho no próprio relatório.
+- Pasta sem git também cai em RED, mesmo com typecheck e testes passando. Sem
+  commit não existe rollback, e é o rollback que sustenta a autonomia do resto
+  do pipeline.
 
 ## Créditos
 
