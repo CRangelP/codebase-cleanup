@@ -309,6 +309,23 @@ cat > "$TMP/js-empty-inline-mismatch/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 0')\"; false"}}
 EOF
 
+# Every announced code counts, not just the first. A monorepo prints one
+# empty-suite line per package, so a run whose first package announced 0 and
+# whose last announced the code the process actually exited with is fully
+# explained — stopping at the first would call a disagreement on evidence a
+# later line accounts for and sink a repo where nothing failed.
+mkdir -p "$TMP/js-empty-inline-multi"
+cat > "$TMP/js-empty-inline-multi/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 0'); console.log('No test files found, exiting with code 1'); process.exit(1)\""}}
+EOF
+
+# And the detection survives it: several announced codes, none of them the one
+# the process exited with, still means something else set the status.
+mkdir -p "$TMP/js-empty-inline-multi-mismatch"
+cat > "$TMP/js-empty-inline-multi-mismatch/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 0'); console.log('No tests found, exiting with code 0')\"; false"}}
+EOF
+
 # The mismatch rule compares numbers, and this is the guard against it costing a
 # RED to a repo that did nothing wrong. Written as strings '01' is not '1', so a
 # runner padding its code would be read as disagreeing with the exit and sink an
@@ -1033,6 +1050,10 @@ case_run js-empty-suite-chained 1 "$TMP/js-empty-suite-chained" - "RED" \
 case_run js-empty-suite-chained-exit1 1 "$TMP/js-empty-suite-chained-exit1" - "RED" \
          '!YELLOW' "!'test' not counted"
 case_run js-empty-inline-mismatch 1 "$TMP/js-empty-inline-mismatch" - "RED" \
+         '!YELLOW' "!'test' not counted"
+case_run js-empty-inline-multi 0 "$TMP/js-empty-inline-multi" - \
+         "no test files found" "'test' not counted" '!RED'
+case_run js-empty-inline-multi-mismatch 1 "$TMP/js-empty-inline-multi-mismatch" - "RED" \
          '!YELLOW' "!'test' not counted"
 case_run js-empty-inline-leading-zero 0 "$TMP/js-empty-inline-leading-zero" - \
          "no test files found" "'test' not counted" '!RED'
