@@ -94,6 +94,12 @@ codebase-cleanup/
 ├── .claude-plugin/
 │   ├── plugin.json                   plugin manifest (name, version, license)
 │   └── marketplace.json              catalogue, for /plugin install
+├── agents/
+│   ├── cleanup-phase-1.md            phases 1 and 1.5
+│   ├── cleanup-phase-2-survey.md     consolidation candidates (read-only)
+│   ├── cleanup-phase-2-impl.md       implements the chosen candidate
+│   ├── cleanup-phase-3-survey.md     structure plan (read-only)
+│   └── cleanup-phase-3-impl.md       executes the approved moves
 ├── hooks/
 │   └── hooks.json                    registers the guard on the PreToolUse event
 ├── references/
@@ -147,7 +153,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 127/127 cases, 42/42 guard cases, 5/5 properties,
-# 186/186 invariants
+# 238/238 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -265,8 +271,13 @@ Between phases the skill asks for `/clear` — context accumulated from one
 phase degrades the judgment of the next. Progress lives in
 `CLEANUP_PROGRESS.md` at the repo root, so the next session resumes where it
 stopped without you re-explaining anything. In environments with subagents,
-the skill can run as an orchestrator and dispatch each phase to a disposable
-context; the protocol is in Step 0.2 of SKILL.md.
+the skill runs as an orchestrator and dispatches each phase to a disposable
+context. Installed as a plugin, those subagents come declared in `agents/`:
+`cleanup-phase-1` (phases 1 and 1.5), plus a survey and an implementation
+agent for each of phases 2 and 3. The two survey agents cannot write — that is
+how the checkpoint stops depending on good intentions: the question reaches you
+before anything changed, and the implementation only starts after your answer.
+The protocol is in Step 0.2 of SKILL.md.
 
 ### How to revert
 

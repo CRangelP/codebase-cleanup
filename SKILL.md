@@ -266,7 +266,23 @@ context, which is the same effect as `/clear` without depending on the user
 remembering. Single-phase request or small repo: single session, no
 orchestration.
 
-The contract of each delegation:
+Installed as a plugin, the delegations are declared and you call them by
+name instead of composing them each time:
+
+| Agent | Scope |
+|---|---|
+| `codebase-cleanup:cleanup-phase-1` | phases 1 and 1.5 |
+| `codebase-cleanup:cleanup-phase-2-survey` | the candidates, read-only |
+| `codebase-cleanup:cleanup-phase-2-impl` | the consolidation the user chose |
+| `codebase-cleanup:cleanup-phase-3-survey` | the structure plan, read-only |
+| `codebase-cleanup:cleanup-phase-3-impl` | the approved moves |
+
+The split into survey and implementation is where the checkpoint lives: the
+survey agents cannot write at all, so the question reaches the user before
+anything changed, and the implementation agents only start after the answer.
+
+Without plugin agents the same contract is composed by hand, and it is the
+same four points:
 
 - the path to this skill (the subagent reads SKILL.md and follows it, with
   references/ and scripts/ alongside) and the path to the repo;

@@ -359,12 +359,17 @@ for readme in README.md README.en.md; do
       fail "$required of the tree of $readme exists on disk" "listed but missing on disk"
     fi
   done
-  for path in references/*.md; do
+  # references/ and agents/ get the same treatment: both ship inside the
+  # plugin, both are read by name at runtime, and a file missing from the tree
+  # is a file the reader does not know is there.
+  for path in references/*.md agents/*.md; do
+    [[ -f $path ]] || continue
     name=${path##*/}
+    dir=${path%%/*}
     if printf '%s\n' "$docs" | grep -qx -F -- "$name"; then
-      pass "references/$name listed in the tree of $readme"
+      pass "$dir/$name listed in the tree of $readme"
     else
-      fail "references/$name listed in the tree of $readme" "on disk but absent from the tree"
+      fail "$dir/$name listed in the tree of $readme" "on disk but absent from the tree"
     fi
   done
   old_ifs=$IFS
@@ -380,11 +385,16 @@ for readme in README.md README.en.md; do
         fi
         ;;
       *)
+        # A doc in the tree lives in references/ or in agents/. Naming the two
+        # directories beats accepting either silently: a file that is in
+        # neither is listed and shipped by nobody.
         if [[ -f references/$name ]]; then
           pass "references/$name of the tree of $readme exists on disk"
+        elif [[ -f agents/$name ]]; then
+          pass "agents/$name of the tree of $readme exists on disk"
         else
-          fail "references/$name of the tree of $readme exists on disk" \
-               "listed but there is no references/$name"
+          fail "$name of the tree of $readme exists on disk" \
+               "listed but there is no references/$name nor agents/$name"
         fi
         ;;
     esac
@@ -835,7 +845,65 @@ git commit
 git add -A
 GUARDED
 
-# 12. The plugin manifests agree with each other and with the docs. ----------
+# 12. The delegated phases exist as agents, and stay inside their limits. ----
+# Step 0.2 hands each phase to an agent by name. A name that resolves to no
+# file is a delegation that dies at call time, and the two read-only ones carry
+# the checkpoint: a survey agent that can write is a survey that can decide,
+# which is the one thing the checkpoint exists to prevent. Plugin agents also
+# may not declare hooks, mcpServers or permissionMode — Claude Code refuses the
+# agent outright — so the ban is checked here rather than discovered on a user's
+# machine.
+agent_frontmatter() { # agent_frontmatter <file> — the YAML block, or empty
+  awk '/^---[[:space:]]*$/ { fm++; next } fm == 1 { print } fm >= 2 { exit }' "$1"
+}
+
+for a in cleanup-phase-1 cleanup-phase-2-survey cleanup-phase-2-impl \
+         cleanup-phase-3-survey cleanup-phase-3-impl; do
+  f="agents/$a.md"
+  check "agents/$a.md exists" \
+        "$([[ -f $f ]] && echo 0 || echo 1)" \
+        "Step 0.2 delegates to an agent with no file behind it"
+  [[ -f $f ]] || continue
+
+  check "$a declares its own name in the frontmatter" \
+        "$(agent_frontmatter "$f" | grep -q -E "^name:[[:space:]]*$a\$" && echo 0 || echo 1)" \
+        "the frontmatter name is what the @-mention resolves; a mismatch with the
+filename is a delegation nobody can call"
+
+  check "$a declares a description" \
+        "$(agent_frontmatter "$f" | grep -q -E '^description:[[:space:]]*[^[:space:]]' && echo 0 || echo 1)" \
+        "the description is what decides when the agent is invoked"
+
+  check "$a reads CLEANUP_PROGRESS.md first" \
+        "$(grep -q -F -- 'CLEANUP_PROGRESS.md' "$f" && echo 0 || echo 1)" \
+        "the log is the canonical state a delegation resumes from"
+
+  banned=$(agent_frontmatter "$f" | grep -E '^(hooks|mcpServers|permissionMode):' | tr '\n' ' ')
+  check "$a declares no field a plugin agent may not have" \
+        "$([[ -z $banned ]] && echo 0 || echo 1)" \
+        "plugin agents support none of hooks, mcpServers, permissionMode: $banned"
+
+  check "Step 0.2 names $a" \
+        "$(grep -q -F -- "codebase-cleanup:$a" SKILL.md && echo 0 || echo 1)" \
+        "an agent nobody delegates to is an agent that rots"
+done
+
+# The two surveys are the checkpoint. They run before the user has answered, so
+# the guarantee has to be mechanical: no Write, no Edit, no way to change the
+# repository while deciding what to propose.
+for a in cleanup-phase-2-survey cleanup-phase-3-survey; do
+  f="agents/$a.md"
+  [[ -f $f ]] || continue
+  line=$(agent_frontmatter "$f" | grep -E '^disallowedTools:')
+  ok=1
+  case $line in
+    *Write*) case $line in *Edit*) ok=0 ;; esac ;;
+  esac
+  check "$a cannot write" "$ok" \
+        "a survey runs before the user answered; got '${line:-no disallowedTools}'"
+done
+
+# 13. The plugin manifests agree with each other and with the docs. ----------
 # The version in plugin.json is the cache key that decides whether an install
 # sees an update at all: pinned and never bumped, a user stays on the version
 # they first installed no matter how many commits land. That failure is silent

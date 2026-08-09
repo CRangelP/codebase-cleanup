@@ -91,6 +91,12 @@ codebase-cleanup/
 ├── .claude-plugin/
 │   ├── plugin.json                   manifesto do plugin (nome, versão, licença)
 │   └── marketplace.json              catálogo, para instalar por /plugin install
+├── agents/
+│   ├── cleanup-phase-1.md            fases 1 e 1.5
+│   ├── cleanup-phase-2-survey.md     candidatos de consolidação (só leitura)
+│   ├── cleanup-phase-2-impl.md       implementa o candidato escolhido
+│   ├── cleanup-phase-3-survey.md     plano de estrutura (só leitura)
+│   └── cleanup-phase-3-impl.md       executa os movimentos aprovados
 ├── hooks/
 │   └── hooks.json                    registra o guarda no evento PreToolUse
 ├── references/
@@ -143,7 +149,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 127/127 casos, 42/42 casos do guarda, 5/5 propriedades,
-# 186/186 invariantes
+# 238/238 invariantes
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -258,9 +264,14 @@ Com o nível anunciado, ela cria a branch de limpeza e segue:
 Entre as fases a skill pede `/clear` — contexto acumulado de uma fase piora o
 julgamento da seguinte. O progresso fica em `CLEANUP_PROGRESS.md` na raiz do
 repo, então a sessão seguinte retoma de onde parou sem você reexplicar nada.
-Em ambientes com subagentes, a skill pode rodar como orquestrador e despachar
-cada fase para um contexto descartável; o protocolo está na seção "Step 0.2"
-da SKILL.md.
+Em ambientes com subagentes, a skill roda como orquestrador e despacha cada
+fase para um contexto descartável. Instalada como plugin, esses subagentes
+vêm declarados em `agents/`: `cleanup-phase-1` (fases 1 e 1.5), e mais um par
+de survey e implementação para cada uma das fases 2 e 3. Os dois de survey não
+conseguem escrever — é assim que o checkpoint deixa de depender de boa
+vontade: a pergunta chega até você antes de qualquer mudança, e a
+implementação só começa depois da sua resposta. O protocolo está na seção
+"Step 0.2" da SKILL.md.
 
 ### Como reverter
 
