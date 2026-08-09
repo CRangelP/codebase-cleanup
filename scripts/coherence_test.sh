@@ -1089,6 +1089,141 @@ check "guard.sh only exits 0 or 2" \
       "$([[ $(printf '%s' "$guard_codes" | tr -d ' ') == "02" ]] && echo 0 || echo 1)" \
       "exit codes found: ${guard_codes:-none} (1 would not block)"
 
+# 16. The rules that decide destructive authority, as invariants that bite. ---
+# Four rules closed as prose in earlier PRs and one whose positive form let the
+# forbidden form live beside it. They are grouped because they share a single
+# acceptance test: a named mutation that the suite used to swallow has to fail
+# here. An invariant that cannot fail is worse than no invariant, because it
+# buys confidence without giving a guarantee — so each check below was written
+# against a mutation first, and none of them was allowed to pass by construction.
+
+# 16.1 The behavior column of the level table, not only the condition column.
+# Section 7 asserts which levels exist and what each row's *condition* is. What
+# the level actually AUTHORIZES lived only in prose, so rewriting YELLOW's cell
+# to run phase 2 and delete exports left the suite green — and that cell is the
+# whole difference between a level that reports and a level that mutates a repo
+# whose tests never ran.
+level_cell() { # level_cell <level> — the behavior cell of that level's first row
+  level_rows SKILL.md | awk -F'|' -v want="$1" '
+    { lvl = $3; gsub(/[ *]/, "", lvl)
+      if (lvl == want) { print $4; exit } }'
+}
+yellow_cell=$(level_cell YELLOW)
+green_cell=$(level_cell GREEN)
+red_cell=$(level_cell RED)
+
+# Floor first, same reason as sections 4 and 15: if the extractor comes back
+# empty because the table moved or the column order changed, every assertion
+# below would compare nothing against nothing and pass over an unguarded table.
+check "the level table's behavior column is extractable" \
+      "$([[ -n $yellow_cell && -n $green_cell && -n $red_cell ]] && echo 0 || echo 1)" \
+      "one of GREEN/YELLOW/RED has no behavior cell in SKILL.md; section 7 checks
+the conditions, this one checks what each level is allowed to do"
+
+check "YELLOW does not authorize deleting exports" \
+      "$(printf '%s' "$yellow_cell" | grep -qE '\*\*not\*\*[[:space:]]+exports' && echo 0 || echo 1)" \
+      "YELLOW's cell must keep exports out of phase 1 explicitly: a partial net
+cannot prove an export is dead, and this cell is what an agent dispatches on"
+
+check "YELLOW does not authorize phase 2, 3 or 4" \
+      "$(printf '%s' "$yellow_cell" | grep -qiE 'does[[:space:]]+\*\*not\*\*[[:space:]]+run[[:space:]]+phase[[:space:]]+2' && echo 0 || echo 1)" \
+      "YELLOW's cell must refuse the mutating phases; without it the level that
+means 'the safety net has holes' would still consolidate and move files"
+
+check "RED does not authorize committing the progress file" \
+      "$(printf '%s' "$red_cell" | grep -qE 'does[[:space:]]+\*\*not\*\*[[:space:]]+commit[[:space:]]+`CLEANUP_PROGRESS\.md`' && echo 0 || echo 1)" \
+      "RED diagnoses; committing CLEANUP_PROGRESS.md would leave a run that never
+had a gate looking like a run that did"
+
+check "GREEN still stops at the human checkpoints" \
+      "$(printf '%s' "$green_cell" | grep -qi 'checkpoint' && echo 0 || echo 1)" \
+      "GREEN is full authority for phase 1 only; phases 2 and 3 stop before
+mutating, and the cell is where that promise is published"
+
+# 16.2 Stack caps override the GREEN column, in every file that can be read
+# alone. The tables in SKILL.md and the READMEs decide behavior by gate level;
+# references/other-stacks.md then lowers that ceiling per stack. An agent that
+# reads only SKILL.md and never opens the reference would run at the table's
+# level, so the pointer has to exist in each file that carries the table.
+STACK_CAP_PHRASE='override the GREEN column'
+missing_cap=""
+for f in SKILL.md README.en.md references/other-stacks.md; do
+  grep -qF "$STACK_CAP_PHRASE" "$f" 2>/dev/null || missing_cap="$missing_cap $f"
+done
+check "the stack-cap override is stated in every file carrying the level table" \
+      "$([[ -z $missing_cap ]] && echo 0 || echo 1)" \
+      "missing in:$missing_cap — without it a .NET or JVM repo reads GREEN from
+the table and runs with an authority its stack section refuses"
+
+# 16.3 The abort branch of a blocked rollback. When a hook refuses the restore,
+# the only safe move is to stop: working around the hook is the failure mode the
+# guard exists to prevent, and 'retry' or 'continue' would be exactly that. The
+# rule shipped as prose, so deleting the branch left the suite green.
+abort_files=$(grep -rlEi 'abort' --include='*.md' . 2>/dev/null | grep -vc '^$' || true)
+check "a blocked rollback still has an abort branch" \
+      "$(grep -qiE 'skill \*\*aborts\*\* the pipeline when a command of the protocol is blocked' README.en.md && echo 0 || echo 1)" \
+      "README.en.md must keep the abort branch for a protocol command blocked by
+a hook; working around the hook is what the guard exists to prevent"
+
+# 16.4 A live 'git add -A' beside the correct form. Section 4 asserts the
+# positive form (`git add -- <pathspec>`) is present, which a document can
+# satisfy while also offering the forbidden form as a shortcut two words later.
+# Banning the string outright is not available either: the prose that forbids it
+# has to quote it. So the rule is proximity — every occurrence must be covered
+# by a negation right before it, or be the left cell of the table of forbidden
+# forms. The window is 48 characters against a measured worst case of 20.
+# LC_ALL=C for the same reason gate.sh's strip_ansi carries it: BSD awk aborts
+# on the first invalid byte under a UTF-8 locale, and an aborted scan reports
+# nothing, which reads exactly like a clean scan.
+# uncovered <extended-regex> — every .md occurrence of a form the docs forbid
+# that no negation right before it covers. Two rules need this and neither can
+# use a plain ban: the prose that forbids a form has to quote it, so the string
+# is in the corpus by design. Proximity is what separates an instruction from a
+# prohibition — the window is 48 characters against a measured worst case of 20
+# for staging and 10 for npx, and the left cell of a table of forbidden forms is
+# exempt because such a row is a list of what not to do.
+# LC_ALL=C for the same reason gate.sh's strip_ansi carries it: BSD awk aborts on
+# the first invalid byte under a UTF-8 locale, and an aborted scan prints
+# nothing, which reads exactly like a clean one.
+uncovered() {
+  find . -name '*.md' -not -path './.git/*' -not -path './node_modules/*' -print0 \
+  | xargs -0 -n1 env LC_ALL=C awk -v pat="$1" '
+      { all = all $0 " " }
+      END {
+        s = all; done = ""
+        while (match(s, pat)) {
+          pre = done substr(s, 1, RSTART - 1)
+          start = length(pre) - 47; if (start < 1) start = 1
+          win = tolower(substr(pre, start))
+          if (win !~ /never|nunca|n.o|instead|em vez|rather than|forbidden|proibid/ \
+              && win !~ /\|[[:space:]]*.?$/)
+            print FILENAME
+          done = pre substr(s, RSTART, RLENGTH)
+          s = substr(s, RSTART + RLENGTH)
+        }
+      }' 2>/dev/null | sort -u | tr '\n' ' '
+}
+
+# Bracket expression, not a backslash escape: awk's -v strips one level before
+# the regex compiles, so '\.' would arrive as a bare '.' and the pattern would
+# match the correct 'git add -- <pathspec>' too — the check would fail loudest
+# on exactly the form it exists to protect.
+stage_hits=$(uncovered 'git add (-A|[.])')
+check "no live 'git add -A' or 'git add .' anywhere in the docs" \
+      "$([[ -z ${stage_hits// /} ]] && echo 0 || echo 1)" \
+      "uncovered occurrence in: ${stage_hits:-none} — whole-tree staging swallows
+what the step did not touch and breaks the per-commit revert the skill promises"
+
+# 16.5 Pinned npx. An unpinned 'npx <pkg>' resolves to whatever latest is on the
+# day it runs, so the tool that decides which exports are dead can change under
+# the protocol without a single file changing. Everything is pinned today and
+# nothing stopped it from coming back.
+bare_npx=$(uncovered 'npx [a-z][a-zA-Z0-9-]*([^a-zA-Z0-9@-]|$)')
+check "every npx in the docs pins a version" \
+      "$([[ -z ${bare_npx// /} ]] && echo 0 || echo 1)" \
+      "unpinned: ${bare_npx:-none} — an unpinned tool changes what counts as dead
+code without any file in this repo changing"
+
 echo "----"
 echo "$((total-failures))/$total invariants held"
 [[ $failures -eq 0 ]]
