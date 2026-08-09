@@ -341,6 +341,50 @@ cat > "$TMP/js-real-pass/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('Test Files 3 passed (3)'); console.log('Tests 12 passed (12)')\""}}
 EOF
 
+# ANSI. Every runner above colours its output the moment it believes it is
+# talking to a terminal, and a repo can force that from package.json
+# ('vitest --color', FORCE_COLOR in a .npmrc/CI shim) with no tty in sight.
+# The classification regexes are anchored — '^' on the empty-suite phrases,
+# '$' on the node:test count — so a leading '\033[33m' or a trailing reset
+# pushes the text out from under the anchor and the detector goes silent. The
+# failure is one-sided and unsafe: an uncounted suite is read as a counted one,
+# i.e. a repo where zero tests ran reports GREEN, the level that unlocks
+# autonomous dead-export deletion. The stubs emit the escape bytes themselves
+# rather than trusting a runner to decide to colour, so the case holds whatever
+# the machine's tty and locale do.
+mkdir -p "$TMP/js-pwnt-color"
+cat > "$TMP/js-pwnt-color/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('\\u001b[33mNo test files found, exiting with code 0\\u001b[39m')\""}}
+EOF
+
+# node:test's default reporter, coloured: the reset lands after the count, so
+# the '$' anchor on 'tests 0' never matches. Marker still multibyte on purpose
+# — colour and the UTF-8 marker are the shape the built-in runner really emits.
+mkdir -p "$TMP/js-node-test-empty-color"
+cat > "$TMP/js-node-test-empty-color/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('\\u001b[34m\\u2139 tests 0\\u001b[39m'); console.log('\\u001b[34m\\u2139 pass 0\\u001b[39m')\""}}
+EOF
+
+# Mixed colouring is the dangerous half, and it is not hypothetical: vitest
+# prints its empty-suite notice through a plain logger and its failure banner
+# through a coloured one. The empty-suite phrase still matches, so the cap
+# fires, while the chained-failure guard — anchored at '^' or a space before
+# FAIL — is blind to '\033[31mFAIL\033[39m' because the character before FAIL
+# is 'm'. A suite that actually failed is then laundered into YELLOW/uncounted
+# instead of RED. Exit 1 with a real failing file must stay RED.
+mkdir -p "$TMP/js-empty-mixed-color"
+cat > "$TMP/js-empty-mixed-color/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 1'); console.log('\\u001b[31mFAIL\\u001b[39m src/a.test.ts'); process.exit(1)\""}}
+EOF
+
+# The gate observes, it does not repaint: normalisation exists to classify, so
+# the bytes the user sees must still carry their colour. This case asserts the
+# raw escape survives into the gate's own output — a fix that stripped colour
+# on the way through would pass every classification case above and quietly
+# degrade every coloured run.
+mkdir -p "$TMP/js-color-passthrough"
+cp "$TMP/js-pwnt-color/package.json" "$TMP/js-color-passthrough/package.json"
+
 # Same chained failure, lowercase runner line. The guard used to lean on awk's
 # IGNORECASE — a gawk extension that BSD awk and mawk ignore, i.e. both CI legs
 # — so only the exact casing of the fixtures above was ever caught and this
@@ -788,6 +832,25 @@ stub_body "$EMPTY_BUN" bun 'for a in "$@"; do [ "$a" = typecheck ] && exit 0; do
 echo "No test files found, exiting with code 1"
 echo "error: script \"test\" exited with code 1"
 exit 1'
+# npm's epilogue, coloured. The epilogue filter is anchored at '^[[:space:]]*'
+# and the 'npm ERR!' alternative has no wildcard prefix, so '\033[31mnpm ERR!'
+# is not stripped; it survives into $ev, and the chained-failure guard then
+# reads its own ERR! as proof a second command failed. An empty suite sinks to
+# RED — the mirror image of the exit-0 leaks, and the reason the filter has to
+# judge normalised text too.
+EMPTY_NPM_COLOR="$TMP/stubs-empty-npm-color"
+stub_body "$EMPTY_NPM_COLOR" npm 'for a in "$@"; do [ "$a" = typecheck ] && exit 0; done
+echo "No test files found, exiting with code 1"
+printf "\033[31mnpm ERR! Test failed.  See above for more details.\033[39m\n"
+exit 1'
+# The control: byte-for-byte the same run without the escapes. It passes today
+# and has to keep passing — without it a "fix" that broke the epilogue filter
+# outright would be indistinguishable from one that repaired it.
+EMPTY_NPM_PLAIN="$TMP/stubs-empty-npm-plain"
+stub_body "$EMPTY_NPM_PLAIN" npm 'for a in "$@"; do [ "$a" = typecheck ] && exit 0; done
+echo "No test files found, exiting with code 1"
+echo "npm ERR! Test failed.  See above for more details."
+exit 1'
 POETRY="$TMP/stubs-poetry"
 stub "$POETRY" poetry 0
 CARGO="$TMP/stubs-cargo"; stub "$CARGO" cargo 0
@@ -931,6 +994,31 @@ case_run js-node-test-tap   0 "$TMP/js-node-test-tap" -     "checks=typecheck$" 
          "0 tests" "'test' not counted" '!GREEN' '!RED'
 case_run js-node-test-real  0 "$TMP/js-node-test-real" -    "checks=typecheck,test" "GREEN" \
          "!'test' not counted"
+# ANSI cases. FORCE_COLOR/CLICOLOR_FORCE are set for honesty about the
+# situation being reproduced, but the verdict does not depend on them: the
+# stubs print the escapes unconditionally, so these cases cannot pass by
+# accident on a machine where some runner declines to colour.
+ESC=$(printf '\033')
+GATE_ENV="FORCE_COLOR=1 CLICOLOR_FORCE=1"
+case_run js-pwnt-color    0 "$TMP/js-pwnt-color" -          "checks=typecheck$" "YELLOW" \
+         "runner reported no tests" "'test' not counted" '!GREEN' '!RED'
+GATE_ENV="FORCE_COLOR=1 CLICOLOR_FORCE=1"
+case_run js-node-test-empty-color 0 "$TMP/js-node-test-empty-color" - \
+         "checks=typecheck$" "YELLOW" "0 tests" "'test' not counted" '!GREEN' '!RED'
+# No FORCE_COLOR here: npm would colour its own ERR! epilogue and sink the run
+# to RED for a reason that has nothing to do with the guard under test.
+case_run js-empty-mixed-color 1 "$TMP/js-empty-mixed-color" - "RED" \
+         '!YELLOW' "!'test' not counted"
+GATE_ENV="FORCE_COLOR=1 CLICOLOR_FORCE=1"
+case_run js-empty-npm-color 0 "$TMP/js-empty-suite" "$EMPTY_NPM_COLOR:$PATH" \
+         "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
+         '!RED' '!GREEN'
+case_run js-empty-npm-plain 0 "$TMP/js-empty-suite" "$EMPTY_NPM_PLAIN:$PATH" \
+         "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
+         '!RED' '!GREEN'
+GATE_ENV="FORCE_COLOR=1 CLICOLOR_FORCE=1"
+case_run js-color-passthrough 0 "$TMP/js-color-passthrough" - \
+         "$ESC\[33mNo test files found, exiting with code 0$ESC\[39m"
 case_run js-alias-check-types 0 "$TMP/js-alias-check-types" - "run check-types" \
          "checks=typecheck,test" "GREEN"
 case_run js-test-and-unit 0 "$TMP/js-test-and-unit" -         "run test$" \
