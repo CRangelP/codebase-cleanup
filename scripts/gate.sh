@@ -242,23 +242,33 @@ if [[ -f package.json ]]; then
     echo "[gate] package.json unparseable — JS/TS checks skipped" >&2
     incomplete=1
   else
-    # run_first <kind> <script name...> — runs the first of those scripts the
-    # project actually defines, under the canonical <kind>. Projects name these
-    # scripts freely ('type-check', 'test:unit'), and refusing anything but the
-    # canonical spelling made a fully covered repo look uncheckable. Two rules
-    # hold the semantics together: exactly one script runs per kind — the first
-    # name the project defines wins, the rest are ignored, so nothing runs or
-    # counts twice — and what reaches run() is the *kind*, never the alias,
+    # js_script <kind> <script> — invokes one package.json script under the
+    # canonical <kind>. What reaches run() is the *kind*, never the alias,
     # because run() classifies by kind and an unknown word there would run the
     # check and count nothing. The alias stays visible in the human
     # '[gate] <cmd>' line; checks= keeps its canonical vocabulary.
+    js_script() {
+      if [[ $PM == yarn ]]; then run "$1" yarn "$2"
+      else run "$1" "$PM" run "$2"; fi
+    }
+
+    # run_first <kind> <script name...> — runs the first of those scripts the
+    # project actually defines. Projects name these scripts freely
+    # ('type-check', 'check-types'), and refusing anything but the canonical
+    # spelling made a fully covered repo look uncheckable. Exactly one script
+    # runs per kind: the first name the project defines wins, the rest are
+    # ignored, so nothing runs or counts twice.
+    # 'tsc' is deliberately NOT an alias: as a script name it usually means an
+    # emitting compile ("tsc": "tsc -p ."), which would drop .js/.d.ts/.tsbuildinfo
+    # beside the sources of the tree being judged, right before phase 1.3 stages
+    # everything with 'git add -A' — and the documented rollback
+    # ('git restore --staged --worktree .') cannot remove untracked files.
     run_first() {
       local kind=$1 script
       shift
       for script in "$@"; do
         if node -e "const s=require('./package.json').scripts||{};process.exit(s['$script']?0:1)" 2>/dev/null; then
-          if [[ $PM == yarn ]]; then run "$kind" yarn "$script"
-          else run "$kind" "$PM" run "$script"; fi
+          js_script "$kind" "$script"
           return 0
         fi
       done
@@ -266,8 +276,34 @@ if [[ -f package.json ]]; then
       # verdict caps the level from there.
       return 0
     }
-    run_first typecheck typecheck type-check tsc check-types
-    run_first test test test:unit
+
+    # js_test_script — decides which script stands for the *whole* suite.
+    # A plain 'test' always wins. Failing that, a 'test:*' script counts as the
+    # canonical test only when it is the sole one in the manifest: a repo with
+    # 'test:unit' and 'test:e2e' would otherwise report checks=typecheck,test —
+    # GREEN, which unlocks dead-export deletion and phases 2 and 3 — on a net
+    # where half the suite never ran. Echoes 'run:<name>', or 'partial:<names>'
+    # when there is more than one slice and no whole, or nothing.
+    js_test_script() {
+      node -e 'const s=require("./package.json").scripts||{};
+if (s.test) { console.log("run:test"); }
+else {
+  const p = Object.keys(s).filter(function (k) { return k.indexOf("test:") === 0 && s[k]; });
+  if (p.length === 1) console.log("run:" + p[0]);
+  else if (p.length > 1) console.log("partial:" + p.join(" "));
+}' 2>/dev/null
+    }
+
+    run_first typecheck typecheck type-check check-types
+    js_test=$(js_test_script)
+    case $js_test in
+      run:*)
+        js_script test "${js_test#run:}" ;;
+      partial:*)
+        echo "[gate] no 'test' script and more than one test:* slice" \
+             "(${js_test#partial:}) — none of them covers the suite on its own," \
+             "so 'test' is not counted; run them all by hand" >&2 ;;
+    esac
   fi
 fi
 

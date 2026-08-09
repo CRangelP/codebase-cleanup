@@ -199,9 +199,42 @@ cat > "$TMP/js-alias-test-only/package.json" <<'EOF'
 {"name":"f","scripts":{"test:unit":"node -e 0"}}
 EOF
 
+# 'tsc' as a script name usually means an emitting compile, so it is not an
+# alias: a project whose only typecheck-ish script is 'tsc' gets no typecheck.
 mkdir -p "$TMP/js-alias-tsc"
 cat > "$TMP/js-alias-tsc/package.json" <<'EOF'
-{"name":"f","scripts":{"tsc":"node -e 0"}}
+{"name":"f","scripts":{"tsc":"node -e \"console.log('TSC_RAN')\"","test":"node -e 0"}}
+EOF
+
+mkdir -p "$TMP/js-alias-check-types"
+cat > "$TMP/js-alias-check-types/package.json" <<'EOF'
+{"name":"f","scripts":{"check-types":"node -e 0","test":"node -e 0"}}
+EOF
+
+# Plain 'test' next to a slice: 'test' wins and the slice stays silent.
+mkdir -p "$TMP/js-test-and-unit"
+cat > "$TMP/js-test-and-unit/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e 0","test:unit":"node -e \"console.log('ALIAS_TEST_RAN')\""}}
+EOF
+
+# Two slices and no whole: neither stands for the suite, so 'test' is not
+# counted and the verdict falls back to the YELLOW cap.
+mkdir -p "$TMP/js-test-slices"
+cat > "$TMP/js-test-slices/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:unit":"node -e \"console.log('UNIT_RAN')\"","test:e2e":"node -e \"console.log('E2E_RAN')\""}}
+EOF
+
+# ...and with the slices as the only scripts at all, nothing countable ran.
+mkdir -p "$TMP/js-test-slices-only"
+cat > "$TMP/js-test-slices-only/package.json" <<'EOF'
+{"name":"f","scripts":{"test:unit":"node -e 0","test:e2e":"node -e 0"}}
+EOF
+
+# A single slice that is not 'test:unit': the rule is about test:*, not about
+# one blessed name.
+mkdir -p "$TMP/js-test-integration"
+cat > "$TMP/js-test-integration/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:integration":"node -e 0"}}
 EOF
 
 # Canonical and alias side by side: precedence says 'typecheck' wins and
@@ -422,7 +455,19 @@ case_run js-bad-json      3 "$TMP/js-bad-json"  -             "unparseable"
 case_run js-alias         0 "$TMP/js-alias"     -             "run type-check" "run test:unit" \
          "checks=typecheck,test" "GREEN"
 case_run js-alias-test-only 0 "$TMP/js-alias-test-only" -     "run test:unit" "checks=test" "YELLOW"
-case_run js-alias-tsc     0 "$TMP/js-alias-tsc" -             "run tsc" "checks=typecheck" "YELLOW"
+case_run js-alias-tsc     0 "$TMP/js-alias-tsc" -             "checks=test" "YELLOW" \
+         '!run tsc' '!TSC_RAN'
+case_run js-alias-check-types 0 "$TMP/js-alias-check-types" - "run check-types" \
+         "checks=typecheck,test" "GREEN"
+case_run js-test-and-unit 0 "$TMP/js-test-and-unit" -         "run test$" \
+         "checks=typecheck,test" "GREEN" '!run test:unit' '!ALIAS_TEST_RAN'
+case_run js-test-slices   0 "$TMP/js-test-slices" -           "checks=typecheck" "YELLOW" \
+         "more than one test:\* slice (test:unit test:e2e)" \
+         '!UNIT_RAN' '!E2E_RAN'
+case_run js-test-slices-only 3 "$TMP/js-test-slices-only" -   "no runnable checks" \
+         "more than one test:\* slice"
+case_run js-test-integration 0 "$TMP/js-test-integration" -   "run test:integration" \
+         "checks=typecheck,test" "GREEN"
 case_run js-alias-both    0 "$TMP/js-alias-both" -            "run typecheck$" \
          "checks=typecheck,test" "GREEN" '!run type-check' '!ALIAS_TYPECHECK_RAN'
 case_run js-alias-red     1 "$TMP/js-alias-red" -             "RED at 'npm run test:unit'"
