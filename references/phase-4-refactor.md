@@ -99,8 +99,18 @@ So, before touching each target:
    fallback is naming the test files that import the module — a proxy, not
    coverage. It says something in the file is reachable from a test, not that
    the branch you are flattening ever runs. Record which of the two you had,
-   per target: a number and a proxy do not authorize the same thing.
-3. **Covered** → proceed, at the tier the level allows.
+   per target: a number and a proxy do not authorize the same thing, and here
+   is what that means, because leaving it implied is how the third exit gets
+   in. **A proxy is not "covered".** It authorizes nothing on its own: the
+   target goes down the "not covered" branch in step 4 like any other, and the
+   proxy only decides which way that branch is worth taking — a module a test
+   file already imports is usually cheap to characterize, which makes writing
+   the test the better of the two exits rather than skipping. A number per
+   function is what authorizes work, and only tier A; **tier B never runs on a
+   proxy**, because an operation that picks an abstraction needs to know which
+   branches execute before it decides which ones deserve a name.
+3. **Covered**, meaning a per-function number → proceed, at the tier the level
+   allows.
 4. **Not covered** → two exits, and only two: skip the target and record it as
    pending, naming what is missing; or write a characterization test as **its
    own commit** (`test: characterize <what>`, green before the refactor
