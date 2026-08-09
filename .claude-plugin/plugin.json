@@ -1,0 +1,10 @@
+{
+  "name": "codebase-cleanup",
+  "version": "0.1.0",
+  "description": "Three-phase codebase cleanup: dead code, module consolidation and folder structure. Dedicated branch, atomic commits per category, a green gate before every one of them.",
+  "author": { "name": "CRangelP" },
+  "homepage": "https://github.com/CRangelP/codebase-cleanup",
+  "repository": "https://github.com/CRangelP/codebase-cleanup",
+  "license": "MIT",
+  "keywords": ["cleanup", "dead-code", "duplication", "refactor", "knip", "tech-debt"]
+}

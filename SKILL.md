@@ -57,6 +57,16 @@ it. Branch on which command was blocked:
 
 A guard is environment policy, not an obstacle.
 
+Installed as a plugin, this skill ships guards of its own (`hooks/hooks.json`
+→ `scripts/guard.sh`) for exactly the five commands the rules above forbid:
+`git reset --hard`, `git clean`, push, commit on `main`, and whole-tree
+staging. They are awake only inside a run — a `cleanup/` branch, or an
+untracked `CLEANUP_PROGRESS.md` — and they fail open. Hitting one of them
+means the step was about to break the protocol, so the answer is never to
+rephrase the command until it slips through: re-read the rule the guard names
+and follow it. Everything the protocol actually runs is allowed, the rollback
+and pathspec staging included.
+
 There are **two scheduled checkpoints** in the pipeline (phase 2, choosing the
 consolidation candidate; phase 3 on GREEN, confirming the folder plan before
 any `git mv`) and **one conditional stop** at Step 0, when the working tree is
@@ -103,9 +113,14 @@ normally — it will branch off that commit, which is exactly what you want. Not
 in the final report that the work started from a detached HEAD, so the user
 knows where the branch came from.
 
-With a clean tree and a repo, run the baseline gate with `scripts/gate.sh`
-(path relative to this skill's directory; it accepts the project directory as
-an argument) and classify. The
+With a clean tree and a repo, run the baseline gate with
+`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` and classify. Installed as a
+plugin, `CLAUDE_PLUGIN_ROOT` holds the absolute path of this plugin's
+directory, so the call resolves from whatever directory the run happens to be
+in; installed as a plain skill the variable is unset and `:-.` falls back to
+the path relative to this file, which is what it always was. Either way the
+script accepts the project directory as an argument and defaults to the
+current one. The
 script detects the stack from the root manifest — `package.json`, `go.mod`,
 `Cargo.toml`, `pyproject.toml`/`setup.cfg`, `pom.xml`/`build.gradle`,
 `Gemfile`, `sln`/`csproj`/`fsproj` — and runs typecheck and tests for each one
@@ -251,7 +266,23 @@ context, which is the same effect as `/clear` without depending on the user
 remembering. Single-phase request or small repo: single session, no
 orchestration.
 
-The contract of each delegation:
+Installed as a plugin, the delegations are declared and you call them by
+name instead of composing them each time:
+
+| Agent | Scope |
+|---|---|
+| `codebase-cleanup:cleanup-phase-1` | phases 1 and 1.5 |
+| `codebase-cleanup:cleanup-phase-2-survey` | the candidates, read-only |
+| `codebase-cleanup:cleanup-phase-2-impl` | the consolidation the user chose |
+| `codebase-cleanup:cleanup-phase-3-survey` | the structure plan, read-only |
+| `codebase-cleanup:cleanup-phase-3-impl` | the approved moves |
+
+The split into survey and implementation is where the checkpoint lives: the
+survey agents cannot write at all, so the question reaches the user before
+anything changed, and the implementation agents only start after the answer.
+
+Without plugin agents the same contract is composed by hand, and it is the
+same four points:
 
 - the path to this skill (the subagent reads SKILL.md and follows it, with
   references/ and scripts/ alongside) and the path to the repo;
@@ -342,7 +373,8 @@ Never exclude tests with `ignore` to get the same effect.
 **Default scope.** Run all three without asking (GREEN level) or the first two
 (YELLOW). Each one is: delete → (deps only: install / re-resolve) → stage
 pathspecs → gate → commit → regenerate the report. For the gate, use
-`scripts/gate.sh` (it detects the stack and the package manager and runs
+`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` (it detects the stack and the
+package manager and runs
 typecheck + tests in the right order); if it exits with code 3, find the
 stack's own check commands — the `package.json` scripts, the tox env, the
 Makefile target, whatever this repo uses — and run them by hand.
@@ -553,7 +585,8 @@ with a simple interface is exactly what you *want*).
 ## Implementation
 
 After the choice, run on your own: one module at a time, one commit per
-consolidation, and `scripts/gate.sh` once — after staging pathspecs of what
+consolidation, and `"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` once — after
+staging pathspecs of what
 this consolidation touched, right before the commit. Do not gate between the
 intermediate steps: with the new interface in place and the callers not
 migrated yet, the build is red by construction, and a gate you expect to fail
@@ -621,7 +654,8 @@ The move, the import or alias update and the `CLAUDE.md` update go in the
 history, and there is no gate that a half-done move can pass.
 
 Stage with pathspecs of what this folder move touched (`git add -- …`), never
-`git add -A`, and then `scripts/gate.sh` at the end of each folder —
+`git add -A`, and then `"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` at the end
+of each folder —
 typecheck alone misses what a move actually breaks (config paths, dynamic
 imports; the "Do not forget" list in `references/phase-3-structure.md` has
 the rest). Failed: `git restore --staged --worktree .`, record it, next

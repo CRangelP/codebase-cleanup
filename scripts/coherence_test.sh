@@ -221,6 +221,26 @@ check "gate.sh only exits documented codes" \
       "$([[ -z $undocumented ]] && echo 0 || echo 1)" \
       "exit code(s) outside the documented 0/1/2/3/4:$undocumented"
 
+# Every invocation of the gate in the protocol resolves through the plugin
+# root. Installed as a plugin the skill is copied into a cache directory whose
+# path nobody can guess, and a bare `scripts/gate.sh` would then be read as
+# relative to the *project* being cleaned, where it does not exist — the run
+# would lose the one script that decides its level. The `:-.` keeps the plain
+# skill install working, so the canonical form is the whole form, braces and
+# fallback included. The READMEs are exempt on purpose: there the path names
+# the file on disk (a file tree, a requirements list), it is not a step anyone
+# runs.
+GATE_CALL='"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"'
+for f in SKILL.md references/*.md; do
+  [[ -f $f ]] || continue
+  loose=$(grep -o -F -- 'scripts/gate.sh' "$f" 2>/dev/null | wc -l)
+  canon=$(grep -o -F -- "$GATE_CALL" "$f" 2>/dev/null | wc -l)
+  check "the gate is called through the plugin root in $f" \
+        "$([[ $((loose)) -eq $((canon)) ]] && echo 0 || echo 1)" \
+        "$((loose)) mentions of scripts/gate.sh, $((canon)) of them canonical
+the canonical form is $GATE_CALL"
+done
+
 # 3. Strings the docs stopped meaning are gone from the repo. -----------------
 # Each one described a protocol that no longer exists; a copy left behind
 # contradicts the current one.
@@ -339,12 +359,17 @@ for readme in README.md README.en.md; do
       fail "$required of the tree of $readme exists on disk" "listed but missing on disk"
     fi
   done
-  for path in references/*.md; do
+  # references/ and agents/ get the same treatment: both ship inside the
+  # plugin, both are read by name at runtime, and a file missing from the tree
+  # is a file the reader does not know is there.
+  for path in references/*.md agents/*.md; do
+    [[ -f $path ]] || continue
     name=${path##*/}
+    dir=${path%%/*}
     if printf '%s\n' "$docs" | grep -qx -F -- "$name"; then
-      pass "references/$name listed in the tree of $readme"
+      pass "$dir/$name listed in the tree of $readme"
     else
-      fail "references/$name listed in the tree of $readme" "on disk but absent from the tree"
+      fail "$dir/$name listed in the tree of $readme" "on disk but absent from the tree"
     fi
   done
   old_ifs=$IFS
@@ -352,7 +377,7 @@ for readme in README.md README.en.md; do
   for name in $docs; do
     [[ $name == *.md ]] || continue
     case $name in
-      SKILL.md|README.md|README.en.md)
+      SKILL.md|README.md|README.en.md|CHANGELOG.md)
         if [[ -f $name ]]; then
           pass "$name of the tree of $readme exists on disk"
         else
@@ -360,11 +385,16 @@ for readme in README.md README.en.md; do
         fi
         ;;
       *)
+        # A doc in the tree lives in references/ or in agents/. Naming the two
+        # directories beats accepting either silently: a file that is in
+        # neither is listed and shipped by nobody.
         if [[ -f references/$name ]]; then
           pass "references/$name of the tree of $readme exists on disk"
+        elif [[ -f agents/$name ]]; then
+          pass "agents/$name of the tree of $readme exists on disk"
         else
-          fail "references/$name of the tree of $readme exists on disk" \
-               "listed but there is no references/$name"
+          fail "$name of the tree of $readme exists on disk" \
+               "listed but there is no references/$name nor agents/$name"
         fi
         ;;
     esac
@@ -759,6 +789,172 @@ desc_len=${#desc}
 check "SKILL.md description stays at or under 1000 characters" \
       "$([[ -n $desc && $desc_len -le 1000 ]] && echo 0 || echo 1)" \
       "description is ${desc_len} characters (limit 1000)"
+
+# 11. The guard blocks what the READMEs say it blocks. -----------------------
+# The guard is the plugin half of five rules the skill states in prose, and a
+# table that drifts from the script is worse than no table: a reader plans
+# around a command that is not actually stopped, or fights one that is. So each
+# command is one string in three places — the executable proof, and both
+# READMEs — and the invariant is that the three agree. The proof is the anchor
+# and not guard.sh itself on purpose: the script matches `-A` inside a case arm
+# and never spells the whole command out, while guard_test.sh has to run it
+# verbatim to test it.
+GUARD_SECTION_PT='### Os guardas'
+GUARD_SECTION_EN='### The guards'
+
+guard_section() { # guard_section <readme> <heading> — the section's body
+  awk -v h="$2" '
+    $0 == h { inside = 1; next }
+    inside && /^## / { exit }
+    inside { print }
+  ' "$1"
+}
+
+for f in scripts/guard.sh scripts/guard_test.sh hooks/hooks.json; do
+  check "$f exists" "$([[ -f $f ]] && echo 0 || echo 1)" "the guard ships incomplete without it"
+done
+
+check "hooks.json runs the guard through the plugin root" \
+      "$(grep -q -F -- '${CLAUDE_PLUGIN_ROOT}/scripts/guard.sh' hooks/hooks.json 2>/dev/null && echo 0 || echo 1)" \
+      "the hook command has to resolve from the plugin directory, not the cleaned project"
+
+check "hooks.json registers the guard on PreToolUse" \
+      "$(grep -q -F -- 'PreToolUse' hooks/hooks.json 2>/dev/null && echo 0 || echo 1)" \
+      "any later event fires after the command already ran"
+
+check "test.sh chains guard_test.sh" \
+      "$(grep -q -F -- 'guard_test.sh' scripts/test.sh 2>/dev/null && echo 0 || echo 1)" \
+      "a suite nobody runs is a suite that rots"
+
+while IFS= read -r cmd; do
+  [[ -n $cmd ]] || continue
+  check "guard_test.sh exercises '$cmd'" \
+        "$(grep -q -F -- "$cmd" scripts/guard_test.sh 2>/dev/null && echo 0 || echo 1)" \
+        "the READMEs promise it is blocked and no case runs it"
+  check "the guard table of README.md names '$cmd'" \
+        "$(guard_section README.md "$GUARD_SECTION_PT" | grep -q -F -- "$cmd" && echo 0 || echo 1)" \
+        "blocked by the guard and absent from the table"
+  check "the guard table of README.en.md names '$cmd'" \
+        "$(guard_section README.en.md "$GUARD_SECTION_EN" | grep -q -F -- "$cmd" && echo 0 || echo 1)" \
+        "blocked by the guard and absent from the table"
+done <<'GUARDED'
+git reset --hard
+git clean
+git push
+git commit
+git add -A
+GUARDED
+
+# 12. The delegated phases exist as agents, and stay inside their limits. ----
+# Step 0.2 hands each phase to an agent by name. A name that resolves to no
+# file is a delegation that dies at call time, and the two read-only ones carry
+# the checkpoint: a survey agent that can write is a survey that can decide,
+# which is the one thing the checkpoint exists to prevent. Plugin agents also
+# may not declare hooks, mcpServers or permissionMode — Claude Code refuses the
+# agent outright — so the ban is checked here rather than discovered on a user's
+# machine.
+agent_frontmatter() { # agent_frontmatter <file> — the YAML block, or empty
+  awk '/^---[[:space:]]*$/ { fm++; next } fm == 1 { print } fm >= 2 { exit }' "$1"
+}
+
+for a in cleanup-phase-1 cleanup-phase-2-survey cleanup-phase-2-impl \
+         cleanup-phase-3-survey cleanup-phase-3-impl; do
+  f="agents/$a.md"
+  check "agents/$a.md exists" \
+        "$([[ -f $f ]] && echo 0 || echo 1)" \
+        "Step 0.2 delegates to an agent with no file behind it"
+  [[ -f $f ]] || continue
+
+  check "$a declares its own name in the frontmatter" \
+        "$(agent_frontmatter "$f" | grep -q -E "^name:[[:space:]]*$a\$" && echo 0 || echo 1)" \
+        "the frontmatter name is what the @-mention resolves; a mismatch with the
+filename is a delegation nobody can call"
+
+  check "$a declares a description" \
+        "$(agent_frontmatter "$f" | grep -q -E '^description:[[:space:]]*[^[:space:]]' && echo 0 || echo 1)" \
+        "the description is what decides when the agent is invoked"
+
+  check "$a reads CLEANUP_PROGRESS.md first" \
+        "$(grep -q -F -- 'CLEANUP_PROGRESS.md' "$f" && echo 0 || echo 1)" \
+        "the log is the canonical state a delegation resumes from"
+
+  banned=$(agent_frontmatter "$f" | grep -E '^(hooks|mcpServers|permissionMode):' | tr '\n' ' ')
+  check "$a declares no field a plugin agent may not have" \
+        "$([[ -z $banned ]] && echo 0 || echo 1)" \
+        "plugin agents support none of hooks, mcpServers, permissionMode: $banned"
+
+  check "Step 0.2 names $a" \
+        "$(grep -q -F -- "codebase-cleanup:$a" SKILL.md && echo 0 || echo 1)" \
+        "an agent nobody delegates to is an agent that rots"
+done
+
+# The two surveys are the checkpoint. They run before the user has answered, so
+# the guarantee has to be mechanical: no Write, no Edit, no way to change the
+# repository while deciding what to propose.
+for a in cleanup-phase-2-survey cleanup-phase-3-survey; do
+  f="agents/$a.md"
+  [[ -f $f ]] || continue
+  line=$(agent_frontmatter "$f" | grep -E '^disallowedTools:')
+  ok=1
+  case $line in
+    *Write*) case $line in *Edit*) ok=0 ;; esac ;;
+  esac
+  check "$a cannot write" "$ok" \
+        "a survey runs before the user answered; got '${line:-no disallowedTools}'"
+done
+
+# 13. The plugin manifests agree with each other and with the docs. ----------
+# The version in plugin.json is the cache key that decides whether an install
+# sees an update at all: pinned and never bumped, a user stays on the version
+# they first installed no matter how many commits land. That failure is silent
+# on both ends — nobody gets an error, the fix just never arrives — so the
+# pieces that have to agree are checked here instead of being remembered.
+plugin_field() { # plugin_field <file> <key> — the string value, or empty
+  perl -0777 -ne 'print $1 if /"'"$2"'"\s*:\s*"([^"]*)"/' "$1" 2>/dev/null
+}
+
+plugin_name=$(plugin_field .claude-plugin/plugin.json name)
+plugin_version=$(plugin_field .claude-plugin/plugin.json version)
+market_name=$(plugin_field .claude-plugin/marketplace.json name)
+
+check "plugin.json declares a name" \
+      "$([[ -n $plugin_name ]] && echo 0 || echo 1)" \
+      "the name is the namespace of every skill in the plugin"
+
+# The changelog's top entry and the manifest's version are one string. The
+# manifest alone would be a number nobody can read a meaning into, and a
+# changelog alone would be a story about a version that never shipped: the
+# release is the pair, so drift between them is caught here.
+changelog_version=$(sed -n 's|^## \[\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)\].*|\1|p' CHANGELOG.md 2>/dev/null | head -1)
+check "CHANGELOG.md opens with a semver entry" \
+      "$([[ -n $changelog_version ]] && echo 0 || echo 1)" \
+      "no '## [X.Y.Z]' heading found; the top entry is what a release note quotes"
+check "CHANGELOG.md and plugin.json agree on the version" \
+      "$([[ -n $changelog_version && $changelog_version == "$plugin_version" ]] && echo 0 || echo 1)" \
+      "CHANGELOG.md says '${changelog_version:-none}', plugin.json says '${plugin_version:-none}'"
+
+check "plugin.json declares an explicit version" \
+      "$([[ $plugin_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && echo 0 || echo 1)" \
+      "got '${plugin_version:-none}'; without semver here the version falls back to the
+commit SHA and every push becomes an update"
+
+# The install line the READMEs publish is plugin@marketplace. Both halves come
+# from the manifests, so a rename on either side turns the documented command
+# into one that resolves to nothing.
+install_id="$plugin_name@$market_name"
+for f in README.md README.en.md; do
+  check "$f publishes the install id $install_id" \
+        "$(grep -q -F -- "$install_id" "$f" 2>/dev/null && echo 0 || echo 1)" \
+        "the documented /plugin install does not match the manifests"
+done
+
+# The guard's own exit codes. Exit 1 does not block — the hook contract reads
+# it as a non-fatal error and lets the command through — so a guard that ever
+# exits 1 fails silently, which is the one failure mode nobody would notice.
+guard_codes=$(exit_codes < scripts/guard.sh | sort -u | tr '\n' ' ')
+check "guard.sh only exits 0 or 2" \
+      "$([[ $(printf '%s' "$guard_codes" | tr -d ' ') == "02" ]] && echo 0 || echo 1)" \
+      "exit codes found: ${guard_codes:-none} (1 would not block)"
 
 echo "----"
 echo "$((total-failures))/$total invariants held"

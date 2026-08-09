@@ -39,7 +39,32 @@ answer.
 
 ## Installation
 
-The skill is a folder. Installing means copying it into the skills directory:
+As a plugin, which is the recommended route — it brings versioning, updates
+and the `PreToolUse` guards:
+
+```bash
+/plugin marketplace add CRangelP/codebase-cleanup
+/plugin install codebase-cleanup@codebase-cleanup
+```
+
+Updating later is `/plugin update codebase-cleanup@codebase-cleanup`. For a
+team, declare it in the repository's `.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "codebase-cleanup": {
+      "source": { "source": "github", "repo": "CRangelP/codebase-cleanup" }
+    }
+  },
+  "enabledPlugins": { "codebase-cleanup@codebase-cleanup": true }
+}
+```
+
+That installs nothing on anyone's machine: each person is asked once whether
+they trust it and want it installed.
+
+Copying the folder still works, and it is still a skill:
 
 ```bash
 # global (applies to every project)
@@ -49,8 +74,10 @@ cp -R codebase-cleanup ~/.claude/skills/
 cp -R codebase-cleanup .claude/skills/
 ```
 
-If you have the `codebase-cleanup.skill` package (a zip), unpack it straight
-into the destination:
+Copied that way it loads as a plugin too, because `.claude-plugin/` travels
+with it — what changes is only where updates come from. If you have the
+`codebase-cleanup.skill` package (a zip), unpack it straight into the
+destination:
 
 ```bash
 unzip codebase-cleanup.skill -d ~/.claude/skills/
@@ -64,6 +91,18 @@ codebase-cleanup/
 ├── README.md                         readme in Portuguese
 ├── README.en.md                      this file
 ├── LICENSE                           MIT
+├── CHANGELOG.md                      what changed in each version
+├── .claude-plugin/
+│   ├── plugin.json                   plugin manifest (name, version, license)
+│   └── marketplace.json              catalogue, for /plugin install
+├── agents/
+│   ├── cleanup-phase-1.md            phases 1 and 1.5
+│   ├── cleanup-phase-2-survey.md     consolidation candidates (read-only)
+│   ├── cleanup-phase-2-impl.md       implements the chosen candidate
+│   ├── cleanup-phase-3-survey.md     structure plan (read-only)
+│   └── cleanup-phase-3-impl.md       executes the approved moves
+├── hooks/
+│   └── hooks.json                    registers the guard on the PreToolUse event
 ├── references/
 │   ├── audit.md                      phase 1.4 audit protocol
 │   ├── knip-config.md                knip configuration without pitfalls
@@ -73,8 +112,10 @@ codebase-cleanup/
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
     ├── gate.sh                       multi-stack typecheck + tests, exit 0/1/2/3/4
-    ├── test.sh                       runs the three suites in sequence
+    ├── guard.sh                      blocks the five commands the protocol forbids
+    ├── test.sh                       runs the four suites in sequence
     ├── gate_test.sh                  gate contract tests (toolchain stubs)
+    ├── guard_test.sh                 what the guard blocks and what it lets through
     ├── rollback_test.sh              executable proof of the rollback protocol
     └── coherence_test.sh             coherence invariants between docs and code
 ```
@@ -84,25 +125,26 @@ see whether `codebase-cleanup` shows up in the list of available skills.
 
 ### Tests
 
-Three suites, with nothing to install beyond `bash` and `git`:
+Four suites, with nothing to install beyond `bash` and `git`:
 
 ```bash
-bash scripts/test.sh            # runs all three, stopping at the first failure
+bash scripts/test.sh            # runs all four, stopping at the first failure
 
 bash scripts/gate_test.sh       # gate contract: exit codes, the checks= line, PARTIAL
+bash scripts/guard_test.sh      # what the guard blocks, and what it lets through
 bash scripts/rollback_test.sh   # what `git restore` brings back and what it destroys
 bash scripts/coherence_test.sh  # docs and code saying the same thing
 ```
 
 Each exits 0 when everything passed and prints the failing case when it does
-not; `test.sh` only chains the three and stops at the first red. None of them
+not; `test.sh` only chains the four and stops at the first red. None of them
 touches the repository you run it from: the gate suite uses
-toolchain stubs, the rollback suite builds throwaway repositories inside a
-`mktemp -d`, with `HOME` redirected and the commit identity passed via `-c` —
-your git config is never read nor written —, and the coherence suite only
-reads files.
+toolchain stubs, the guard and rollback suites build throwaway repositories
+inside a `mktemp -d`, with `HOME` redirected and the commit identity passed via
+`-c` — your git config is never read nor written —, and the coherence suite
+only reads files.
 
-CI runs the three suites on every push and PR: ubuntu (real GNU `timeout`,
+CI runs the four suites on every push and PR: ubuntu (real GNU `timeout`,
 procps) and macOS with the stock `/bin/bash` 3.2.
 
 The suites also run outside macOS. In a Linux container the hang case
@@ -111,7 +153,8 @@ exercises the real GNU `timeout` instead of the perl backend:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validated 2026-08: 127/127 cases, 5/5 properties, 151/151 invariants
+# validated 2026-08: 127/127 cases, 42/42 guard cases, 5/5 properties,
+# 248/248 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -140,7 +183,9 @@ are sources, not dependencies.
 There is no mandatory command. The skill triggers when the request sounds like
 cleanup: "clean this project up", "there's stuff here nobody uses",
 "remove the dead dependencies", "reorganize these folders". You can also
-invoke it directly with `/codebase-cleanup`.
+invoke it directly: `/codebase-cleanup:codebase-cleanup` when installed as a
+plugin (plugin skills are always namespaced by the plugin name), or
+`/codebase-cleanup` on a copied install.
 
 Partial requests work — "remove only the unused dependencies" runs the
 requested category and records the rest as out of scope.
@@ -227,8 +272,13 @@ Between phases the skill asks for `/clear` — context accumulated from one
 phase degrades the judgment of the next. Progress lives in
 `CLEANUP_PROGRESS.md` at the repo root, so the next session resumes where it
 stopped without you re-explaining anything. In environments with subagents,
-the skill can run as an orchestrator and dispatch each phase to a disposable
-context; the protocol is in Step 0.2 of SKILL.md.
+the skill runs as an orchestrator and dispatches each phase to a disposable
+context. Installed as a plugin, those subagents come declared in `agents/`:
+`cleanup-phase-1` (phases 1 and 1.5), plus a survey and an implementation
+agent for each of phases 2 and 3. The two survey agents cannot write — that is
+how the checkpoint stops depending on good intentions: the question reaches you
+before anything changed, and the implementation only starts after your answer.
+The protocol is in Step 0.2 of SKILL.md.
 
 ### How to revert
 
@@ -252,6 +302,35 @@ and stops to ask when it does not find one — with a clean tree, what the
 rollback discards is what the skill itself created. Pathspec staging (instead
 of `git add -A`) keeps drafts and local `.env` files out of the category
 commit.
+
+### The guards
+
+Installed as a plugin, those prohibitions stop being text the model can
+forget. `hooks/hooks.json` registers `scripts/guard.sh` on the `PreToolUse`
+event, and it stops five commands before they run:
+
+| Command | Why |
+|---|---|
+| `git reset --hard` | would take work that was in the tree before the cleanup started |
+| `git clean` | would wipe untracked files that must survive: tool output, caches, local `.env` files |
+| `git push` | the skill never publishes; merging is your decision |
+| `git commit` on `main` | all the work lives on the cleanup branch |
+| `git add -A` | whole-tree staging swallows into the commit what does not belong to the category |
+
+The guard is only awake inside a run: HEAD on a `cleanup/` branch, or an
+**untracked** `CLEANUP_PROGRESS.md` — which is what a RED run leaves behind,
+and what exists before the first commit. A tracked log on a normal branch is a
+cleanup that got merged, not a run in flight, so there it goes back to sleep;
+without that distinction it would stay awake on main forever after the first
+merge. Outside a run these commands are ordinary work, and it says nothing.
+
+When in doubt it lets through. No repo, no JSON, no command: it exits 0 and
+stays quiet. A guard that blocks by accident is worse than no guard, because
+the skill **aborts** the pipeline when a command of the protocol is blocked —
+a false positive kills a legitimate run. What it blocks and what it lets
+through lives in `scripts/guard_test.sh`, including
+`git restore --staged --worktree .`, `git revert`, `git mv`,
+`git stash push -u` and pathspec `git add --`.
 
 ## Known limits
 

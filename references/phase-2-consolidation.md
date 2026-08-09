@@ -94,7 +94,8 @@ One candidate per session. Per consolidation:
 3. Remove the old modules
 4. `git add -- <paths this consolidation touched>` — pathspecs only, never
    `git add -A` / `git add .`
-5. `scripts/gate.sh` — once, here, not between the steps above
+5. `"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` — once, here, not between the
+   steps above
 6. Commit `refactor: consolidate X into Y`
 
 Steps 1–3 are red by construction: the new interface exists and its callers do
