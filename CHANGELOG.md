@@ -9,6 +9,48 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.2.1] — 2026-08-09
+
+Correção de um defeito que fazia o gate mentir sobre a suíte — nas duas direções.
+Fecha a [#35](https://github.com/CRangelP/codebase-cleanup/issues/35).
+
+### Corrigido
+
+- **O gate classificava saída de runner JS sem normalizar ANSI.** As regexes de
+  decisão são ancoradas em `^` ou `$`, e a cor quebra as duas pontas: o escape
+  vem antes do texto, o reset vem depois do último caractere. Consequências
+  reproduzidas com npm e node reais:
+
+  - repo com **zero arquivo de teste** era classificado **GREEN** — o nível que
+    libera deleção autônoma de exports e as fases 2, 3 e 4. A frase que sustenta
+    o cap no `SKILL.md`, "uma suíte que não existe não pode passar", era falsa;
+  - suíte que **falhou** com marcador de falha colorido (`FAIL` em vermelho ao
+    lado de uma linha de suíte vazia sem cor) era lida como suíte inexistente e
+    virava YELLOW em vez de RED. Essa segunda direção não estava na issue; foi
+    encontrada ao investigar a primeira.
+
+  Isso não era borda de CI: `FORCE_COLOR=1` e `CLICOLOR_FORCE=1` são injetados
+  por harness de agente, que é onde esta skill mais roda.
+
+  A correção é uma normalização única na fronteira de captura (`strip_ansi` →
+  `out_plain`), não seis regexes remendadas: há um só ponto de captura, todos os
+  sete consumidores derivam dele, e remendar cada regex deixaria o próximo
+  detector nascer cego. A saída que o usuário vê continua colorida — o gate
+  observa, não reescreve.
+
+  `sed` POSIX, sem perl: o gate já degrada quando perl falta, e a normalização
+  não podia herdar essa dependência.
+
+### Adicionado
+
+- Seis casos no `gate_test.sh` (127 → 133), quatro deles **reprovando** o
+  `gate.sh` anterior, mais um par de controle sem cor e um caso que trava a
+  decisão de projeto — a saída exibida tem de continuar contendo os escapes.
+- **Seção 15 do `coherence_test.sh`** (295 invariantes): nenhum ponto de
+  classificação de `js_script` pode ler `$out`, e o invariante exige que
+  `strip_ansi` exista e que `out_plain` derive dela — sem isso ele passaria por
+  vacuidade justamente sobre o código que o defeito removeria.
+
 ## [0.2.0] — 2026-08-09
 
 A fase 4 — remodelagem local. As três fases anteriores apagam, consolidam e
