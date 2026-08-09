@@ -292,11 +292,26 @@ if [[ -f package.json ]]; then
         # Empty-suite cap: only a runner empty-message *line* (vitest/jest
         # shape), never a mid-line substring in a real failure. A failing suite
         # whose log happens to contain "No tests found" in fixture names or
-        # assertion text must stay RED.
-        if printf '%s\n' "$out" | grep -qiE \
+        # assertion text must stay RED. The runner's empty-suite exit is 1;
+        # any other code, or any non-empty line after the empty-suite message
+        # that is not an "exiting with code N" trailer, means a chained
+        # command failed and must stay RED — printing the empty line alone
+        # is not proof the process exited for an empty suite.
+        if [[ $rc -eq 1 ]] \
+          && printf '%s\n' "$out" | grep -qiE \
             '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b' \
           && ! printf '%s\n' "$out" | grep -qiE \
-            '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b'; then
+            '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b' \
+          && ! printf '%s\n' "$out" | awk '
+                BEGIN { IGNORECASE=1 }
+                /^[[:space:]]*(No test files found|No tests found|did not find any tests)([[:space:],]|$)/ {
+                  seen=1; next
+                }
+                seen && NF && $0 !~ /^[[:space:]]*exiting with code [0-9]+[[:space:]]*$/ {
+                  found=1; exit
+                }
+                END { exit found ? 0 : 1 }
+              '; then
           uncounted_suite js "no test files found (exit $rc)"
           return 0
         fi

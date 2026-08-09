@@ -256,6 +256,19 @@ cat > "$TMP/js-empty-suite-incidental/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.error('FAIL tests/foo.spec.js'); console.error('AssertionError: expected true'); console.error('hint: No tests found was unexpected'); process.exit(1)\""}}
 EOF
 
+# Chained script: empty-suite line first, then a later failure without the
+# assertion blacklist tokens. Must stay RED (exit 2 ≠ runner empty-suite).
+mkdir -p "$TMP/js-empty-suite-chained"
+cat > "$TMP/js-empty-suite-chained/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.error('No test files found'); console.error('configuration crashed'); process.exit(2)\""}}
+EOF
+
+# Same shape with exit 1: the post-empty line still proves a chained failure.
+mkdir -p "$TMP/js-empty-suite-chained-exit1"
+cat > "$TMP/js-empty-suite-chained-exit1/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.error('No test files found'); console.error('configuration crashed'); process.exit(1)\""}}
+EOF
+
 mkdir -p "$TMP/js-alias-check-types"
 cat > "$TMP/js-alias-check-types/package.json" <<'EOF'
 {"name":"f","scripts":{"check-types":"node -e 0","test":"node -e 0"}}
@@ -701,6 +714,10 @@ case_run js-empty-suite-slice 0 "$TMP/js-empty-suite-slice" - "run test:unit" \
          "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
          '!RED' '!GREEN'
 case_run js-empty-suite-incidental 1 "$TMP/js-empty-suite-incidental" - "RED" \
+         '!YELLOW' "!'test' not counted"
+case_run js-empty-suite-chained 1 "$TMP/js-empty-suite-chained" - "RED" \
+         '!YELLOW' "!'test' not counted"
+case_run js-empty-suite-chained-exit1 1 "$TMP/js-empty-suite-chained-exit1" - "RED" \
          '!YELLOW' "!'test' not counted"
 case_run js-alias-check-types 0 "$TMP/js-alias-check-types" - "run check-types" \
          "checks=typecheck,test" "GREEN"

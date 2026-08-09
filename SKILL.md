@@ -386,10 +386,12 @@ category (`git rm --cached knip-report.json`, then stage that pathspec only —
 `chore: untrack knip report`). Anything else means the user tracks it on
 purpose: leave it tracked, say so in the report, and do **not** pathspec-add
 it into category commits. Do not fold that untrack into another category. On
-the way out (final report / close), delete the report files and drop from the
-exclude file only the lines you added — leave anything that was already there,
-it is the user's — because the exclude makes a leftover invisible to
-`git status` and nobody would find it later.
+the way out (final report / close), delete only report files that are tool
+artifacts from this run (untracked, or untracked earlier via
+`chore: untrack knip report`) — never delete a `knip-report.json` the user
+tracks on purpose. Drop from the exclude file only the lines you added —
+leave anything that was already there, it is the user's — because the exclude
+makes a leftover invisible to `git status` and nobody would find it later.
 
 Also confirm the repo ignores `node_modules` before the deps category — a
 global `.gitignore` does not travel with the repo — and add it to
@@ -647,7 +649,9 @@ branch. Merging is the user's decision, on their own schedule.
 ## Final report
 
 **Close hygiene first** (GREEN/YELLOW, when the run wrote artifacts): delete
-`knip-report.json` / `knip-report.json.tmp` if present; drop from
+`knip-report.json.tmp` if present, and delete `knip-report.json` only when it
+is an untracked tool artifact from this run (see Artifact hygiene above) — if
+the user tracks it on purpose, leave the tracked file alone; drop from
 `info/exclude` only the lines this run added; leave `CLEANUP_PROGRESS.md` and
 `TECH_DEBT_AUDIT.md` committed unless the user asked to remove them — they are
 the durable record, not tool noise. Say in the summary what was cleaned.
