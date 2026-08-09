@@ -379,12 +379,34 @@ if [[ -f package.json ]]; then
         # manager's epilogue in (it is stripped into $ev above) made every
         # manager except npm read as a chained failure and sink a legitimately
         # empty suite to RED.
+        # What the empty-suite line itself says about the exit is stronger
+        # evidence than anything that follows it. Both runners the docs name
+        # print the code inline — vitest 'No test files found, exiting with
+        # code 1', jest the same — and then keep going: vitest lists its
+        # include/exclude globs, jest prints 'N files checked' and every
+        # testMatch pattern it tried. That tail is the runner explaining an
+        # empty suite, not a second command failing, so reading it as a chained
+        # failure sent every real vitest and jest repo without a test file to
+        # RED while the docs promised YELLOW. When the line names the code and
+        # it is the code the process exited with, the exit is accounted for and
+        # the tail is diagnosis.
+        inline_rc=$(printf '%s\n' "$ev" | awk '
+              tolower($0) ~ /^[[:space:]]*(no test files found|no tests found|did not find any tests)/ {
+                if (match(tolower($0), /exiting with code [0-9]+/)) {
+                  s = substr(tolower($0), RSTART, RLENGTH)
+                  sub(/exiting with code /, "", s)
+                  print s
+                  exit
+                }
+              }
+            ')
         if [[ $rc -eq 1 ]] \
           && printf '%s\n' "$ev" | grep -qiE \
             '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b' \
           && ! printf '%s\n' "$ev" | grep -qiE \
-            '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b' \
-          && ! printf '%s\n' "$ev" | awk '
+            '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b|(^|[[:space:]])(error|ERR!)([[:space:]:]|$)' \
+          && { [[ ${inline_rc:-x} == "$rc" ]] \
+               || ! printf '%s\n' "$ev" | awk '
                 # tolower(), not IGNORECASE: that variable is a gawk extension
                 # and is silently ignored by BSD awk (macOS) and mawk (the
                 # usual Debian/Ubuntu default) — both CI legs. Under it the
@@ -398,7 +420,7 @@ if [[ -f package.json ]]; then
                   found=1; exit
                 }
                 END { exit found ? 0 : 1 }
-              '; then
+              '; }; then
           uncounted_suite js "no test files found (exit $rc)"
           return 0
         fi

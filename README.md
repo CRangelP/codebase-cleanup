@@ -108,7 +108,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validado em 08/2026: 124/124 casos, 5/5 propriedades, 151/151 invariantes
+# validado em 08/2026: 127/127 casos, 5/5 propriedades, 151/151 invariantes
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`

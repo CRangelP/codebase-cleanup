@@ -280,6 +280,32 @@ cat > "$TMP/js-empty-suite-chained-exit1/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.error('No test files found'); console.error('configuration crashed'); process.exit(1)\""}}
 EOF
 
+# The two runners the docs name, byte for byte. Both print the exit code inside
+# the empty-suite line and then keep explaining themselves — vitest lists its
+# include/exclude globs, jest prints how many files it checked and every
+# pattern it tried. Read as a chained failure, that tail sent every real vitest
+# and jest repo without a test file to RED while the docs promised YELLOW. The
+# older fixtures above all emit a single line, which is why the guard could be
+# wrong here and green there.
+mkdir -p "$TMP/js-empty-vitest-real"
+cat > "$TMP/js-empty-vitest-real/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log(' RUN  v3.2.7 ' + process.cwd()); console.log('No test files found, exiting with code 1'); console.log(''); console.log('include: **/*.{test,spec}.?(c|m)[jt]s?(x)'); console.log('exclude:  **/node_modules/**, **/dist/**'); process.exit(1)\""}}
+EOF
+
+mkdir -p "$TMP/js-empty-jest-real"
+cat > "$TMP/js-empty-jest-real/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No tests found, exiting with code 1'); console.log('Run with --passWithNoTests to exit with code 0'); console.log('In ' + process.cwd()); console.log('  2 files checked.'); console.log('  testMatch: **/__tests__/**/*.[jt]s?(x) - 0 matches'); console.log('  testPathIgnorePatterns: /node_modules/ - 2 matches'); process.exit(1)\""}}
+EOF
+
+# The inline code accounts for the process's exit, not for whatever else ran.
+# A build that failed after the empty suite prints an error and still has to
+# sink the run to RED — otherwise the tail-is-diagnosis rule would be a way of
+# laundering any chained failure that exits 1.
+mkdir -p "$TMP/js-empty-inline-then-error"
+cat > "$TMP/js-empty-inline-then-error/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 1'); console.log('error TS2304: Cannot find name foo.'); process.exit(1)\""}}
+EOF
+
 # --passWithNoTests: the runner is told to make an empty suite a success, so it
 # exits 0 having run nothing. The empty-suite detection used to sit inside the
 # non-zero branch only, so this reached GREEN — the level that unlocks
@@ -888,6 +914,12 @@ case_run js-empty-suite-chained 1 "$TMP/js-empty-suite-chained" - "RED" \
 case_run js-empty-suite-chained-exit1 1 "$TMP/js-empty-suite-chained-exit1" - "RED" \
          '!YELLOW' "!'test' not counted"
 case_run js-empty-suite-chained-lower 1 "$TMP/js-empty-suite-chained-lower" - "RED" \
+         '!YELLOW' "!'test' not counted"
+case_run js-empty-vitest-real 0 "$TMP/js-empty-vitest-real" - "checks=typecheck$" \
+         "YELLOW" "no test files found" "'test' not counted" '!GREEN' '!RED'
+case_run js-empty-jest-real 0 "$TMP/js-empty-jest-real" - "checks=typecheck$" \
+         "YELLOW" "no test files found" "'test' not counted" '!GREEN' '!RED'
+case_run js-empty-inline-then-error 1 "$TMP/js-empty-inline-then-error" - "RED" \
          '!YELLOW' "!'test' not counted"
 case_run js-pwnt          0 "$TMP/js-pwnt" -                "checks=typecheck$" "YELLOW" \
          "runner reported no tests" "'test' not counted" '!GREEN' '!RED'
