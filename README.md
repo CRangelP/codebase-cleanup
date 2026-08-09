@@ -97,7 +97,9 @@ codebase-cleanup/
 │   ├── cleanup-phase-2-survey.md     candidatos de consolidação (só leitura)
 │   ├── cleanup-phase-2-impl.md       implementa o candidato escolhido
 │   ├── cleanup-phase-3-survey.md     plano de estrutura (só leitura)
-│   └── cleanup-phase-3-impl.md       executa os movimentos aprovados
+│   ├── cleanup-phase-3-impl.md       executa os movimentos aprovados
+│   ├── cleanup-phase-4-survey.md     fila de remodelagem (só leitura)
+│   └── cleanup-phase-4-impl.md       aplica tier A e o tier B aprovado
 ├── hooks/
 │   └── hooks.json                    registra o guarda no evento PreToolUse
 ├── references/
@@ -106,14 +108,18 @@ codebase-cleanup/
 │   ├── duplication.md                funções duplicadas e a regra do churn
 │   ├── phase-2-consolidation.md      protocolo de consolidação de módulos
 │   ├── phase-3-structure.md          padrões de organização de pastas
+│   ├── phase-4-refactor.md           protocolo da fase 4 e a rede por alvo
+│   ├── refactoring-catalog.md        as 11 operações, em dois tiers
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
     ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/2/3/4
     ├── guard.sh                      bloqueia os cinco comandos que o protocolo proíbe
-    ├── test.sh                       roda as quatro suítes em sequência
+    ├── test.sh                       roda as cinco suítes em sequência
+    ├── metrics.sh                    métricas de qualidade, exit 0/2/3
     ├── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
     ├── guard_test.sh                 o que o guarda bloqueia e o que ele deixa passar
     ├── rollback_test.sh              prova executável do protocolo de rollback
+    ├── metrics_test.sh               casos do medidor, em repos sintéticos
     └── coherence_test.sh             invariantes de coerência entre doc e código
 ```
 
@@ -150,7 +156,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 127/127 casos, 42/42 casos do guarda, 5/5 propriedades,
-# 248/248 invariantes
+# 28/28 casos de métrica, 288/288 invariantes
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`

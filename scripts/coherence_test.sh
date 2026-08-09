@@ -858,7 +858,8 @@ agent_frontmatter() { # agent_frontmatter <file> — the YAML block, or empty
 }
 
 for a in cleanup-phase-1 cleanup-phase-2-survey cleanup-phase-2-impl \
-         cleanup-phase-3-survey cleanup-phase-3-impl; do
+         cleanup-phase-3-survey cleanup-phase-3-impl \
+         cleanup-phase-4-survey cleanup-phase-4-impl; do
   f="agents/$a.md"
   check "agents/$a.md exists" \
         "$([[ -f $f ]] && echo 0 || echo 1)" \
@@ -888,10 +889,12 @@ filename is a delegation nobody can call"
         "an agent nobody delegates to is an agent that rots"
 done
 
-# The two surveys are the checkpoint. They run before the user has answered, so
+# The surveys are the checkpoint. They run before the user has answered, so
 # the guarantee has to be mechanical: no Write, no Edit, no way to change the
-# repository while deciding what to propose.
-for a in cleanup-phase-2-survey cleanup-phase-3-survey; do
+# repository while deciding what to propose. Phase 4's survey earns the same
+# ban for a narrower reason: it reads coverage per target, and a survey that
+# can write is one keystroke away from "fixing" the target it was measuring.
+for a in cleanup-phase-2-survey cleanup-phase-3-survey cleanup-phase-4-survey; do
   f="agents/$a.md"
   [[ -f $f ]] || continue
   line=$(agent_frontmatter "$f" | grep -E '^disallowedTools:')
