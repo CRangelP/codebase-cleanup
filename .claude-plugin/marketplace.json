@@ -1,0 +1,26 @@
+{
+  "name": "codebase-cleanup",
+  "owner": {
+    "name": "CRangelP",
+    "url": "https://github.com/CRangelP"
+  },
+  "metadata": {
+    "description": "Cleanup tooling for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "codebase-cleanup",
+      "source": ".",
+      "category": "code-quality",
+      "description": "Three-phase codebase cleanup with a green gate before every commit.",
+      "keywords": [
+        "cleanup",
+        "dead-code",
+        "duplication",
+        "refactor",
+        "knip",
+        "tech-debt"
+      ]
+    }
+  ]
+}

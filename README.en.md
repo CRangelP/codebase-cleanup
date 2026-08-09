@@ -39,7 +39,32 @@ answer.
 
 ## Installation
 
-The skill is a folder. Installing means copying it into the skills directory:
+As a plugin, which is the recommended route — it brings versioning, updates
+and the `PreToolUse` guards:
+
+```bash
+/plugin marketplace add CRangelP/codebase-cleanup
+/plugin install codebase-cleanup@codebase-cleanup
+```
+
+Updating later is `/plugin update codebase-cleanup@codebase-cleanup`. For a
+team, declare it in the repository's `.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "codebase-cleanup": {
+      "source": { "source": "github", "repo": "CRangelP/codebase-cleanup" }
+    }
+  },
+  "enabledPlugins": { "codebase-cleanup@codebase-cleanup": true }
+}
+```
+
+That installs nothing on anyone's machine: each person is asked once whether
+they trust it and want it installed.
+
+Copying the folder still works, and it is still a skill:
 
 ```bash
 # global (applies to every project)
@@ -49,8 +74,10 @@ cp -R codebase-cleanup ~/.claude/skills/
 cp -R codebase-cleanup .claude/skills/
 ```
 
-If you have the `codebase-cleanup.skill` package (a zip), unpack it straight
-into the destination:
+Copied that way it loads as a plugin too, because `.claude-plugin/` travels
+with it — what changes is only where updates come from. If you have the
+`codebase-cleanup.skill` package (a zip), unpack it straight into the
+destination:
 
 ```bash
 unzip codebase-cleanup.skill -d ~/.claude/skills/
@@ -65,7 +92,8 @@ codebase-cleanup/
 ├── README.en.md                      this file
 ├── LICENSE                           MIT
 ├── .claude-plugin/
-│   └── plugin.json                   plugin manifest (name, version, license)
+│   ├── plugin.json                   plugin manifest (name, version, license)
+│   └── marketplace.json              catalogue, for /plugin install
 ├── hooks/
 │   └── hooks.json                    registers the guard on the PreToolUse event
 ├── references/
@@ -147,7 +175,9 @@ are sources, not dependencies.
 There is no mandatory command. The skill triggers when the request sounds like
 cleanup: "clean this project up", "there's stuff here nobody uses",
 "remove the dead dependencies", "reorganize these folders". You can also
-invoke it directly with `/codebase-cleanup`.
+invoke it directly: `/codebase-cleanup:codebase-cleanup` when installed as a
+plugin (plugin skills are always namespaced by the plugin name), or
+`/codebase-cleanup` on a copied install.
 
 Partial requests work — "remove only the unused dependencies" runs the
 requested category and records the rest as out of scope.

@@ -835,6 +835,39 @@ git commit
 git add -A
 GUARDED
 
+# 12. The plugin manifests agree with each other and with the docs. ----------
+# The version in plugin.json is the cache key that decides whether an install
+# sees an update at all: pinned and never bumped, a user stays on the version
+# they first installed no matter how many commits land. That failure is silent
+# on both ends — nobody gets an error, the fix just never arrives — so the
+# pieces that have to agree are checked here instead of being remembered.
+plugin_field() { # plugin_field <file> <key> — the string value, or empty
+  perl -0777 -ne 'print $1 if /"'"$2"'"\s*:\s*"([^"]*)"/' "$1" 2>/dev/null
+}
+
+plugin_name=$(plugin_field .claude-plugin/plugin.json name)
+plugin_version=$(plugin_field .claude-plugin/plugin.json version)
+market_name=$(plugin_field .claude-plugin/marketplace.json name)
+
+check "plugin.json declares a name" \
+      "$([[ -n $plugin_name ]] && echo 0 || echo 1)" \
+      "the name is the namespace of every skill in the plugin"
+
+check "plugin.json declares an explicit version" \
+      "$([[ $plugin_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && echo 0 || echo 1)" \
+      "got '${plugin_version:-none}'; without semver here the version falls back to the
+commit SHA and every push becomes an update"
+
+# The install line the READMEs publish is plugin@marketplace. Both halves come
+# from the manifests, so a rename on either side turns the documented command
+# into one that resolves to nothing.
+install_id="$plugin_name@$market_name"
+for f in README.md README.en.md; do
+  check "$f publishes the install id $install_id" \
+        "$(grep -q -F -- "$install_id" "$f" 2>/dev/null && echo 0 || echo 1)" \
+        "the documented /plugin install does not match the manifests"
+done
+
 # The guard's own exit codes. Exit 1 does not block — the hook contract reads
 # it as a non-fatal error and lets the command through — so a guard that ever
 # exits 1 fails silently, which is the one failure mode nobody would notice.

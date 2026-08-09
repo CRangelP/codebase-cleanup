@@ -37,7 +37,32 @@ commitar o que está pendente ou abortar, e nada acontece antes da sua resposta.
 
 ## Instalação
 
-A skill é uma pasta. Instalar é copiá-la para o diretório de skills:
+Como plugin, que é o caminho recomendado — dá versão, atualização e os guardas
+do `PreToolUse`:
+
+```bash
+/plugin marketplace add CRangelP/codebase-cleanup
+/plugin install codebase-cleanup@codebase-cleanup
+```
+
+Atualizar depois é `/plugin update codebase-cleanup@codebase-cleanup`. Para um
+time, declare no `.claude/settings.json` do repositório:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "codebase-cleanup": {
+      "source": { "source": "github", "repo": "CRangelP/codebase-cleanup" }
+    }
+  },
+  "enabledPlugins": { "codebase-cleanup@codebase-cleanup": true }
+}
+```
+
+Isso não instala nada na máquina de ninguém: cada pessoa é perguntada uma vez
+se confia e instala.
+
+Copiar a pasta continua funcionando, e continua sendo uma skill:
 
 ```bash
 # global (vale para todos os projetos)
@@ -47,8 +72,9 @@ cp -R codebase-cleanup ~/.claude/skills/
 cp -R codebase-cleanup .claude/skills/
 ```
 
-Se você tem o pacote `codebase-cleanup.skill` (um zip), descompacte direto no
-destino:
+Copiada assim ela também carrega como plugin, porque `.claude-plugin/` viaja
+junto — o que muda é só de onde vem a atualização. Se você tem o pacote
+`codebase-cleanup.skill` (um zip), descompacte direto no destino:
 
 ```bash
 unzip codebase-cleanup.skill -d ~/.claude/skills/
@@ -63,7 +89,8 @@ codebase-cleanup/
 ├── README.en.md                      versão em inglês
 ├── LICENSE                           MIT
 ├── .claude-plugin/
-│   └── plugin.json                   manifesto do plugin (nome, versão, licença)
+│   ├── plugin.json                   manifesto do plugin (nome, versão, licença)
+│   └── marketplace.json              catálogo, para instalar por /plugin install
 ├── hooks/
 │   └── hooks.json                    registra o guarda no evento PreToolUse
 ├── references/
@@ -144,7 +171,9 @@ dependência.
 Não existe comando obrigatório. A skill dispara quando o pedido soa como
 limpeza: "dá uma faxina nesse projeto", "dá uma limpada", "tem coisa aqui que
 ninguém usa", "remove as dependências mortas", "reorganiza essas pastas".
-Também dá para invocar direto com `/codebase-cleanup`.
+Também dá para invocar direto: `/codebase-cleanup:codebase-cleanup` instalada
+como plugin (skills de plugin sempre levam o nome do plugin na frente), ou
+`/codebase-cleanup` na instalação por cópia.
 
 Pedidos parciais funcionam — "remove só as dependências não usadas" executa a
 categoria pedida e registra o resto como fora de escopo.
