@@ -3,12 +3,14 @@
 The closed list of code transformations this skill performs, with the id each
 one carries into its commit message.
 
-Two readers. Step 1.4 writes the `Recommendation` column of
-`TECH_DEBT_AUDIT.md` out of this file — "god function at
-`src/billing/charge.ts:41`" becomes `extract-function` + `guard-clauses`, which
-is something a person can do where the finding alone was a complaint. Phase 4
-executes out of it: `references/phase-4-refactor.md` is the when and how of the
-loop, this file is the what of each operation in isolation.
+Phase 4 executes out of this file: `references/phase-4-refactor.md` is the when
+and how of the loop, this file is the what of each operation in isolation. The
+ids are meant to read backwards into the audit as well — a `Recommendation`
+column that says `extract-function` + `guard-clauses` hands over something a
+person can do, where "god function at `src/billing/charge.ts:41`" on its own
+restates the complaint. Nothing forces step 1.4 to phrase it that way; when it
+does, phase 4 picks the target up without having to re-decide what the finding
+meant.
 
 Not a refactoring course and not Fowler's catalog. The list is closed because
 the failure mode of an open one is known: a cleanup that keeps finding one more
@@ -50,8 +52,10 @@ Not a list, a criterion. **Tier A — autonomous.** The transformation is
 mechanical and local: the set of observable behaviors does not change, and the
 change is derivable from the code alone — someone reading the before and the
 after, knowing nothing about the domain, agrees they are the same program. A
-green gate is sufficient evidence because nothing is left to be wrong about that
-the gate cannot see.
+green gate is proportional evidence here, not conclusive evidence: what it
+cannot see for these five is listed under each one below, and the list is short
+enough that one person reading the diff closes it. That is what "autonomous"
+buys — not that nothing can be wrong.
 
 **Tier B — user checkpoint.** The transformation picks an abstraction or a
 domain name, and no test can fail because the choice was wrong: green proves the
@@ -105,11 +109,12 @@ export; that is a boundary decision and it belongs to `extract-class`.
 +}
 ```
 
-**The gate attests** that the caller compiles, that the block still runs where
-it used to, and that the paths the suite walks give the same results. **It does
-not attest** that the name describes the block — names are not testable — nor
-that the extraction kept a side effect inside the `try`, transaction or lock
-that used to enclose it: moving code out of an enclosing block compiles fine.
+**The gate attests** that the caller compiles, that the extracted function is
+called where the block used to be — a compiler fact, not a runtime one — and
+that the paths the suite walks give the same results. **It does not attest**
+that the name describes the block — names are not testable — nor that the
+extraction kept a side effect inside the `try`, transaction or lock that used to
+enclose it: moving code out of an enclosing block compiles fine.
 
 **Typical risk.** Extracting a block that contains an early `return` or `throw`:
 it now exits the extracted function, the caller discards the value, and the flow
@@ -279,13 +284,25 @@ one.
 +    await this.receipts.send(renderReceipt(this), to);
    }
  }
++
++class ReceiptMailer {
++  private lastSentAt: Date | null = null;
++  constructor(private readonly smtpHost: string) {}
++  async send(body: string, to: string): Promise<void> {
++    await smtp.connect(this.smtpHost).send(body, to);
++    this.lastSentAt = new Date();
++  }
++}
 ```
 
 **The gate attests** that callers compile against the delegating surface and
 that the suite passes through it. **It does not attest** that the split is on
 the right axis: a cut made one field too far left is green today and crossed by
 every change for the next two years. Green proves the behavior held, not that a
-boundary belongs here.
+boundary belongs here. It also does not attest that the state moved with the
+fields: a write that used to happen in `sendReceipt` and now happens inside the
+mailer is the same write only if it still happens on the same paths, and a field
+nobody reads is a deletion wearing an extraction's commit message.
 
 **Typical risk.** Shared mutable state. Fields that looked disjoint are written
 by one group and read by the other, so one object becomes two that have to be
@@ -312,17 +329,20 @@ A constructor that rejects input the old code accepted has changed behavior.
 +  return raw as AccountId;
 +}
 +
-+export function transfer(from: AccountId, to: AccountId, cents: Cents): Promise<void> {
++export function transfer(from: AccountId, to: AccountId, cents: number): Promise<void> {
 +  return ledger.post(from, to, cents);
  }
 ```
 
 **The gate attests** that every construction site went through the constructor,
 so no raw string reaches `transfer` along a typed path. **It does not attest**
-that the concept is the right one — `Cents` and `Money` are both green, only one
-survives the first currency the product adds — nor that the validation moved
-unchanged, since the second argument's error now fires before the first
-argument's work instead of after.
+that the concept is the right one — an `AccountId` and a `CustomerRef` are both
+green, only one survives the first time the ledger gets a second kind of account
+— nor that the validation still fires when it used to. It moved from the call to
+`transfer` to the construction of the argument, which can be arbitrarily earlier
+in the caller: an `InvalidAccountError` now precedes whatever ran between
+building the id and posting the ledger entry, and a suite that builds both ids
+on the line above the call never sees the difference.
 
 **Typical risk.** The brand evaporates at the edges: anything from JSON, an ORM
 row or a queue message is a plain string a cast can dress up as an `AccountId`.
@@ -357,15 +377,18 @@ it.
 
 **The gate attests** that every case the suite exercises produces the same result
 and — with a `Record` keyed by the union, as above — that no case was dropped.
-**It does not attest** what happens to a tag the union does not contain: the
-`switch` fell through at a known line, the map returns `undefined` and throws one
-line later, elsewhere, with a different error. If the old `default` carried
-behavior, moving it is the part no type checks.
+**It does not attest** what happens to a tag the union does not contain, and the
+change there is not subtle: the `switch` fell through and returned `undefined`,
+which travelled into the caller's arithmetic and failed somewhere else; the map
+lookup returns `undefined` and the call throws a `TypeError` on the dispatch line
+itself. A crash at the dispatch is easier to trace than a `NaN` three frames
+away, and it is still a different failure. If the old `default` carried behavior,
+moving it is the part no type checks.
 
 **Typical risk.** Applying it to a single `switch`, where the conditional was the
-readable thing and the map is indirection with no leverage. The deletion test in
-`references/phase-2-consolidation.md` applies unchanged: if deleting the
-abstraction moves complexity nowhere, it was not paying for itself.
+readable thing and the map is one more hop to read what the switch already said.
+The deletion test in `references/phase-2-consolidation.md` applies unchanged: if
+deleting the abstraction moves complexity nowhere, it was not paying for itself.
 
 ## `parameter-object`
 
@@ -404,9 +427,12 @@ compiles until they all are. **It does not attest** that they were migrated
 and invert the meaning of the call. This is where the gate is least informative,
 and where reading the diff call site by call site is not optional.
 
-**Typical risk.** Defaults. Optional positional parameters default in order;
-optional object fields do not, so a caller that used to stop early now passes
-`undefined` explicitly into code that never saw it.
+**Typical risk.** Absence stops being absence. A default resolves the same way
+for an omitted positional argument and for an explicit `undefined`, so that part
+is safe; what changes is that the key now exists. Code that asks
+`'sendReceipt' in req`, that counts `Object.keys(req)`, or that merges the object
+over a defaults table — `{ ...defaults, ...req }`, where an `undefined` value
+wins and a missing key does not — now sees a field that was not there at all.
 
 ## `delegation`
 
@@ -464,7 +490,6 @@ suppression comment gone.
 +
 +export async function loadCustomer(id: string): Promise<CustomerDTO> {
    const res = await http.get(`/customers/${id}`);
--  // @ts-ignore — the client returns any
 -  return res.body;
 +  return res.body as CustomerDTO;
  }
@@ -488,19 +513,12 @@ is not a pure refactor either.
 
 An operation costs a diff to review now and pays out over future reads and edits
 of that code, so code nobody reads and nobody edits pays no dividend and the
-cost is the whole transaction. That is measurable, not a matter of taste: the
-churn rule in `references/duplication.md` already uses co-change to separate
-real duplication from structural coincidence, and the same history answers the
-question here — will anyone open this file again.
+cost is the whole transaction. That is measurable, not a matter of taste — the
+churn rule in `references/duplication.md` already reads co-change out of the
+same history. Which targets clear that bar is `references/phase-4-refactor.md`'s
+job: churn, coverage of the target, and what phases 2 and 3 are about to touch.
+Two reasons to stop belong to the operation itself, wherever it lands:
 
-- **The target is cold and green.** Untouched inside the churn window, tests
-  passing. It belongs in the audit's "looks bad but is fine" section with the
-  churn numbers, which is what stops the next cleanup from re-flagging it.
-- **No test reaches the target.** The gate would be green for reasons unrelated
-  to the change; phase 4 makes this a precondition and gives the ways out.
-- **Phase 2 or 3 is going to touch it.** Reshaping inside a module about to be
-  consolidated, or a file about to move, is guaranteed rework — the same
-  argument that orders the whole pipeline.
 - **The code is generated or vendored.** The next generation run reverts you.
 - **The diff stops being reviewable.** An operation whose diff nobody will read
   has lost the property that made it safe. Split it, or leave it.
@@ -523,5 +541,5 @@ before blaming the commit, and again when reverting it.
 The id is also a claim, which is why one operation per commit is not a style
 preference. A commit tagged `guard-clauses` that also renamed three locals and
 hoisted a constant is unrevertible in the only sense that matters: reverting the
-flattening drags the rest along, and whoever is doing it at 3am cannot tell
-which part they wanted back.
+flattening drags the rest along, and the message does not say which part was
+wanted back.
