@@ -9,6 +9,60 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.3.0] — 2026-08-09
+
+Fecha as [#37](https://github.com/CRangelP/codebase-cleanup/issues/37) e
+[#39](https://github.com/CRangelP/codebase-cleanup/issues/39), e com elas o milestone
+"toda regra que decide autoridade destrutiva é um invariante que morde".
+
+### Adicionado
+
+- **`scripts/mutation_test.sh`** — a sexta suíte, e a única que responde a uma pergunta que
+  as outras cinco não conseguem fazer: *a suíte reprovaria se a regra sumisse?*
+
+  Cinco mutações nomeadas, cada uma uma edição que um autor faria de boa-fé e que amplia em
+  silêncio o que a skill pode destruir. **Todas as cinco passavam verdes** quando este arquivo
+  foi escrito.
+
+  | | mutação |
+  |---|---|
+  | M1 | a célula de comportamento do nível YELLOW passa a autorizar exports e as fases 2 e 3 |
+  | M2 | some a regra de que os caps por stack sobrepõem a coluna GREEN |
+  | M3 | um rollback bloqueado por hook passa a **repetir** em vez de abortar |
+  | M4 | a forma proibida `git add -A` oferecida viva ao lado da correta |
+  | M5 | `npx` sem versão pinada |
+
+- **Seção 16 do `coherence_test.sh`** (305 invariantes), com os invariantes que fazem as cinco
+  reprovarem:
+
+  - a **coluna de comportamento** da tabela de níveis, não só a de condição — a seção 7 já dizia
+    quais níveis existem e qual a condição de cada um, mas o que cada nível *autoriza* vivia só
+    em prosa. É a diferença entre um nível que relata e um nível que muta um repo cujos testes
+    nunca rodaram;
+  - o ponteiro de caps por stack presente em **todo arquivo que carrega a tabela** — um agente
+    que lê só o `SKILL.md` e nunca abre a reference rodaria no nível da tabela;
+  - o **ramo de abortar** de um rollback bloqueado por hook, porque contornar o hook é
+    exatamente o que o guarda existe para impedir;
+  - nunca um `git add -A` / `git add .` **vivo** na documentação;
+  - todo `npx` com versão pinada.
+
+### Corrigido
+
+- **Os dois READMEs diziam "quatro suítes" quando já eram cinco** — o `metrics_test.sh` nunca
+  entrou na contagem nem na lista de comandos. Agora são seis, listadas.
+
+### Notas de projeto
+
+- A forma positiva sozinha (`git add -- <pathspec>` presente) era satisfazível por um documento
+  que, duas palavras depois, oferecesse a forma proibida `git add -A`, e banir a string é impossível porque a prosa
+  que a proíbe precisa citá-la. O que separa instrução de proibição é **proximidade**: cada
+  ocorrência tem de estar coberta por uma negação imediatamente antes, ou ser a célula esquerda
+  da tabela de formas proibidas. Janela de 48 caracteres contra um pior caso **medido** de 20
+  para o staging e 10 para o `npx` — a mesma regra serve às duas, e por isso é um helper só.
+- `LC_ALL=C` no scanner, pelo mesmo motivo que o `strip_ansi` do gate o carrega: o awk do BSD
+  aborta no primeiro byte inválido sob locale UTF-8, e uma varredura abortada não imprime nada —
+  que é indistinguível de uma varredura limpa.
+
 ## [0.2.2] — 2026-08-09
 
 Fecha a [#36](https://github.com/CRangelP/codebase-cleanup/issues/36), e fecha
