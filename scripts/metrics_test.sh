@@ -17,15 +17,19 @@ fixture() { # fixture <name> — empty dir inside TMP, echoes the path
   echo "$TMP/$1"
 }
 
-fn_of() { # fn_of <lines> — a JS function exactly <lines> long, on stdout
+fn_open() { # fn_open <lines> <opening line> — a brace function exactly <lines> long
   n=$1
-  echo "function big() {"
+  echo "$2"
   i=2
   while [[ $i -lt $n ]]; do
     echo "  const v$i = $i;"
     i=$((i + 1))
   done
   echo "}"
+}
+
+fn_of() { # fn_of <lines> — a JS function exactly <lines> long, on stdout
+  fn_open "$1" "function big() {"
 }
 
 metric_is() { # metric_is <label> <dir> <key> <expected> — one "[metrics] key=" value
@@ -100,6 +104,34 @@ small=$(fixture small)
 fn_of 50 > "$small/small.js"
 metric_is "exactly 50 lines is not over the limit" "$small" fn_over_50 0
 
+# "else if (b) {" on its own line reads exactly like the C-style "Type name(args) {"
+# rule, so it used to be counted as a second function: one 63-line function reported
+# fn_over_50=2. The inflation landed on if/else ladders, which is the code the
+# guard-clauses operation targets -- the metric was worst where it is read most.
+ladder=$(fixture ladder)
+{
+  echo "function big() {"
+  echo "  if (a) {"
+  echo "    return 0;"
+  echo "  }"
+  echo "  else if (b) {"
+  i=1
+  while [[ $i -le 56 ]]; do
+    echo "    const v$i = $i;"
+    i=$((i + 1))
+  done
+  echo "  }"
+  echo "}"
+} > "$ladder/ladder.js"
+metric_is "an else-if ladder is one function, not two" "$ladder" fn_over_50 1
+metric_is "the ladder does not shorten the function it lives in" "$ladder" maxfn 63
+
+# The other direction of the same fix: the keyword only disqualifies a line when it is
+# the whole word. A function named doThing or forEach must still be a function.
+kwname=$(fixture kwname)
+fn_open 60 "doThing(x) {" > "$kwname/k.js"
+metric_is "a function whose name starts with a keyword still counts" "$kwname" fn_over_50 1
+
 nest=$(fixture nest)
 cat > "$nest/n.js" <<'EOF'
 function deep() {
@@ -133,6 +165,21 @@ const x = 1; // HACK: three
 const y = 2;
 EOF
 metric_is "todo markers are counted" "$marks" todo 4
+
+# The header promises that loose_types and todo are counted before anything is skipped:
+# a hit inside a comment or a string is a hit. Pinning it here is the point -- the header
+# used to claim these were "non-blank, non-comment" counts while the code counted them
+# three lines before the comment skip, and nothing failed when the two disagreed.
+declared=$(fixture declared)
+cat > "$declared/d.ts" <<'EOF'
+// this comment explains @ts-ignore and writes TODO on purpose
+// the ": any" pattern is named here, still inside a comment
+const msg = "a string that says as any and means nothing by it";
+const n = 1;
+EOF
+metric_is "comment lines are still out of loc" "$declared" loc 2
+metric_is "loose types inside comments and strings are counted" "$declared" loose_types 3
+metric_is "todo markers inside comments are counted" "$declared" todo 1
 
 # --- non-JS stacks: Python (indentation) and Go (braces) ---------------------------
 
@@ -240,6 +287,20 @@ else
   failures=$((failures + 1))
   echo "FAILED: heuristic metrics stay marked as approximations"
   echo "    $approx lines marked (approx), wanted 3"
+fi
+
+# The numbers above pin the behaviour; this pins the paragraph that describes it. They
+# drifted apart once -- the header called loose_types and todo "non-blank, non-comment"
+# counts while the code counted them before the skip -- and no test noticed, in a script
+# whose header says honesty is the whole point.
+total=$((total + 1))
+if grep -q 'match inside comments' "$METRICS" && ! grep -q 'non-blank, non-comment" can be' "$METRICS"; then
+  echo "ok: the header still declares the comment behaviour the code implements"
+else
+  failures=$((failures + 1))
+  echo "FAILED: the header still declares the comment behaviour the code implements"
+  echo "    metrics.sh must say loose_types/todo match inside comments, and must not"
+  echo "    call them non-blank, non-comment counts"
 fi
 
 echo "$((total-failures))/$total cases passed"

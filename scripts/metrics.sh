@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Cleanup metrics: turns the quality checklist into measured evidence.
 # Runs once at the start (baseline) and once at the end; the delta is what the report shows.
-# Requires bash (macOS 3.2 is fine) + POSIX find/awk. Usage: metrics.sh [dir]
+# Requires bash (macOS 3.2 is fine), POSIX awk, and find with -print0, which is a
+# GNU/BSD extension and not POSIX. Usage: metrics.sh [dir]
 # Output: one "[metrics] name=value" line per metric, in a fixed order, with no timestamps
 # and no absolute paths, so the real use is: metrics.sh . >before ... metrics.sh . >after
 # && diff before after.
@@ -17,11 +18,14 @@
 #   approximate indentation-sensitive languages, where an unusual dedent silently extends
 #   or truncates a function. Braces inside strings, regexes and heredocs count as braces.
 #   maxnest is brace depth (indentation steps in Python) and inherits the same lies.
-#   loose_types and todo are literal pattern counts, and they match inside comments and
-#   strings too.
-# Lines tagged (approx) in the output are the ones above; loc/loose_types/todo are plain
-# counts, as exact as "non-blank, non-comment" can be. This project prefers a declared
-# limit to a pretty false number.
+#   loose_types and todo are literal pattern counts: they match inside comments and
+#   strings too, on purpose, because deciding otherwise needs a parser.
+# Only maxfn / fn_over_50 / maxnest carry the (approx) tag, because only those three
+# guess at structure. loc is the one plain count: non-blank, non-comment. loose_types
+# and todo are exact and still not what you want -- they are the exact count of a text
+# pattern, which is not the count of the problem: a TODO quoted in a comment about
+# TODOs is one todo here. This project prefers a declared limit to a pretty false
+# number.
 #
 # These metrics are evidence, not a target: none of them is to be optimized for its own
 # sake (Goodhart), because chopping a function in half to lower an average is exactly the
@@ -126,8 +130,11 @@ BEGIN {
   else if (t ~ /^[A-Za-z_$][A-Za-z0-9_$]*[ \t]*\(\)[ \t]*\{/) cand = 1
   else if (t ~ /^[A-Za-z_$][A-Za-z0-9_$:<>,\.\*\[\] \t]*[ \t]+[A-Za-z_$][A-Za-z0-9_$]*[ \t]*\(.*\)[ \t]*(const[ \t]*)?\{[ \t]*$/) cand = 1
   else if (t ~ /^[A-Za-z_$][A-Za-z0-9_$]*[ \t]*\(.*\)[ \t]*\{[ \t]*$/) cand = 1
-  # control keywords also read as "name(...) {"; they are blocks, not functions.
-  if (t ~ /^(if|for|while|switch|catch|do|else|elif|try|until|case|with|return)[ \t]*\(/) cand = 0
+  # control keywords also read as "name(...) {"; they are blocks, not functions. The
+  # optional "else " prefix matters: "else if (x) {" reads as "Type name(args) {" (the
+  # C-style rule above), so without it every else-if ladder inflates fn_over_50 -- in
+  # exactly the code guard-clauses is aimed at.
+  if (t ~ /^(else[ \t]+)?(if|for|while|switch|catch|do|else|elif|try|until|case|with|return)[ \t]*\(/) cand = 0
   opened = 0
   walk(line)
 }
