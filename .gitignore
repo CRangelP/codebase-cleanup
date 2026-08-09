@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Tool artifacts this skill's own protocol produces when it runs on itself.
+# The pipeline puts these in the repo-local exclude while a run is in flight;
+# tracking them here keeps them out of a commit even outside a run.
+knip-report.json
+knip-report.json.tmp
+coverage/
+.coverage
+lcov.info
