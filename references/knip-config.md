@@ -25,12 +25,16 @@ names. Adjust the `$schema` version below to the major in use.
 3. Only then write/adjust `knip.json`
 4. Repeat 2–3 until the hints reach zero
 5. `npx knip --production --no-exit-code --reporter json > knip-report.json.tmp && mv knip-report.json.tmp knip-report.json`
-6. Check the result before using it: non-empty file that parses as JSON
+6. Check the result before using it: `knip-report.json.tmp` gone, and
+   `knip-report.json` non-empty and parsing as JSON
 
 The temp file plus `&&` is what keeps a crashed run from wiping the previous
 report — a plain `>` truncates it before knip starts. `--no-exit-code` is
 required there because knip exits 1 on every run that finds issues; only exit
-2 means it failed.
+2 means it failed. The missing `.tmp` is the load-bearing half of step 6: when
+knip breaks, the `&&` skips the `mv` and the *previous* report stays on disk,
+non-empty and perfectly parseable, so the content checks alone would wave a
+stale list through.
 
 The right mindset: when knip reports something unexpected, it is telling the
 truth about the module graph — it could not reach that code from an entry. A

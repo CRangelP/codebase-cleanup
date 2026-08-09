@@ -237,6 +237,16 @@ cat > "$TMP/js-test-integration/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test:integration":"node -e 0"}}
 EOF
 
+# A lone watch slice is not a suite: it never exits, so promoting it would end
+# at the watchdog — GATE_TIMEOUT seconds of stall for an inconclusive exit 4 on
+# a repo that has a perfectly good gate otherwise. The script here really does
+# hang, so the case proves the gate never starts it: it has to come back fast,
+# exit 0, and explain the cap.
+mkdir -p "$TMP/js-test-watch"
+cat > "$TMP/js-test-watch/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:watch":"node -e \"setInterval(function(){},1000)\""}}
+EOF
+
 # Canonical and alias side by side: precedence says 'typecheck' wins and
 # 'type-check' never runs. The alias prints a marker so its silence is provable.
 mkdir -p "$TMP/js-alias-both"
@@ -461,13 +471,16 @@ case_run js-alias-check-types 0 "$TMP/js-alias-check-types" - "run check-types" 
          "checks=typecheck,test" "GREEN"
 case_run js-test-and-unit 0 "$TMP/js-test-and-unit" -         "run test$" \
          "checks=typecheck,test" "GREEN" '!run test:unit' '!ALIAS_TEST_RAN'
-case_run js-test-slices   0 "$TMP/js-test-slices" -           "checks=typecheck" "YELLOW" \
-         "more than one test:\* slice (test:unit test:e2e)" \
+case_run js-test-slices   0 "$TMP/js-test-slices" -           "checks=typecheck$" "YELLOW" \
+         "test:\* slices found (test:unit test:e2e)" "'test' not counted" \
          '!UNIT_RAN' '!E2E_RAN'
 case_run js-test-slices-only 3 "$TMP/js-test-slices-only" -   "no runnable checks" \
-         "more than one test:\* slice"
+         "test:\* slices found" "'test' not counted"
 case_run js-test-integration 0 "$TMP/js-test-integration" -   "run test:integration" \
          "checks=typecheck,test" "GREEN"
+case_run js-test-watch    0 "$TMP/js-test-watch" -            "checks=typecheck$" "YELLOW" \
+         "test:\* slices found (test:watch)" "'test' not counted" '!run test:watch'
+elapsed_lt js-test-watch-never-started 15
 case_run js-alias-both    0 "$TMP/js-alias-both" -            "run typecheck$" \
          "checks=typecheck,test" "GREEN" '!run type-check' '!ALIAS_TYPECHECK_RAN'
 case_run js-alias-red     1 "$TMP/js-alias-red" -             "RED at 'npm run test:unit'"

@@ -180,12 +180,16 @@ missing() {
   incomplete=1
 }
 
-# no_tests <stack> <reason> — a green run with no test file is not a tested
-# repo. Does not set incomplete: the verdict stays exit 0 with checks=typecheck,
-# which is the YELLOW cap, and the user can promote it by hand.
+# no_tests <stack> <reason> [advice] — a green run with no test file is not a
+# tested repo. Does not set incomplete: the verdict stays exit 0 with
+# checks=typecheck, which is the YELLOW cap, and the user can promote it by
+# hand. Every producer of a YELLOW cap goes through here, because the literal
+# "'test' not counted" is the marker SKILL.md tells the agent to classify by.
+# <advice> is how the user gets past the cap; it defaults to promotion, which
+# is wrong for a suite that is present but sliced, so that caller passes its own.
 no_tests() {
-  echo "[gate] $1: $2 — 'test' not counted (YELLOW cap; promote by hand if the" \
-       "suite lives elsewhere)" >&2
+  local advice=${3:-"promote by hand if the suite lives elsewhere"}
+  echo "[gate] $1: $2 — 'test' not counted (YELLOW cap; $advice)" >&2
 }
 
 py_missing() {
@@ -279,30 +283,44 @@ if [[ -f package.json ]]; then
 
     # js_test_script — decides which script stands for the *whole* suite.
     # A plain 'test' always wins. Failing that, a 'test:*' script counts as the
-    # canonical test only when it is the sole one in the manifest: a repo with
-    # 'test:unit' and 'test:e2e' would otherwise report checks=typecheck,test —
-    # GREEN, which unlocks dead-export deletion and phases 2 and 3 — on a net
-    # where half the suite never ran. Echoes 'run:<name>', or 'partial:<names>'
-    # when there is more than one slice and no whole, or nothing.
+    # canonical test only when it is the sole candidate in the manifest: a repo
+    # with 'test:unit' and 'test:e2e' would otherwise report checks=typecheck,test
+    # — GREEN, which unlocks dead-export deletion and phases 2 and 3 — on a net
+    # where half the suite never ran.
+    # A watch/interactive slice ('test:watch', 'test:ui', 'test:debug') is not a
+    # candidate at all: it never exits, so running it as the gate's test can only
+    # ever end at the watchdog — 900s of stall for an exit 4 that reads as "the
+    # safety net could not be measured". It is still listed in the report, so the
+    # cap is explained instead of silent. Same reasoning as the 'tsc' exclusion
+    # above: a name that means "not a check" is not promoted to one.
+    # Echoes 'run:<name>', or 'partial:<names>' when nothing covers the whole
+    # suite, or nothing at all when the manifest has no test script.
     js_test_script() {
       node -e 'const s=require("./package.json").scripts||{};
 if (s.test) { console.log("run:test"); }
 else {
   const p = Object.keys(s).filter(function (k) { return k.indexOf("test:") === 0 && s[k]; });
-  if (p.length === 1) console.log("run:" + p[0]);
-  else if (p.length > 1) console.log("partial:" + p.join(" "));
+  const whole = p.filter(function (k) { return !/:(watch|ui|debug)$/.test(k); });
+  if (whole.length === 1) console.log("run:" + whole[0]);
+  else if (p.length > 0) console.log("partial:" + p.join(" "));
 }' 2>/dev/null
     }
 
     run_first typecheck typecheck type-check check-types
-    js_test=$(js_test_script)
+    # A node failure here used to be the one fully silent path in the gate: the
+    # empty answer is indistinguishable from "this manifest defines no test
+    # script", and the run would cap at YELLOW without a word about why.
+    if ! js_test=$(js_test_script); then
+      echo "[gate] package.json scripts unreadable — JS/TS test check skipped" >&2
+      incomplete=1
+      js_test=""
+    fi
     case $js_test in
       run:*)
         js_script test "${js_test#run:}" ;;
       partial:*)
-        echo "[gate] no 'test' script and more than one test:* slice" \
-             "(${js_test#partial:}) — none of them covers the suite on its own," \
-             "so 'test' is not counted; run them all by hand" >&2 ;;
+        no_tests js "no 'test' script; test:* slices found (${js_test#partial:})" \
+                 "none of them stands for the whole suite; run them by hand" ;;
     esac
   fi
 fi

@@ -256,6 +256,12 @@ for f in SKILL.md references/phase-2-consolidation.md references/phase-3-structu
   fi
 done
 
+# IFS is pinned to newline for the same reason section 6 pins it: the list comes
+# from grep -l, and under the default IFS a path containing a space would split
+# into fragments, leaving grep to fail on stderr while the invariant reports a
+# verdict for a file it never opened.
+old_ifs=$IFS
+IFS=$'\n'
 for f in $derived; do
   if grep -q -F -- 'git add -A' "$f" 2>/dev/null; then
     pass "gate step pairs with git add -A in $f"
@@ -264,6 +270,7 @@ for f in $derived; do
          "runs the gate as a protocol step without staging first"
   fi
 done
+IFS=$old_ifs
 
 # 5. The file trees in the READMEs match what is on disk. --------------------
 for readme in README.md README.en.md; do
@@ -290,12 +297,15 @@ done
 # directory has to be created before the move: `git mv` into a missing
 # directory dies with exit 128, and an agent running unsupervised reads that
 # as a failed step. Only command lines count — a line whose first word is
-# `git mv` — so the prose mentions in the READMEs and in the explanatory
-# paragraphs, where the phrase is named and not run, stay out of it. Leading
+# `git mv` — so the prose mentions, where the phrase is named inside backticks
+# and not run, stay out of it. That is the whole filter: the READMEs are
+# scanned like everything else, because both already carry fenced bash blocks
+# and a move added to one of them would be read and run like any other. Leading
 # whitespace is allowed: a move written as a step inside a numbered list is
 # still a command, and anchoring at column 0 would exempt it silently.
 gitmv_files() {
-  grep -l -E '^[[:space:]]*git mv ' SKILL.md references/*.md 2>/dev/null | sort
+  grep -l -E '^[[:space:]]*git mv ' SKILL.md README.md README.en.md references/*.md \
+    2>/dev/null | sort
 }
 
 moves=$(gitmv_files)
@@ -312,34 +322,52 @@ for f in SKILL.md references/phase-3-structure.md; do
   fi
 done
 
-# The mkdir has to be in the same block as the move, not merely somewhere in
-# the file: what is being read is a snippet, not a page. A fence or a blank
-# line ends the block, so a `git mv` in a later snippet cannot inherit an
-# earlier snippet's mkdir. Inside a block the mkdir covers every move that
-# follows it — one `mkdir -p` and three moves into that folder is the shape a
-# real plan has, and demanding a redundant mkdir per line would reject correct
-# documentation.
+# The mkdir has to be in the same block as the move, and it has to have created
+# the directory that move lands in — not merely some directory. What is being
+# read is a snippet, not a page: a fence or a blank line ends the block, so a
+# `git mv` in a later snippet cannot inherit an earlier snippet's mkdir. Inside
+# a block one `mkdir -p` covers every move into that folder — one mkdir and
+# three moves is the shape a real plan has, and demanding a redundant mkdir per
+# line would reject correct documentation. Tracking the folders instead of a
+# bare "some mkdir happened" flag is what catches the realistic version of the
+# bug: a block that creates one destination and then moves into a second one.
+# A move with no `/` in the destination is a rename in place and needs no
+# directory, so it is never flagged.
 gitmv_orphans() {
   awk '
-    /^[[:space:]]*```/       { covered = 0; next }
-    /^[[:space:]]*$/         { covered = 0; next }
-    /^[[:space:]]*mkdir -p / { covered = 1; next }
-    /^[[:space:]]*git mv / && !covered { print FILENAME ":" FNR ": " $0 }
+    /^[[:space:]]*```/       { split("", made); next }
+    /^[[:space:]]*$/         { split("", made); next }
+    /^[[:space:]]*mkdir -p / { for (i = 3; i <= NF; i++) {
+                                 d = $i; gsub(/\/+$/, "", d); made[d] = 1
+                               }
+                               next }
+    /^[[:space:]]*git mv /   { dest = $4
+                               if (sub(/\/[^\/]*$/, "", dest) && !(dest in made))
+                                 print FILENAME ":" FNR ": " $0 }
   ' "$1"
 }
 
 # Section 0's rule: the invariant is only as good as the extractor. A scanner
 # that never reports anything would make the loop below pass over everything,
-# so it is exercised on a synthetic page first — one covered block, one bare
-# move in a later block, one indented bare move.
-printf '%s\n' '```bash' 'mkdir -p src/x' 'git mv a src/x/a' 'git mv b src/x/b' '```' \
-              '' '```bash' 'git mv c gone/c' '```' '' '   git mv d gone/d' \
+# so it is exercised on a synthetic page first. Every line of the fixture pays
+# for itself — delete any one rule of the scanner and the count moves:
+# `git mv c` catches the destination check, `git mv e` the fence reset (the
+# mkdir above it created the very folder it lands in, so only the fence can
+# uncover it), `git mv g` the blank-line reset for the same reason, `git mv d`
+# the leading-whitespace tolerance. `git mv h i` renames in place and must stay
+# unflagged even though no mkdir names `i`.
+printf '%s\n' '```bash' 'mkdir -p src/x' 'git mv a src/x/a' 'git mv b src/x/b' \
+              'git mv c src/y/c' '```' 'git mv e src/x/e' \
+              '```bash' 'mkdir -p src/y' 'git mv f src/y/f' '' 'git mv g src/y/g' '```' \
+              '' '   git mv d gone/d' \
+              '```bash' 'mkdir -p src/z' 'git mv h i' '```' \
               > "$SELFTMP/moves.md"
-got=$(gitmv_orphans "$SELFTMP/moves.md" | grep -c .)
+orphans=$(gitmv_orphans "$SELFTMP/moves.md")
+got=$(printf '%s' "$orphans" | grep -c .)
 check "git mv scanner flags the uncovered moves and only those" \
-      "$([[ $got -eq 2 ]] && echo 0 || echo 1)" \
-      "flagged $got line(s), expected 2:
-$(gitmv_orphans "$SELFTMP/moves.md")"
+      "$([[ $got -eq 4 ]] && echo 0 || echo 1)" \
+      "flagged $got line(s), expected 4:
+$orphans"
 
 # IFS is pinned to newline: the list comes from grep -l, and the default IFS
 # would split a path containing a space into pieces, leaving awk to fail on
@@ -389,16 +417,19 @@ level_shape() {
        } END { print out }'
 }
 
-# Same rule as section 0. The shape has to stop at the end of the table and it
-# has to keep a level that reappears after another one, or a table that lost a
-# level would still read GREEN YELLOW RED.
+# Same rule as section 0, and both halves have to be paid for. The trailing
+# GREEN outside the table is what proves the extractor stops at the table. The
+# YELLOW that comes back *after* the RED row, inside the table, is what proves
+# the collapse is of consecutive repeats and not a global dedupe: with a
+# seen-set the fixture would still read GREEN YELLOW RED and a real table that
+# lost a level would slip through the check unchanged.
 printf '%s\n' '| a | GREEN | x |' '| b | YELLOW | x |' '| c | YELLOW | x |' \
-              '| d | RED | x |' '' 'prose' '| e | GREEN | x |' \
+              '| d | RED | x |' '| e | YELLOW | x |' '' 'prose' '| f | GREEN | x |' \
               > "$SELFTMP/levels.md"
 got=$(level_shape "$SELFTMP/levels.md")
 check "level extractor collapses repeats and stops at the table" \
-      "$([[ $got == 'GREEN YELLOW RED' ]] && echo 0 || echo 1)" \
-      "read [$got], expected [GREEN YELLOW RED]"
+      "$([[ $got == 'GREEN YELLOW RED YELLOW' ]] && echo 0 || echo 1)" \
+      "read [$got], expected [GREEN YELLOW RED YELLOW]"
 
 for f in $LEVEL_FILES; do
   shape=$(level_shape "$f")
@@ -413,13 +444,22 @@ done
 # cannot carry this on its own: flipping the RED row to YELLOW leaves the
 # collapsed shape at GREEN YELLOW RED (SKILL.md's fourth row is RED too), which
 # is exactly the drift this section exists to catch.
-level_row() { level_rows "$1" | grep -F -m1 -- "$2"; }
+# The level is matched as a cell of its own — `| RED |` or `| **RED** |`, which
+# covers both layouts in use (the READMEs put the level first, SKILL.md second)
+# — and not as a substring of the row. A row is free to name another level in
+# its prose without stealing that level's assertion.
+level_row() {
+  level_rows "$1" | grep -E -m1 -- "\|[[:space:]]*\**$2\**[[:space:]]*\|"
+}
 
 for triple in \
+  'SKILL.md|GREEN|Typecheck **and** tests pass' \
   'SKILL.md|YELLOW|A partial net, or no test file in the stack' \
   'SKILL.md|RED|A check fails, or no tests and no typecheck' \
+  'README.en.md|GREEN|typecheck and tests pass' \
   'README.en.md|YELLOW|partial net, or no test file in the stack' \
   'README.en.md|RED|no tests and no typecheck, or a baseline already failing' \
+  'README.md|GREEN|typecheck e testes passam' \
   'README.md|YELLOW|rede parcial, ou nenhum arquivo de teste no stack' \
   'README.md|RED|sem testes e sem typecheck, ou baseline já vermelho'
 do
@@ -431,6 +471,67 @@ do
   check "$level row of $f states the canonical condition" \
         "$(printf '%s' "$row" | grep -q -F -- "$cond" && echo 0 || echo 1)" \
         "expected [$cond] — row reads: ${row:-<no $level row>}"
+done
+
+# 8. A command that lives in two files is one string, byte for byte. ---------
+# Same rule as the rollback in section 1, and the same reason: both of these
+# are copied by hand into two files, both get executed, and a flag fixed in one
+# copy and not the other leaves two protocols behind. The stale copy is the
+# dangerous one — the unhardened knip form (`> knip-report.json`) truncates the
+# report before knip starts, so a crash reads as "nothing to delete"; the
+# unwindowed churn command ranks by lifetime touch count, where a file rewritten
+# three years ago outranks whatever is hot now.
+KNIP_CMD='npx knip --production --no-exit-code --reporter json > knip-report.json.tmp && mv knip-report.json.tmp knip-report.json'
+KNIP_FILES="SKILL.md references/knip-config.md"
+
+CHURN_CMD='git log --no-merges --since="6 months ago" --format= --name-only | sed '\''/^$/d'\'' | sort | uniq -c | sort -rn'
+CHURN_FILES="references/audit.md references/phase-2-consolidation.md"
+
+for f in $KNIP_FILES; do
+  check "knip report command verbatim in $f" \
+        "$(grep -q -F -- "$KNIP_CMD" "$f" 2>/dev/null && echo 0 || echo 1)" \
+        "missing the canonical form: $KNIP_CMD"
+done
+
+for f in $CHURN_FILES; do
+  check "churn ranking command verbatim in $f" \
+        "$(grep -q -F -- "$CHURN_CMD" "$f" 2>/dev/null && echo 0 || echo 1)" \
+        "missing the canonical form: $CHURN_CMD"
+done
+
+# ...and no variant of either anywhere else in the repo. The markers are the
+# parts that only this command has a reason to use: knip only ever writes a
+# report through `--reporter json`, and nothing else counts with `uniq -c`.
+loose=$(count_matches '--reporter json')
+canon=$(count_matches "$KNIP_CMD")
+check "no knip report variant in the repo" \
+      "$([[ $loose -eq $canon ]] && echo 0 || echo 1)" \
+      "$loose uses of '--reporter json', $canon of them the canonical command"
+
+loose=$(count_matches 'uniq -c')
+canon=$(count_matches "$CHURN_CMD")
+check "no churn ranking variant in the repo" \
+      "$([[ $loose -eq $canon ]] && echo 0 || echo 1)" \
+      "$loose uses of 'uniq -c', $canon of them the canonical command"
+
+# 9. The validated-run line in the READMEs counts the suite that exists. ------
+# Both READMEs publish the result of a docker run ("N/N casos") as evidence the
+# contract was exercised. That number drifted once — the suite grew by eleven
+# cases and the line was bumped by six — and a stale count is worse than none,
+# because a reader who runs the command and gets a different total has to guess
+# which of the two is lying. gate_test.sh calls its counting helpers exactly
+# once per line, continuation lines included (they start with the argument, not
+# with the helper), so the call sites are the total without running anything.
+# The properties and invariants figures come from loops over derived lists and
+# have no static equivalent; they stay on the honour system.
+gate_cases=$(grep -cE '^[[:space:]]*(case_run|assert_log|assert_no_log|assert_reaped|elapsed_lt) ' \
+             scripts/gate_test.sh)
+for pair in 'README.md|casos' 'README.en.md|cases'; do
+  f=${pair%%|*}
+  word=${pair#*|}
+  check "$f quotes gate_test.sh's real case count" \
+        "$(grep -q -F -- "$gate_cases/$gate_cases $word" "$f" 2>/dev/null && echo 0 || echo 1)" \
+        "gate_test.sh has $gate_cases cases; the validated-run line of $f does not say so"
 done
 
 echo "----"

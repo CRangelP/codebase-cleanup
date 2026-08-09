@@ -126,9 +126,24 @@ timeout: a check that legitimately exits 124 is read as a timeout.
 
 `checks=typecheck` because the stack has **no test file** is YELLOW, not GREEN,
 even though the gate exits 0 — a suite that does not exist cannot pass. The
-script names the stack in the `'test' not counted` line. Only the user promotes
-it, by pointing at the suite that lives somewhere the gate does not look; the
-skill never promotes itself.
+script names the stack in the `'test' not counted` line, which is the marker
+for every YELLOW cap it produces. Only the user promotes it, by pointing at the
+suite that lives somewhere the gate does not look; the skill never promotes
+itself.
+
+**Which npm script the gate reads.** For typecheck it takes the first of
+`typecheck`, `type-check`, `check-types` the manifest defines, and stops there.
+`tsc` is deliberately not on that list: as a script name it usually means an
+emitting compile, and the output would land beside the sources right before
+`git add -A` stages everything. For the suite it takes `test`; failing that, a
+lone `test:*` script, since a repo that declares one slice and no whole is
+declaring its suite. Two or more slices and no `test` count as nothing — half a
+net classified GREEN would unlock dead-export deletion on code the other half
+covers — and a watch-mode slice (`test:watch`, `test:ui`, `test:debug`) is
+never run at all, because it does not exit. Both cases print the
+`'test' not counted` line naming the slices. That one is **not** promotable by
+hand: the suite is in the manifest, only split, so run every slice before
+deciding.
 
 **A baseline that already fails is RED, not YELLOW.** Exit 1 says a check
 broke, and a broken baseline leaves no way to tell what the cleanup broke from
@@ -277,10 +292,10 @@ Never exclude tests with `ignore` to get the same effect.
 
 Run all three without asking (GREEN level) or the first two (YELLOW). Each one
 is: delete → (deps only: install) → `git add -A` → gate → commit → regenerate
-the report. For the gate, use `scripts/gate.sh`
-(it detects the stack and the package manager and runs typecheck + tests in the
-right order); if it exits with code 3, run the stack's equivalent commands by
-hand.
+the report. For the gate, use `scripts/gate.sh` (it detects the stack and the
+package manager and runs typecheck + tests in the right order); if it exits
+with code 3, read `package.json` for the script names and run the stack's
+equivalent commands by hand.
 
 Staging before the gate is what makes the rollback complete, and it is safe
 here precisely because Step 0 refused to start on a dirty tree: everything
@@ -293,6 +308,21 @@ output. Before the first category, put `knip-report.json` and
 `.gitignore` stays untouched. Otherwise every category commits the report the
 previous one was read from, and the user reverting `chore: remove unused deps`
 gets a tool artifact back along with the dependencies.
+
+That exclude only reaches **untracked** paths. If a previous run of this skill
+already committed `knip-report.json`, git keeps staging it no matter what the
+exclude says, and the regeneration below puts a fresh diff in every category
+commit. Check with `git status --porcelain` after writing the exclude lines; if
+the report still shows up, `git rm --cached knip-report.json` first. On the way
+out, delete the report and drop the two lines you added from
+`.git/info/exclude`: neither is the user's, and the exclude makes the leftover
+invisible to `git status`, so nobody would find it later.
+
+Two more things `-A` can swallow, both created by this step and neither
+committed on purpose: `node_modules` after the install below, and the empty
+directories `mkdir -p` leaves behind in phase 3. Confirm the repo ignores
+`node_modules` before the deps category — a global `.gitignore` does not travel
+with the repo — and add it to `.git/info/exclude` if it does not.
 
 ```
 1. unused deps        → "chore: remove unused deps"
@@ -337,10 +367,8 @@ one extra knip run per category that commits.
 A category that is skipped (YELLOW does not run exports) or that fails its gate
 leaves no commit and nothing in the tree for knip to read differently, so there
 is nothing to regenerate from — keep the current report and go to the next
-category. (The restore does not put `node_modules` back; that is a separate
-step, below.) The regeneration
-after the last category that did commit is the one the final report counts
-against.
+category. The regeneration after the last category that did commit is the one
+the final report counts against.
 
 **If the gate fails:** `git restore --staged --worktree .`, record the category
 as failed in `CLEANUP_PROGRESS.md` along with the error, and **move on to the

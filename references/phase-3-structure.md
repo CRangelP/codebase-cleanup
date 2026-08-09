@@ -67,6 +67,13 @@ missing precondition, not a failed step — create the directory and repeat the
 move. Do not fall back to `mv` plus `git rm`/`git add`: that is `rm` +
 `create` under another name.
 
+Create exactly the directory the move lands in, and no others. Git tracks
+files, not directories, so a folder created for a move that never happened, or
+for a commit whose gate failed, is left behind as an empty untracked directory:
+`git restore --staged --worktree .` cannot remove it. Sweep the leftovers when
+a folder's commit does not land — `find src -type d -empty -delete`, or `rmdir`
+the path you just created.
+
 `git mv` preserves history. `rm` + `create` destroys that file's `git blame` —
 exactly the information someone will want six months from now when asking "why
 is this like this".

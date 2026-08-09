@@ -108,7 +108,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validado em 08/2026: 63/63 casos, 5/5 propriedades, 66/66 invariantes
+# validado em 08/2026: 70/70 casos, 5/5 propriedades, 77/77 invariantes
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -167,6 +167,13 @@ teste, para crate Rust sem `tests/*.rs` nem `#[test]`, e para pytest que sai
 5 sem coletar nada. Se a sua suíte mora fora do lugar padrão, a promoção é
 sua — o gate não se promove sozinho.
 
+Em JS/TS o mesmo cap pega a suíte fatiada: sem script `test`, com `test:unit`
+e `test:e2e` no manifesto, nenhuma fatia responde pela suíte inteira e o gate
+não conta nenhuma delas. Promover à mão aqui é o caminho errado, porque a
+suíte não está fora do lugar, está dividida; rode as fatias todas. Uma fatia
+sozinha vale como a suíte, com uma exceção: modo watch (`test:watch`,
+`test:ui`, `test:debug`) nunca termina, então o gate não o executa.
+
 Com o nível anunciado, ela cria a branch de limpeza e segue:
 
 - **Fase 1 — código morto.** Configura o knip até os hints zerarem, roda em
@@ -218,9 +225,10 @@ rollback joga fora foi ela mesma que criou.
 - Import dinâmico com string montada em runtime é invisível ao grafo. A skill
   trata isso ensinando o knip (entry explícito) em vez de deletar, mas vale
   revisar o `knip.json` gerado.
-- Nível RED devolve relatório, não limpeza. Se o projeto não tem teste nem
-  typecheck, o primeiro passo é criar uma verificação mínima; a skill aponta o
-  caminho no próprio relatório.
+- Nível RED devolve relatório, não limpeza. Cai aí quem não tem teste nem
+  typecheck, e também quem chega com a suíte vermelha. Sem teste, o primeiro
+  passo é criar uma verificação mínima; com a suíte quebrada, é consertar o
+  check que o relatório nomeia.
 - Exit 124 é reservado ao watchdog, igual ao GNU `timeout`: um check que
   legitimamente sai 124 sob watchdog ativo é lido como TIMEOUT.
 - Com uma única `.sln`/`.slnx` na raiz o gate a passa explícita ao `dotnet`;

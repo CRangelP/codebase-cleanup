@@ -111,7 +111,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validated 2026-08: 63/63 cases, 5/5 properties, 66/66 invariants
+# validated 2026-08: 70/70 cases, 5/5 properties, 77/77 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -170,6 +170,13 @@ with no test file, a Rust crate with no `tests/*.rs` and no `#[test]`, and a
 pytest run that exits 5 having collected nothing. If your suite lives outside
 the usual place, promoting it is your call — the gate never promotes itself.
 
+In JS/TS the same cap covers a sliced suite: with no `test` script and both
+`test:unit` and `test:e2e` in the manifest, no slice answers for the whole
+suite and the gate counts none of them. Promoting by hand is the wrong move
+here, because the suite is not somewhere else, it is split; run every slice. A
+lone slice does count as the suite, with one exception: watch mode
+(`test:watch`, `test:ui`, `test:debug`) never exits, so the gate skips it.
+
 With the level announced, it creates the cleanup branch and proceeds:
 
 - **Phase 1 — dead code.** Configures knip until the hints reach zero, runs
@@ -223,9 +230,10 @@ rollback discards is what the skill itself created.
 - A dynamic import with a string assembled at runtime is invisible to the
   graph. The skill handles this by teaching knip (explicit entry) instead of
   deleting, but it is worth reviewing the generated `knip.json`.
-- RED level returns a report, not a cleanup. If the project has neither tests
-  nor typecheck, the first step is to create a minimal verification; the skill
-  points the way in the report itself.
+- RED level returns a report, not a cleanup. That covers a project with
+  neither tests nor typecheck, and one that arrives with a red suite. With no
+  tests, the first step is to create a minimal verification; with a broken
+  suite, it is to fix the check the report names.
 - Exit 124 is reserved for the watchdog, exactly as in GNU `timeout`: a
   check that legitimately exits 124 under an active watchdog reads as TIMEOUT.
 - With a single `.sln`/`.slnx` at the root the gate passes it explicitly to
