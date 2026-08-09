@@ -101,10 +101,11 @@ it finds (compiling counts as typecheck).
 Classify by the `[gate] checks=...` line, which lists what actually ran, and
 not by the exit code alone: GREEN requires `typecheck` and `test` in the list;
 a partial list caps at YELLOW, and the script itself says so. Exit 0 =
-everything that ran passed; 1 = something failed, which is RED whatever the
-list says; 2 = bad path (the argument is not a directory the script can enter,
-so nothing was checked — fix the path and rerun); 3 = no runnable check
-**or** some detected stack had no toolchain
+everything that ran passed; 1 = a check failed, which is RED — and the script
+stops at the first red, so there is no `checks=` line to classify by, only the
+`RED at '<cmd>'` line naming what broke; 2 = bad path (the argument is not a
+directory the script can enter, so nothing was checked — fix the path and
+rerun); 3 = no runnable check **or** some detected stack had no toolchain
 (`PARTIAL` — including in a polyglot repo where another stack passed); 4 = a
 check hit the watchdog (`GATE_TIMEOUT`, 900s per check by default, `0`
 disables). In the exit-3 cases, finish the gate by hand before classifying.
@@ -258,9 +259,12 @@ that 1.3 reads as "nothing to delete" — a silent failure. `--no-exit-code` is
 what makes the `&&` usable: knip exits 1 whenever it finds issues, which is the
 normal case here, and 2 only when it actually failed.
 
-Check the report before 1.3 consumes it: `test -s knip-report.json` and it has
-to parse as JSON. If it does not, knip failed — fix that instead of proceeding
-with an empty list.
+Check the report before 1.3 consumes it: `knip-report.json.tmp` has to be gone,
+and `knip-report.json` has to be non-empty and parse as JSON. The temp file is
+the check that catches a failed run — when knip breaks, the `&&` skips the `mv`
+and the *previous* report stays on disk, non-empty and perfectly parseable, so
+the content checks alone would wave a stale list through. A `.tmp` left behind
+means the run did not finish: delete it and fix knip instead of proceeding.
 
 Production mode excludes tests and devDependencies automatically. That matters
 because a function imported only by a test is technically alive, but it is dead
@@ -272,8 +276,8 @@ Never exclude tests with `ignore` to get the same effect.
 ## 1.3 Delete in atomic commits, one per category
 
 Run all three without asking (GREEN level) or the first two (YELLOW). Each one
-is: delete → `git add -A` → gate → commit → regenerate the report. For the
-gate, use `scripts/gate.sh`
+is: delete → (deps only: install) → `git add -A` → gate → commit → regenerate
+the report. For the gate, use `scripts/gate.sh`
 (it detects the stack and the package manager and runs typecheck + tests in the
 right order); if it exits with code 3, run the stack's equivalent commands by
 hand.
@@ -282,6 +286,13 @@ Staging before the gate is what makes the rollback complete, and it is safe
 here precisely because Step 0 refused to start on a dirty tree: everything
 `git add -A` picks up was produced by this step, so the `-A` cannot swallow work
 of the user's.
+
+The one thing `-A` picks up that this step did not produce is knip's own
+output. Before the first category, put `knip-report.json` and
+`knip-report.json.tmp` in `.git/info/exclude` — repo-local, so the user's
+`.gitignore` stays untouched. Otherwise every category commits the report the
+previous one was read from, and the user reverting `chore: remove unused deps`
+gets a tool artifact back along with the dependencies.
 
 ```
 1. unused deps        → "chore: remove unused deps"
@@ -321,11 +332,13 @@ files kills exports the old report still saw as alive and frees deps it saw as
 used, while some exports it lists as dead live in files the previous category
 already removed. On a frozen report those second-order items survive the
 cleanup and a category tries to edit paths that no longer exist. The cost is
-two extra knip runs per cleanup.
+one extra knip run per category that commits.
 
 A category that is skipped (YELLOW does not run exports) or that fails its gate
-leaves no commit and nothing changed on disk, so there is nothing to regenerate
-from — keep the current report and go to the next category. The regeneration
+leaves no commit and nothing in the tree for knip to read differently, so there
+is nothing to regenerate from — keep the current report and go to the next
+category. (The restore does not put `node_modules` back; that is a separate
+step, below.) The regeneration
 after the last category that did commit is the one the final report counts
 against.
 

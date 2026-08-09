@@ -289,11 +289,13 @@ done
 # Phase 3 applies a structure that does not exist yet, so the destination
 # directory has to be created before the move: `git mv` into a missing
 # directory dies with exit 128, and an agent running unsupervised reads that
-# as a failed step. Only command lines count — a line that *starts* with
+# as a failed step. Only command lines count — a line whose first word is
 # `git mv` — so the prose mentions in the READMEs and in the explanatory
-# paragraphs, where the phrase is named and not run, stay out of it.
+# paragraphs, where the phrase is named and not run, stay out of it. Leading
+# whitespace is allowed: a move written as a step inside a numbered list is
+# still a command, and anchoring at column 0 would exempt it silently.
 gitmv_files() {
-  grep -l -E '^git mv ' SKILL.md references/*.md 2>/dev/null | sort
+  grep -l -E '^[[:space:]]*git mv ' SKILL.md references/*.md 2>/dev/null | sort
 }
 
 moves=$(gitmv_files)
@@ -310,14 +312,46 @@ for f in SKILL.md references/phase-3-structure.md; do
   fi
 done
 
-# The mkdir has to be on the line right above, not merely somewhere in the
-# file: what is being read is a snippet, not a page.
+# The mkdir has to be in the same block as the move, not merely somewhere in
+# the file: what is being read is a snippet, not a page. A fence or a blank
+# line ends the block, so a `git mv` in a later snippet cannot inherit an
+# earlier snippet's mkdir. Inside a block the mkdir covers every move that
+# follows it — one `mkdir -p` and three moves into that folder is the shape a
+# real plan has, and demanding a redundant mkdir per line would reject correct
+# documentation.
+gitmv_orphans() {
+  awk '
+    /^[[:space:]]*```/       { covered = 0; next }
+    /^[[:space:]]*$/         { covered = 0; next }
+    /^[[:space:]]*mkdir -p / { covered = 1; next }
+    /^[[:space:]]*git mv / && !covered { print FILENAME ":" FNR ": " $0 }
+  ' "$1"
+}
+
+# Section 0's rule: the invariant is only as good as the extractor. A scanner
+# that never reports anything would make the loop below pass over everything,
+# so it is exercised on a synthetic page first — one covered block, one bare
+# move in a later block, one indented bare move.
+printf '%s\n' '```bash' 'mkdir -p src/x' 'git mv a src/x/a' 'git mv b src/x/b' '```' \
+              '' '```bash' 'git mv c gone/c' '```' '' '   git mv d gone/d' \
+              > "$SELFTMP/moves.md"
+got=$(gitmv_orphans "$SELFTMP/moves.md" | grep -c .)
+check "git mv scanner flags the uncovered moves and only those" \
+      "$([[ $got -eq 2 ]] && echo 0 || echo 1)" \
+      "flagged $got line(s), expected 2:
+$(gitmv_orphans "$SELFTMP/moves.md")"
+
+# IFS is pinned to newline: the list comes from grep -l, and the default IFS
+# would split a path containing a space into pieces, leaving awk to fail on
+# stderr while $orphan stays empty — an "ok" for a file never read.
+old_ifs=$IFS
+IFS=$'\n'
 for f in $moves; do
-  orphan=$(awk '/^git mv / && prev !~ /^mkdir -p / { print FILENAME ":" FNR ": " $0 }
-                { prev = $0 }' "$f")
-  check "git mv preceded by mkdir -p in $f" \
+  orphan=$(gitmv_orphans "$f")
+  check "git mv covered by a mkdir -p in $f" \
         "$([[ -z $orphan ]] && echo 0 || echo 1)" "$orphan"
 done
+IFS=$old_ifs
 
 # 7. The level table says the same thing in the three files. -----------------
 # The level is the whole dispatch of the skill: SKILL.md's table decides what
@@ -329,11 +363,16 @@ done
 # that has to hold in any language.
 LEVEL_FILES="SKILL.md README.md README.en.md"
 
-# level_names <file> — the level of each row of the file's level table, in
-# order. Table rows are the only lines that start with `|`, and the first level
-# word on a row is that row's level, whichever column the file puts it in.
-level_names() {
-  awk '/^\|/ && match($0, /GREEN|YELLOW|RED/) { print substr($0, RSTART, RLENGTH) }' "$1"
+# level_rows <file> — the rows of the level table. Anchored to the table, not
+# to the file: the first run of consecutive `|` lines that mention a level is
+# the table, and the run ends at the first line that is not a table row. A
+# level word in some other table of the same file (an exit-code table, a
+# per-stack table) is then neither counted as a row nor picked up as one.
+level_rows() {
+  awk '
+    /^\|/ && /GREEN|YELLOW|RED/ { intable = 1; print; next }
+    intable && !/^\|/ { exit }
+  ' "$1"
 }
 
 # Consecutive repeats collapse on purpose: SKILL.md carries a fourth row (no git
@@ -342,10 +381,24 @@ level_names() {
 # agent dispatches on, the READMEs are prose for a human who already read the
 # requirement. What may not differ is which levels exist and how they escalate.
 level_shape() {
-  level_names "$1" |
-  awk 'NR == 1 || $0 != prev { print } { prev = $0 }' |
-  tr '\n' ' ' | sed 's/[[:space:]]*$//'
+  level_rows "$1" |
+  awk 'match($0, /GREEN|YELLOW|RED/) {
+         l = substr($0, RSTART, RLENGTH)
+         if (l != prev) { out = out sep l; sep = " " }
+         prev = l
+       } END { print out }'
 }
+
+# Same rule as section 0. The shape has to stop at the end of the table and it
+# has to keep a level that reappears after another one, or a table that lost a
+# level would still read GREEN YELLOW RED.
+printf '%s\n' '| a | GREEN | x |' '| b | YELLOW | x |' '| c | YELLOW | x |' \
+              '| d | RED | x |' '' 'prose' '| e | GREEN | x |' \
+              > "$SELFTMP/levels.md"
+got=$(level_shape "$SELFTMP/levels.md")
+check "level extractor collapses repeats and stops at the table" \
+      "$([[ $got == 'GREEN YELLOW RED' ]] && echo 0 || echo 1)" \
+      "read [$got], expected [GREEN YELLOW RED]"
 
 for f in $LEVEL_FILES; do
   shape=$(level_shape "$f")
@@ -354,25 +407,30 @@ for f in $LEVEL_FILES; do
         "levels in order: [$shape]"
 done
 
-# The condition that puts a run at YELLOW, in each file's own language, checked
-# against the YELLOW row itself and not merely somewhere in the file — the row
-# is what gets read at classification time.
-yellow_row() { grep -E '^\|' "$1" | grep -F -m1 -- 'YELLOW'; }
+# The condition that puts a run at each level, in each file's own language,
+# checked against that level's own row and not merely somewhere in the file —
+# the row is what gets read at classification time. The shape check above
+# cannot carry this on its own: flipping the RED row to YELLOW leaves the
+# collapsed shape at GREEN YELLOW RED (SKILL.md's fourth row is RED too), which
+# is exactly the drift this section exists to catch.
+level_row() { level_rows "$1" | grep -F -m1 -- "$2"; }
 
-for pair in \
-  'SKILL.md|partial net, or no test file in the stack' \
-  'README.en.md|partial net, or no test file in the stack' \
-  'README.md|rede parcial, ou nenhum arquivo de teste no stack'
+for triple in \
+  'SKILL.md|YELLOW|A partial net, or no test file in the stack' \
+  'SKILL.md|RED|A check fails, or no tests and no typecheck' \
+  'README.en.md|YELLOW|partial net, or no test file in the stack' \
+  'README.en.md|RED|no tests and no typecheck, or a baseline already failing' \
+  'README.md|YELLOW|rede parcial, ou nenhum arquivo de teste no stack' \
+  'README.md|RED|sem testes e sem typecheck, ou baseline já vermelho'
 do
-  f=${pair%%|*}
-  cond=${pair#*|}
-  row=$(yellow_row "$f")
-  if printf '%s' "$row" | grep -q -F -- "$cond"; then
-    pass "YELLOW row of $f states the canonical condition"
-  else
-    fail "YELLOW row of $f states the canonical condition" \
-         "expected [$cond] — row reads: ${row:-<no YELLOW row>}"
-  fi
+  f=${triple%%|*}
+  rest=${triple#*|}
+  level=${rest%%|*}
+  cond=${rest#*|}
+  row=$(level_row "$f" "$level")
+  check "$level row of $f states the canonical condition" \
+        "$(printf '%s' "$row" | grep -q -F -- "$cond" && echo 0 || echo 1)" \
+        "expected [$cond] — row reads: ${row:-<no $level row>}"
 done
 
 echo "----"

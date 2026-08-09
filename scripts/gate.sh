@@ -242,27 +242,32 @@ if [[ -f package.json ]]; then
     echo "[gate] package.json unparseable — JS/TS checks skipped" >&2
     incomplete=1
   else
-    # Each entry is "<kind>:<script names in precedence order>". Projects name
-    # these scripts freely ('type-check', 'test:unit'), and refusing anything
-    # but the canonical spelling made a fully covered repo look uncheckable.
-    # Two rules hold the semantics together: exactly one script runs per kind —
-    # the first name the project defines wins, the rest are ignored, so nothing
-    # runs or counts twice — and what reaches run() is the *kind*, never the
-    # alias, because run() classifies by kind and an unknown word there would
-    # run the check and count nothing. The alias stays visible in the human
+    # run_first <kind> <script name...> — runs the first of those scripts the
+    # project actually defines, under the canonical <kind>. Projects name these
+    # scripts freely ('type-check', 'test:unit'), and refusing anything but the
+    # canonical spelling made a fully covered repo look uncheckable. Two rules
+    # hold the semantics together: exactly one script runs per kind — the first
+    # name the project defines wins, the rest are ignored, so nothing runs or
+    # counts twice — and what reaches run() is the *kind*, never the alias,
+    # because run() classifies by kind and an unknown word there would run the
+    # check and count nothing. The alias stays visible in the human
     # '[gate] <cmd>' line; checks= keeps its canonical vocabulary.
-    for js_spec in "typecheck:typecheck type-check tsc check-types" \
-                   "test:test test:unit"; do
-      js_kind=${js_spec%%:*}
-      # shellcheck disable=SC2086  # the name list is split on purpose (bash 3.2, no arrays)
-      for script in ${js_spec#*:}; do
+    run_first() {
+      local kind=$1 script
+      shift
+      for script in "$@"; do
         if node -e "const s=require('./package.json').scripts||{};process.exit(s['$script']?0:1)" 2>/dev/null; then
-          if [[ $PM == yarn ]]; then run "$js_kind" yarn "$script"
-          else run "$js_kind" "$PM" run "$script"; fi
-          break
+          if [[ $PM == yarn ]]; then run "$kind" yarn "$script"
+          else run "$kind" "$PM" run "$script"; fi
+          return 0
         fi
       done
-    done
+      # No script of this kind: not an error. checks= reports what ran and the
+      # verdict caps the level from there.
+      return 0
+    }
+    run_first typecheck typecheck type-check tsc check-types
+    run_first test test test:unit
   fi
 fi
 

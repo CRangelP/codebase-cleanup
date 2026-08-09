@@ -51,7 +51,9 @@ Imagine deleting the module.
 2. **Cross with churn volume (file-level).** The intersection between
    "changed a lot" and "heavily coupled" is where consolidation pays the
    most. Rank the files by
-   `git log --no-merges --format= --name-only | sed '/^$/d' | sort | uniq -c | sort -rn`.
+   `git log --no-merges --since="6 months ago" --format= --name-only | sed '/^$/d' | sort | uniq -c | sort -rn`.
+   Keep the window: without `--since` the count is lifetime, and a file
+   rewritten hard years ago outranks whatever is hot now.
    This is a different, weaker signal than the pair-level co-change of step
    0: it says a file is hot, not that two files move together.
 3. **Actually read the candidate clusters.** Do not judge by file name.

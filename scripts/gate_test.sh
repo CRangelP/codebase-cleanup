@@ -217,11 +217,11 @@ cat > "$TMP/js-alias-red/package.json" <<'EOF'
 EOF
 
 # yarn.lock picks the 'yarn <script>' invocation instead of '<pm> run <script>';
-# no fixture exercised that branch before, alias or not.
+# no fixture exercised that branch before, alias or not. The manifest is copied
+# from js-alias on purpose: the lockfile is the only difference the case is
+# about, and a second hand-written copy would let the two drift apart.
 mkdir -p "$TMP/js-yarn-alias"
-cat > "$TMP/js-yarn-alias/package.json" <<'EOF'
-{"name":"f","scripts":{"type-check":"node -e 0","test:unit":"node -e 0"}}
-EOF
+cp "$TMP/js-alias/package.json" "$TMP/js-yarn-alias/package.json"
 touch "$TMP/js-yarn-alias/yarn.lock"
 
 mkdir -p "$TMP/polyglot/tests"
@@ -337,9 +337,11 @@ stub "$UV" uv 0
 GO="$TMP/stubs-go"; stub "$GO" go 0
 # yarn is not on every machine, and the branch under test is only *how* the
 # gate invokes it: a stub that always succeeds is enough, since the invocation
-# itself is echoed by run(). node stays real — the gate parses package.json with it.
+# itself is echoed by run(). The dir is prepended to the real PATH rather than
+# replacing it, so the case runs node and the same watchdog backend as every
+# other JS case — a hand-built minimal PATH would silently drop timeout and
+# make this the one JS case gated by perl.
 YARN="$TMP/stubs-yarn"
-link_bin "$YARN" bash sh env node perl ps find grep sleep true
 stub "$YARN" yarn 0
 CARGO="$TMP/stubs-cargo"; stub "$CARGO" cargo 0
 # pytest's "no tests collected" code, with a passing mypy next to it.
@@ -424,7 +426,7 @@ case_run js-alias-tsc     0 "$TMP/js-alias-tsc" -             "run tsc" "checks=
 case_run js-alias-both    0 "$TMP/js-alias-both" -            "run typecheck$" \
          "checks=typecheck,test" "GREEN" '!run type-check' '!ALIAS_TYPECHECK_RAN'
 case_run js-alias-red     1 "$TMP/js-alias-red" -             "RED at 'npm run test:unit'"
-case_run js-yarn-alias    0 "$TMP/js-yarn-alias" "$YARN"      "yarn type-check" "yarn test:unit" \
+case_run js-yarn-alias    0 "$TMP/js-yarn-alias" "$YARN:$PATH" "yarn type-check" "yarn test:unit" \
          "checks=typecheck,test" "GREEN" '!yarn run'
 case_run polyglot-partial 3 "$TMP/polyglot"     "$OK:$NOTOOL" "checks=test" "some detected stack"
 case_run partial-none-ran 3 "$TMP/go-only"      "$NOTOOL"     "nothing ran"

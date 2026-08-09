@@ -19,7 +19,10 @@ contradicts the README, the contradiction is itself a finding.
 
 Pull churn data: `git log --stat --since="6 months ago"`, ranking the most
 modified files with
-`git log --no-merges --format= --name-only | sed '/^$/d' | sort | uniq -c | sort -rn`.
+`git log --no-merges --since="6 months ago" --format= --name-only | sed '/^$/d' | sort | uniq -c | sort -rn`.
+The window has to be on both commands: without `--since` the ranking is
+lifetime touch count, and a file rewritten hard three years ago and untouched
+since outranks whatever is actually hot now.
 Intersect the 20 largest files with the 20 most modified — that intersection
 is where debt usually hides, and it is what separates "actually has debt"
 from "just looks messy".
