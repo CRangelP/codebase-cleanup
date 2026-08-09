@@ -126,24 +126,33 @@ timeout: a check that legitimately exits 124 is read as a timeout.
 
 `checks=typecheck` because the stack has **no test file** is YELLOW, not GREEN,
 even though the gate exits 0 — a suite that does not exist cannot pass. The
-script names the stack in the `'test' not counted` line, which is the marker
-for every YELLOW cap it produces. Only the user promotes it, by pointing at the
-suite that lives somewhere the gate does not look; the skill never promotes
-itself.
+script names the stack in the `'test' not counted` line, and every stack whose
+suite could not be counted goes through it. Read those lines, not only
+`checks=`: in a polyglot repo one stack supplies the suite while another has
+none, so `checks=typecheck,test` can be describing two different stacks. The
+gate refuses to announce GREEN there and says why (`a detected stack has no
+countable suite`). Only the user promotes a cap, by pointing at the suite that
+lives somewhere the gate does not look; the skill never promotes itself.
 
 **Which npm script the gate reads.** For typecheck it takes the first of
 `typecheck`, `type-check`, `check-types` the manifest defines, and stops there.
 `tsc` is deliberately not on that list: as a script name it usually means an
 emitting compile, and the output would land beside the sources right before
-`git add -A` stages everything. For the suite it takes `test`; failing that, a
-lone `test:*` script, since a repo that declares one slice and no whole is
-declaring its suite. Two or more slices and no `test` count as nothing — half a
-net classified GREEN would unlock dead-export deletion on code the other half
-covers — and a watch-mode slice (`test:watch`, `test:ui`, `test:debug`) is
-never run at all, because it does not exit. Both cases print the
-`'test' not counted` line naming the slices. That one is **not** promotable by
-hand: the suite is in the manifest, only split, so run every slice before
-deciding.
+`git add -A` stages everything. The reverse is not covered: a script *named*
+`typecheck` whose body is `tsc -p .` with no `--noEmit` emits just the same, and
+the gate cannot tell. If the manifest has one, read it before phase 1.
+
+For the suite it takes `test`; failing that, a lone `test:*` script, since a
+repo that declares one slice and no whole is declaring its suite. Two or more
+slices and no `test` count as nothing — half a net classified GREEN would
+unlock dead-export deletion on code the other half covers — and a slice
+declared with an empty command still counts as one of them. A watch-mode slice
+never runs at all, because it does not exit: `watch`, `ui` and `debug` are
+matched as whole segments of the name, so `test:watch:all` is caught and
+`test:watchdog` is not. All of these print the `'test' not counted` line naming
+the slices, and so does a manifest that declares no test script at all. A split
+suite is **not** promotable by hand: it is in the manifest, only divided, so
+run every slice before deciding.
 
 **A baseline that already fails is RED, not YELLOW.** Exit 1 says a check
 broke, and a broken baseline leaves no way to tell what the cleanup broke from
@@ -294,8 +303,9 @@ Run all three without asking (GREEN level) or the first two (YELLOW). Each one
 is: delete → (deps only: install) → `git add -A` → gate → commit → regenerate
 the report. For the gate, use `scripts/gate.sh` (it detects the stack and the
 package manager and runs typecheck + tests in the right order); if it exits
-with code 3, read `package.json` for the script names and run the stack's
-equivalent commands by hand.
+with code 3, find the stack's own check commands — the `package.json` scripts,
+the tox env, the Makefile target, whatever this repo uses — and run them by
+hand.
 
 Staging before the gate is what makes the rollback complete, and it is safe
 here precisely because Step 0 refused to start on a dirty tree: everything
@@ -313,16 +323,20 @@ That exclude only reaches **untracked** paths. If a previous run of this skill
 already committed `knip-report.json`, git keeps staging it no matter what the
 exclude says, and the regeneration below puts a fresh diff in every category
 commit. Check with `git status --porcelain` after writing the exclude lines; if
-the report still shows up, `git rm --cached knip-report.json` first. On the way
-out, delete the report and drop the two lines you added from
-`.git/info/exclude`: neither is the user's, and the exclude makes the leftover
-invisible to `git status`, so nobody would find it later.
+the report still shows up, untrack it in a commit of its own before the first
+category — `git rm --cached knip-report.json`, then `chore: untrack knip
+report`. Left staged, the next `git add -A` folds that deletion into the deps
+commit, and reverting the deps category hands the artifact back, which is the
+thing the exclude was for. On the way out, delete the report and drop the lines
+you added from `.git/info/exclude`: none of them is the user's, and the exclude
+makes the leftover invisible to `git status`, so nobody would find it later.
 
-Two more things `-A` can swallow, both created by this step and neither
-committed on purpose: `node_modules` after the install below, and the empty
-directories `mkdir -p` leaves behind in phase 3. Confirm the repo ignores
-`node_modules` before the deps category — a global `.gitignore` does not travel
-with the repo — and add it to `.git/info/exclude` if it does not.
+One more thing `-A` can swallow, created by this step and not committed on
+purpose: `node_modules`, after the install below. Confirm the repo ignores it
+before the deps category — a global `.gitignore` does not travel with the repo
+— and add it to `.git/info/exclude` if it does not. Empty directories are not
+on this list: git tracks files, so `git add -A` never stages one. The leftovers
+`mkdir -p` creates in phase 3 are a working-tree problem and are swept there.
 
 ```
 1. unused deps        → "chore: remove unused deps"

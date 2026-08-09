@@ -247,6 +247,41 @@ cat > "$TMP/js-test-watch/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test:watch":"node -e \"setInterval(function(){},1000)\""}}
 EOF
 
+# ...and the mode word is a segment of the name, not a suffix of it: 'test:watch:all'
+# hangs exactly as hard as 'test:watch'. Anchoring the exclusion at the end of the
+# name let this one through and cost a full GATE_TIMEOUT before exit 4.
+mkdir -p "$TMP/js-test-watch-nested"
+cat > "$TMP/js-test-watch-nested/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:watch:all":"node -e \"setInterval(function(){},1000)\""}}
+EOF
+
+# A slice declared with an empty command still splits the suite. Counting only
+# the non-empty ones turned two halves into a lone slice — and a lone slice is
+# promoted to the whole suite, which is the GREEN this rule exists to deny.
+mkdir -p "$TMP/js-slice-empty"
+cat > "$TMP/js-slice-empty/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:unit":"node -e \"console.log('UNIT_RAN')\"","test:e2e":""}}
+EOF
+
+# A manifest with a typecheck script and no test script of any spelling: the
+# plainest YELLOW cap there is, and the one that used to produce no explanation
+# at all — the run ended at 'checks=typecheck' with nothing on stderr saying why
+# the suite was missing, while every other stack said so.
+mkdir -p "$TMP/js-typecheck-only"
+cat > "$TMP/js-typecheck-only/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","build":"node -e 0"}}
+EOF
+
+# Polyglot: the JS suite is sliced and never runs, Go's does. checks= then reads
+# typecheck,test from Go alone, and announcing GREEN off that would unlock
+# dead-export deletion over the JS half that nothing tested.
+mkdir -p "$TMP/js-poly-uncounted"
+cat > "$TMP/js-poly-uncounted/package.json" <<'EOF'
+{"name":"f","scripts":{"test:unit":"node -e 0","test:e2e":"node -e 0"}}
+EOF
+printf 'module f\n\ngo 1.21\n' > "$TMP/js-poly-uncounted/go.mod"
+printf 'package f\n' > "$TMP/js-poly-uncounted/x_test.go"
+
 # Canonical and alias side by side: precedence says 'typecheck' wins and
 # 'type-check' never runs. The alias prints a marker so its silence is provable.
 mkdir -p "$TMP/js-alias-both"
@@ -478,9 +513,23 @@ case_run js-test-slices-only 3 "$TMP/js-test-slices-only" -   "no runnable check
          "test:\* slices found" "'test' not counted"
 case_run js-test-integration 0 "$TMP/js-test-integration" -   "run test:integration" \
          "checks=typecheck,test" "GREEN"
+# Both watch fixtures hang for real, so they run under a short watchdog: if the
+# exclusion ever regresses the gate starts the script, and at the default 900s
+# the regression costs a quarter of an hour before elapsed_lt can report it.
+GATE_ENV="GATE_TIMEOUT=20"
 case_run js-test-watch    0 "$TMP/js-test-watch" -            "checks=typecheck$" "YELLOW" \
-         "test:\* slices found (test:watch)" "'test' not counted" '!run test:watch'
+         "only watch-mode slices (test:watch)" "'test' not counted" '!run test:watch'
 elapsed_lt js-test-watch-never-started 15
+GATE_ENV="GATE_TIMEOUT=20"
+case_run js-test-watch-nested 0 "$TMP/js-test-watch-nested" - "checks=typecheck$" "YELLOW" \
+         "only watch-mode slices (test:watch:all)" '!run test:watch:all'
+elapsed_lt js-test-watch-nested-never-started 15
+case_run js-slice-empty   0 "$TMP/js-slice-empty" -           "checks=typecheck$" "YELLOW" \
+         "test:\* slices found (test:unit test:e2e)" '!UNIT_RAN'
+case_run js-typecheck-only 0 "$TMP/js-typecheck-only" -       "checks=typecheck$" "YELLOW" \
+         "no 'test' script in package.json" "'test' not counted"
+case_run js-poly-uncounted 0 "$TMP/js-poly-uncounted" "$GO:$PATH" "checks=typecheck,test" \
+         "'test' not counted" "no countable suite" '!GREEN'
 case_run js-alias-both    0 "$TMP/js-alias-both" -            "run typecheck$" \
          "checks=typecheck,test" "GREEN" '!run type-check' '!ALIAS_TYPECHECK_RAN'
 case_run js-alias-red     1 "$TMP/js-alias-red" -             "RED at 'npm run test:unit'"

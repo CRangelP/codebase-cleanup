@@ -108,7 +108,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validado em 08/2026: 70/70 casos, 5/5 propriedades, 77/77 invariantes
+# validado em 08/2026: 75/75 casos, 5/5 propriedades, 77/77 invariantes
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -171,8 +171,14 @@ Em JS/TS o mesmo cap pega a suíte fatiada: sem script `test`, com `test:unit`
 e `test:e2e` no manifesto, nenhuma fatia responde pela suíte inteira e o gate
 não conta nenhuma delas. Promover à mão aqui é o caminho errado, porque a
 suíte não está fora do lugar, está dividida; rode as fatias todas. Uma fatia
-sozinha vale como a suíte, com uma exceção: modo watch (`test:watch`,
-`test:ui`, `test:debug`) nunca termina, então o gate não o executa.
+sozinha vale como a suíte, com uma exceção: modo watch nunca termina, então o
+gate não o executa. `watch`, `ui` e `debug` são lidos como segmentos inteiros
+do nome, o que pega `test:watch:all` e deixa `test:watchdog` em paz.
+
+Em repositório poliglota o cap sobrevive aos outros stacks. Go com testes ao
+lado de uma metade JS que ninguém contou ainda imprime `checks=typecheck,test`,
+porque cada palavra veio de um manifesto diferente — e aí o gate se recusa a
+dizer GREEN, e nomeia o stack que ficou sem suíte.
 
 Com o nível anunciado, ela cria a branch de limpeza e segue:
 
@@ -241,6 +247,11 @@ rollback joga fora foi ela mesma que criou.
 - Pasta sem git também cai em RED, mesmo com typecheck e testes passando. Sem
   commit não existe rollback, e é o rollback que sustenta a autonomia do resto
   do pipeline.
+- A categoria de deps roda o install simples do gerenciador depois de podar o
+  manifesto, então o lockfile é reescrito e o `node_modules` é resolvido de
+  novo. Essa parte fica fora do rollback: o `git restore` traz de volta o
+  `package.json` e o lockfile, nunca a árvore instalada. Se uma categoria
+  falhar, rode o install outra vez.
 
 ## Créditos
 

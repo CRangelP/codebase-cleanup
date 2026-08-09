@@ -111,7 +111,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validated 2026-08: 70/70 cases, 5/5 properties, 77/77 invariants
+# validated 2026-08: 75/75 cases, 5/5 properties, 77/77 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -174,8 +174,14 @@ In JS/TS the same cap covers a sliced suite: with no `test` script and both
 `test:unit` and `test:e2e` in the manifest, no slice answers for the whole
 suite and the gate counts none of them. Promoting by hand is the wrong move
 here, because the suite is not somewhere else, it is split; run every slice. A
-lone slice does count as the suite, with one exception: watch mode
-(`test:watch`, `test:ui`, `test:debug`) never exits, so the gate skips it.
+lone slice does count as the suite, with one exception: watch mode never exits,
+so the gate skips it. `watch`, `ui` and `debug` are read as whole segments of
+the name, which catches `test:watch:all` and leaves `test:watchdog` alone.
+
+In a polyglot repo the cap survives the other stacks. Go with tests next to a
+JS half that was never counted still prints `checks=typecheck,test`, because
+each word came from a different manifest — and there the gate refuses to say
+GREEN, naming the stack that has no suite instead.
 
 With the level announced, it creates the cleanup branch and proceeds:
 
@@ -246,6 +252,11 @@ rollback discards is what the skill itself created.
 - A folder with no git falls into RED as well, even with typecheck and tests
   passing. With no commit there is no rollback, and the rollback is what holds
   up the autonomy of the rest of the pipeline.
+- The unused-deps category runs the package manager's plain install after
+  pruning the manifest, so the lockfile is rewritten and `node_modules`
+  re-resolved. That part is outside the rollback: `git restore` brings back
+  `package.json` and the lockfile, never the installed tree. Run the install
+  again if a category fails.
 
 ## Credits
 

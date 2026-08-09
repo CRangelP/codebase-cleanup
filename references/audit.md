@@ -24,12 +24,14 @@ git log --no-merges --stat --since="6 months ago"
 git log --no-merges --since="6 months ago" --format= --name-only | sed '/^$/d' | sort | uniq -c | sort -rn
 ```
 
-Both filters have to be on both commands. Without `--since` the ranking is a
-lifetime touch count, and a file rewritten hard three years ago and untouched
-since outranks whatever is actually hot now. Without `--no-merges` a merge
-commit re-attributes every file it brings in, so the two views end up
-describing different commit sets and the intersection below is skewed by
-exactly the noise the flag removes.
+`--since` is the one that carries weight, and it has to be on both commands:
+without it the ranking is a lifetime touch count, and a file rewritten hard
+three years ago and untouched since outranks whatever is actually hot now.
+`--no-merges` does less than it looks. Git prints no diff for a merge unless
+asked with `-m` or `--cc`, so merges contribute no file names either way and
+the flag only keeps their empty entries out of the `--stat` read. Do not reach
+for `-m` to "fix" that: it credits the merge with every file it brought in, and
+one big merge then owns the top of the ranking.
 
 Intersect the 20 largest files with the 20 most modified — that intersection
 is where debt usually hides, and it is what separates "actually has debt"

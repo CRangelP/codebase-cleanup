@@ -333,15 +333,35 @@ done
 # bug: a block that creates one destination and then moves into a second one.
 # A move with no `/` in the destination is a rename in place and needs no
 # directory, so it is never flagged.
+# Both readers work on the last argument, not on a fixed field number: `git mv`
+# takes flags and takes several sources into one directory, and `dest = $4`
+# read the wrong token in either case — a flag shifted the fields, and the
+# wrong token usually has no `/`, so the move was quietly exempted instead of
+# checked. Trailing comments are cut first (the repo's own example carries one),
+# option words are skipped, and surrounding double quotes are stripped so a
+# quoted path registers under the name the move actually uses.
 gitmv_orphans() {
   awk '
+    function args(line,   i, n, out) {   # the words of <line>, comments and flags out
+      sub(/[[:space:]]+#.*$/, "", line)
+      n = split(line, out, "[[:space:]]+")   # a string, not a /literal/: mawk
+      argc = 0
+      for (i = 1; i <= n; i++) {
+        if (out[i] == "" || out[i] ~ /^-/) continue
+        gsub(/"/, "", out[i])
+        argv[++argc] = out[i]
+      }
+      return argc
+    }
     /^[[:space:]]*```/       { split("", made); next }
     /^[[:space:]]*$/         { split("", made); next }
-    /^[[:space:]]*mkdir -p / { for (i = 3; i <= NF; i++) {
-                                 d = $i; gsub(/\/+$/, "", d); made[d] = 1
+    /^[[:space:]]*mkdir -p/  { n = args($0)
+                               for (i = 2; i <= n; i++) {      # argv[1] is "mkdir"
+                                 d = argv[i]; gsub(/\/+$/, "", d); made[d] = 1
                                }
                                next }
-    /^[[:space:]]*git mv /   { dest = $4
+    /^[[:space:]]*git mv /   { n = args($0)
+                               dest = argv[n]                  # last word, never $4
                                if (sub(/\/[^\/]*$/, "", dest) && !(dest in made))
                                  print FILENAME ":" FNR ": " $0 }
   ' "$1"
@@ -356,17 +376,24 @@ gitmv_orphans() {
 # uncover it), `git mv g` the blank-line reset for the same reason, `git mv d`
 # the leading-whitespace tolerance. `git mv h i` renames in place and must stay
 # unflagged even though no mkdir names `i`.
+# The last block pays for the argument reader: `git mv j` is only unflagged if
+# the quotes came off the mkdir, and `git mv -f k` and the multi-source
+# `git mv l m src/s/` are only flagged if the destination is read as the last
+# word — a fixed `$4` reads `k` and `m`, neither of which has a `/`, so both
+# uncovered moves would slip through as renames in place.
 printf '%s\n' '```bash' 'mkdir -p src/x' 'git mv a src/x/a' 'git mv b src/x/b' \
               'git mv c src/y/c' '```' 'git mv e src/x/e' \
               '```bash' 'mkdir -p src/y' 'git mv f src/y/f' '' 'git mv g src/y/g' '```' \
               '' '   git mv d gone/d' \
               '```bash' 'mkdir -p src/z' 'git mv h i' '```' \
+              '```bash' 'mkdir -p "src/q"' 'git mv j src/q/j' 'git mv -f k src/r/k' \
+              'git mv l m src/s/' '```' \
               > "$SELFTMP/moves.md"
 orphans=$(gitmv_orphans "$SELFTMP/moves.md")
 got=$(printf '%s' "$orphans" | grep -c .)
 check "git mv scanner flags the uncovered moves and only those" \
-      "$([[ $got -eq 4 ]] && echo 0 || echo 1)" \
-      "flagged $got line(s), expected 4:
+      "$([[ $got -eq 6 ]] && echo 0 || echo 1)" \
+      "flagged $got line(s), expected 6:
 $orphans"
 
 # IFS is pinned to newline: the list comes from grep -l, and the default IFS
@@ -391,14 +418,26 @@ IFS=$old_ifs
 # that has to hold in any language.
 LEVEL_FILES="SKILL.md README.md README.en.md"
 
+# LEVEL_CELL — a level standing alone in its own cell, bold or not. Both
+# extractors below use it, and that is the point: naming a level in a row's
+# prose ("not GREEN, a partial net") must not make the row count as that level's
+# row for one of them and not the other. It is also what keeps some other table
+# from being mistaken for this one — references/other-stacks.md has rows like
+# `| Go | deadcode | yes, at GREEN |`, where GREEN is prose inside a cell, not
+# the cell.
+# Written with bracket expressions rather than backslash escapes: awk's `-v`
+# eats one level of backslash before the regex is ever compiled, so `\|` would
+# arrive as a bare alternation and the pattern would not compile.
+LEVEL_CELL='[|][[:space:]]*[*]*(GREEN|YELLOW|RED)[*]*[[:space:]]*[|]'
+
 # level_rows <file> — the rows of the level table. Anchored to the table, not
-# to the file: the first run of consecutive `|` lines that mention a level is
+# to the file: the first run of consecutive `|` lines carrying a level cell is
 # the table, and the run ends at the first line that is not a table row. A
 # level word in some other table of the same file (an exit-code table, a
 # per-stack table) is then neither counted as a row nor picked up as one.
 level_rows() {
-  awk '
-    /^\|/ && /GREEN|YELLOW|RED/ { intable = 1; print; next }
+  awk -v cell="$LEVEL_CELL" '
+    /^\|/ && $0 ~ cell { intable = 1; print; next }
     intable && !/^\|/ { exit }
   ' "$1"
 }
@@ -410,8 +449,10 @@ level_rows() {
 # requirement. What may not differ is which levels exist and how they escalate.
 level_shape() {
   level_rows "$1" |
-  awk 'match($0, /GREEN|YELLOW|RED/) {
+  awk -v cell="$LEVEL_CELL" 'match($0, cell) {
          l = substr($0, RSTART, RLENGTH)
+         match(l, /GREEN|YELLOW|RED/)
+         l = substr(l, RSTART, RLENGTH)
          if (l != prev) { out = out sep l; sep = " " }
          prev = l
        } END { print out }'
@@ -423,7 +464,13 @@ level_shape() {
 # the collapse is of consecutive repeats and not a global dedupe: with a
 # seen-set the fixture would still read GREEN YELLOW RED and a real table that
 # lost a level would slip through the check unchanged.
-printf '%s\n' '| a | GREEN | x |' '| b | YELLOW | x |' '| c | YELLOW | x |' \
+# The decoy row on top is the third half: it names a level inside a cell of
+# prose, the shape references/other-stacks.md already uses. Matching a level
+# anywhere in a `|` line would open the table there, and the blank line under it
+# would close the table again before the real one ever started — the extractor
+# would read [GREEN] and every assertion below it would be about the wrong rows.
+printf '%s\n' '| go | deadcode | yes, at GREEN |' '' \
+              '| a | GREEN | x |' '| b | YELLOW | x |' '| c | YELLOW | x |' \
               '| d | RED | x |' '| e | YELLOW | x |' '' 'prose' '| f | GREEN | x |' \
               > "$SELFTMP/levels.md"
 got=$(level_shape "$SELFTMP/levels.md")
@@ -522,6 +569,11 @@ check "no churn ranking variant in the repo" \
 # which of the two is lying. gate_test.sh calls its counting helpers exactly
 # once per line, continuation lines included (they start with the argument, not
 # with the helper), so the call sites are the total without running anything.
+# One assumption the count makes and cannot check: ten of those call sites are
+# inside gate_test.sh's `if command -v perl`, so the total counted here is the
+# one the documented docker image produces — node:22-bookworm ships perl. A host
+# without perl skips that block and prints ten fewer; the READMEs quote the
+# figure from the command they publish, which is the docker one.
 # The properties and invariants figures come from loops over derived lists and
 # have no static equivalent; they stay on the honour system.
 gate_cases=$(grep -cE '^[[:space:]]*(case_run|assert_log|assert_no_log|assert_reaped|elapsed_lt) ' \
