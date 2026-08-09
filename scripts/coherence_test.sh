@@ -1021,6 +1021,21 @@ check "out_plain is derived from strip_ansi" \
       "$(js_script_body | grep -qE 'out_plain=.*\|[[:space:]]*strip_ansi' && echo 0 || echo 1)" \
       "out_plain must be the capture passed through strip_ansi, nothing else"
 
+# The four checks above are shape-based: they find classification by looking for
+# a pipeline that ends in a matcher. Five spellings escape that shape —
+# `case $out in`, `[[ $out == *FAIL* ]]`, `[ -n "$(... | grep FAIL)" ]`, a
+# here-string `grep -q <<<"$out"`, and `sed -n /FAIL/p` — so a detector written
+# any of those ways would read the colored capture with the section still green.
+# Counting closes all five at once and needs no catalogue of spellings: inside
+# js_script the raw `$out` has exactly two legitimate readers, and both are
+# named here. Anything else touching it is a third reader, and a third reader is
+# the bug coming back.
+raw_out=$(js_script_body | grep -oE '\$out\b|\$\{out\}' | grep -c .)
+check "js_script reads the raw capture exactly twice" \
+      "$([[ ${raw_out:-0} -eq 2 ]] && echo 0 || echo 1)" \
+      "found ${raw_out:-0} reads of \$out; the only two allowed are the passthrough
+that prints the user's own colored output and the one that feeds strip_ansi"
+
 # 13. The plugin manifests agree with each other and with the docs. ----------
 # The version in plugin.json is the cache key that decides whether an install
 # sees an update at all: pinned and never bumped, a user stays on the version

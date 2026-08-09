@@ -246,10 +246,22 @@ uncounted_suite() {
 # which no terminal ever colours — they do not need this and adding it there
 # would be noise. A new stack that classifies by runtime output must route its
 # capture through out_plain, or it is born with the same blindness.
+# LC_ALL=C is the load-bearing part, not tidiness. Under a UTF-8 locale BSD sed
+# aborts with "RE error: illegal byte sequence" on the first invalid byte — and a
+# test runner writes plenty of them: a truncated multibyte char at a buffer
+# boundary, a binary diff, a filename in another encoding. sed then exits
+# non-zero having written nothing, out_plain comes back EMPTY, no detector
+# matches anything, and the exit-0 path counts the suite as run: GREEN over a
+# repo with zero tests, which is the exact failure this whole change exists to
+# remove, re-entering through its own fix. Byte semantics also cost nothing
+# here: the escapes being deleted are ASCII, and every multibyte character —
+# the node:test marker among them — passes through untouched, so the
+# UTF-8-aware greps downstream see the same bytes they always did.
 ESC=$(printf '\033')
 BEL=$(printf '\007')
+CR=$(printf '\r')
 strip_ansi() {
-  sed "s/${ESC}\[[0-9;?]*[a-zA-Z]//g; s/${ESC}\][^${BEL}]*${BEL}//g"
+  LC_ALL=C sed "s/${CR}\$//; s/.*${CR}//; s/${ESC}\[[0-9;?]*[a-zA-Z]//g; s/${ESC}\][^${BEL}]*${BEL}//g"
 }
 
 py_missing() {
@@ -373,6 +385,12 @@ if [[ -f package.json ]]; then
       # 'ELIFECYCLE  Command failed', yarn 'error Command failed with exit code
       # 1.', bun 'error: script "test" exited with code 1' — non-empty lines
       # carrying "failed" after the runner's own message.
+      # npm renamed its own prefix: 'npm ERR!' through npm 9, 'npm error' from
+      # npm 10. Matching only the old spelling left this filter inert on every
+      # current npm — a legitimately empty suite came back RED because the
+      # epilogue survived into ev and the failure guard read it as the failure.
+      # Same lesson the pnpm line above already paid for, one package manager
+      # over: the spelling is the tool's, and tools rename theirs.
       # pnpm changed this line between majors: v9 and older print
       # ' ELIFECYCLE  Command failed with exit code 1.', v10/v11 print
       # '[ELIFECYCLE] Test failed. See above for more details.' (and
@@ -380,7 +398,7 @@ if [[ -f package.json ]]; then
       # only the older spelling left the fix inert on every current pnpm, so
       # both the brackets and both nouns are optional here.
       ev=$(printf '%s\n' "$out_plain" | grep -vE \
-        '^[[:space:]]*(error Command failed with exit code|.*\[?ELIFECYCLE\]?[[:space:]]+(Command|Test) failed|npm ERR!|error: script .* exited with code|info Visit https://yarnpkg)')
+        '^[[:space:]]*(error Command failed with exit code|.*\[?ELIFECYCLE\]?[[:space:]]+(Command|Test) failed|npm ERR!|npm error|error: script .* exited with code|info Visit https://yarnpkg)')
       if [[ $rc -eq 0 ]]; then
         # Exit 0 is not proof a suite ran. `--passWithNoTests` (jest, vitest)
         # turns an empty suite into a success on purpose, which is the right

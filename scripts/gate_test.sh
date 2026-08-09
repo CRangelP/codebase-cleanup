@@ -863,6 +863,15 @@ stub_body "$EMPTY_NPM_PLAIN" npm 'for a in "$@"; do [ "$a" = typecheck ] && exit
 echo "No test files found, exiting with code 1"
 echo "npm ERR! Test failed.  See above for more details."
 exit 1'
+EMPTY_NPM10="$TMP/stubs-empty-npm10"
+# npm 10 renamed its epilogue prefix from 'npm ERR!' to 'npm error'. A filter
+# that knows only the old spelling is inert on every current npm, so a
+# legitimately empty suite comes back RED — the epilogue survives into ev and
+# the failure guard reads the package manager's own noise as the failure.
+stub_body "$EMPTY_NPM10" npm 'for a in "$@"; do [ "$a" = typecheck ] && exit 0; done
+echo "No test files found, exiting with code 1"
+echo "npm error Lifecycle script \`test\` failed with error:"
+exit 1'
 POETRY="$TMP/stubs-poetry"
 stub "$POETRY" poetry 0
 CARGO="$TMP/stubs-cargo"; stub "$CARGO" cargo 0
@@ -1028,6 +1037,9 @@ case_run js-empty-npm-color 0 "$TMP/js-empty-suite" "$EMPTY_NPM_COLOR:$PATH" \
          "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
          '!RED' '!GREEN'
 case_run js-empty-npm-plain 0 "$TMP/js-empty-suite" "$EMPTY_NPM_PLAIN:$PATH" \
+         "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
+         '!RED' '!GREEN'
+case_run js-empty-npm10 0 "$TMP/js-empty-suite" "$EMPTY_NPM10:$PATH" \
          "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
          '!RED' '!GREEN'
 GATE_ENV="FORCE_COLOR=1 CLICOLOR_FORCE=1"

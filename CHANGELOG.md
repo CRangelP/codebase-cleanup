@@ -46,10 +46,35 @@ Fecha a [#35](https://github.com/CRangelP/codebase-cleanup/issues/35).
 - Seis casos no `gate_test.sh` (127 → 133), quatro deles **reprovando** o
   `gate.sh` anterior, mais um par de controle sem cor e um caso que trava a
   decisão de projeto — a saída exibida tem de continuar contendo os escapes.
-- **Seção 15 do `coherence_test.sh`** (295 invariantes): nenhum ponto de
+- **Seção 15 do `coherence_test.sh`** (296 invariantes): nenhum ponto de
   classificação de `js_script` pode ler `$out`, e o invariante exige que
   `strip_ansi` exista e que `out_plain` derive dela — sem isso ele passaria por
-  vacuidade justamente sobre o código que o defeito removeria.
+  vacuidade justamente sobre o código que o defeito removeria. O check de
+  contagem fecha as cinco formas que um teste baseado em forma deixaria passar
+  (`case`, `[[ ==` , `[ -n $(…) ]`, here-string, `sed -n /…/p`): dentro de
+  `js_script` a captura crua tem exatamente dois leitores legítimos, e um
+  terceiro leitor é o defeito voltando.
+
+### Corrigido também, achado na revisão do próprio PR
+
+- **`LC_ALL=C` no `strip_ansi`.** Sob locale UTF-8 o `sed` do BSD aborta com
+  `illegal byte sequence` no primeiro byte inválido — e um runner escreve
+  vários: multibyte truncado num limite de buffer, diff binário, nome de arquivo
+  em outra codificação. O `sed` saía sem escrever nada, `out_plain` voltava
+  **vazio**, nenhum detector casava e o ramo de exit 0 contava a suíte como
+  executada: GREEN sobre repo com zero teste, ou seja o defeito da #35
+  reentrando pela porta do próprio conserto. O default do macOS era o lado
+  inseguro.
+- **`\r` e OSC** entram na normalização. Um spinner reescreve a linha com
+  carriage return e a âncora `^` morre no lixo à esquerda; um hyperlink `OSC 8`
+  envolve o texto que linka, então o byte antes de `FAIL` é o `BEL` que fecha a
+  sequência e a guarda de falha cega igual à cor. O `s/${CR}$//` antes do
+  `s/.*${CR}//` existe porque a segunda regra sozinha apagaria a linha inteira
+  em CRLF e mataria o detector `tests 0`.
+- **`npm error`.** O npm renomeou o próprio prefixo de epílogo em v10, e o
+  filtro conhecia só `npm ERR!` — inerte em todo npm atual, com uma suíte
+  legitimamente vazia voltando RED porque o epílogo sobrevivia em `ev` e a
+  guarda lia o ruído do gerenciador como a falha.
 
 ## [0.2.0] — 2026-08-09
 
