@@ -221,6 +221,26 @@ check "gate.sh only exits documented codes" \
       "$([[ -z $undocumented ]] && echo 0 || echo 1)" \
       "exit code(s) outside the documented 0/1/2/3/4:$undocumented"
 
+# Every invocation of the gate in the protocol resolves through the plugin
+# root. Installed as a plugin the skill is copied into a cache directory whose
+# path nobody can guess, and a bare `scripts/gate.sh` would then be read as
+# relative to the *project* being cleaned, where it does not exist — the run
+# would lose the one script that decides its level. The `:-.` keeps the plain
+# skill install working, so the canonical form is the whole form, braces and
+# fallback included. The READMEs are exempt on purpose: there the path names
+# the file on disk (a file tree, a requirements list), it is not a step anyone
+# runs.
+GATE_CALL='"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"'
+for f in SKILL.md references/*.md; do
+  [[ -f $f ]] || continue
+  loose=$(grep -o -F -- 'scripts/gate.sh' "$f" 2>/dev/null | wc -l)
+  canon=$(grep -o -F -- "$GATE_CALL" "$f" 2>/dev/null | wc -l)
+  check "the gate is called through the plugin root in $f" \
+        "$([[ $((loose)) -eq $((canon)) ]] && echo 0 || echo 1)" \
+        "$((loose)) mentions of scripts/gate.sh, $((canon)) of them canonical
+the canonical form is $GATE_CALL"
+done
+
 # 3. Strings the docs stopped meaning are gone from the repo. -----------------
 # Each one described a protocol that no longer exists; a copy left behind
 # contradicts the current one.

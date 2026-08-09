@@ -102,7 +102,8 @@ the merge, `git revert <sha>` takes that folder back with its imports and its
 docs, in one shot.
 
 `git add -- <paths this folder move touched>` (pathspecs only — never
-`git add -A` / `git add .`) and then `scripts/gate.sh` at the end of each
+`git add -A` / `git add .`) and then
+`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` at the end of each
 folder — staged first, so that the rollback also undoes files created during
 the move. Typecheck alone is not enough here: the "Do not forget" list below
 is mostly made of things that only break at runtime, and the test suite is

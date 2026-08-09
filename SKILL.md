@@ -103,9 +103,14 @@ normally — it will branch off that commit, which is exactly what you want. Not
 in the final report that the work started from a detached HEAD, so the user
 knows where the branch came from.
 
-With a clean tree and a repo, run the baseline gate with `scripts/gate.sh`
-(path relative to this skill's directory; it accepts the project directory as
-an argument) and classify. The
+With a clean tree and a repo, run the baseline gate with
+`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` and classify. Installed as a
+plugin, `CLAUDE_PLUGIN_ROOT` holds the absolute path of this plugin's
+directory, so the call resolves from whatever directory the run happens to be
+in; installed as a plain skill the variable is unset and `:-.` falls back to
+the path relative to this file, which is what it always was. Either way the
+script accepts the project directory as an argument and defaults to the
+current one. The
 script detects the stack from the root manifest — `package.json`, `go.mod`,
 `Cargo.toml`, `pyproject.toml`/`setup.cfg`, `pom.xml`/`build.gradle`,
 `Gemfile`, `sln`/`csproj`/`fsproj` — and runs typecheck and tests for each one
@@ -342,7 +347,8 @@ Never exclude tests with `ignore` to get the same effect.
 **Default scope.** Run all three without asking (GREEN level) or the first two
 (YELLOW). Each one is: delete → (deps only: install / re-resolve) → stage
 pathspecs → gate → commit → regenerate the report. For the gate, use
-`scripts/gate.sh` (it detects the stack and the package manager and runs
+`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` (it detects the stack and the
+package manager and runs
 typecheck + tests in the right order); if it exits with code 3, find the
 stack's own check commands — the `package.json` scripts, the tox env, the
 Makefile target, whatever this repo uses — and run them by hand.
@@ -553,7 +559,8 @@ with a simple interface is exactly what you *want*).
 ## Implementation
 
 After the choice, run on your own: one module at a time, one commit per
-consolidation, and `scripts/gate.sh` once — after staging pathspecs of what
+consolidation, and `"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` once — after
+staging pathspecs of what
 this consolidation touched, right before the commit. Do not gate between the
 intermediate steps: with the new interface in place and the callers not
 migrated yet, the build is red by construction, and a gate you expect to fail
@@ -621,7 +628,8 @@ The move, the import or alias update and the `CLAUDE.md` update go in the
 history, and there is no gate that a half-done move can pass.
 
 Stage with pathspecs of what this folder move touched (`git add -- …`), never
-`git add -A`, and then `scripts/gate.sh` at the end of each folder —
+`git add -A`, and then `"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` at the end
+of each folder —
 typecheck alone misses what a move actually breaks (config paths, dynamic
 imports; the "Do not forget" list in `references/phase-3-structure.md` has
 the rest). Failed: `git restore --staged --worktree .`, record it, next
