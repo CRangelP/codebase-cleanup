@@ -951,6 +951,91 @@ check "SKILL.md names every catalog id" \
       "in SKILL.md: $(skill_ids | tr '\n' ' ')
 in the catalog: $(printf '%s' "$table" | tr '\n' ' ')"
 
+# 15. The JS gate classifies normalized output, never the colored capture. ----
+# gate.sh's js_script() decides GREEN/YELLOW/RED by matching the runner's own
+# text, with regexes anchored at ^ and $. The capture is the user's output and
+# stays colored on purpose, so every anchor sat behind an SGR escape: a repo
+# with zero tests reached GREEN ('\e[34m<i> tests 0\e[39m' never matches
+# 'tests 0$', the reset is after the 0), and a suite that really failed was
+# capped as uncounted because the failure guard could not see a colored FAIL.
+# The fix normalizes once at the capture boundary — strip_ansi -> out_plain,
+# with ev derived from out_plain — and this section is what keeps it: a new
+# detector that reads $out again is born with the same blindness, and its
+# fixtures would all pass because test fixtures are written without color.
+# Displaying $out is the one legitimate read; it is not a pipeline into a
+# matcher, so it never shows up here.
+# bash_body is deliberately not used: it erases quoted text, which is exactly
+# the '"$out"' we have to read. Whole-line comments are dropped instead, which
+# is gate.sh's comment style; a matcher hidden in a trailing comment would be
+# counted, and that only ever costs a false failure.
+js_script_body() { # gate.sh's js_script() body, whole-line comments dropped
+  awk '
+    !f && /^[[:space:]]*js_script\(\)[[:space:]]*\{/ {
+      f = 1; match($0, /^[[:space:]]*/); pad = substr($0, 1, RLENGTH); next
+    }
+    f && $0 == pad "}" { exit }
+    f { print }
+  ' scripts/gate.sh 2>/dev/null | grep -v '^[[:space:]]*#'
+}
+
+# The classification points: a shell pipeline whose sink is a matcher — grep -q
+# (a decision), grep -v (the epilogue filter that builds ev) or awk. Anything
+# else piped from the capture (strip_ansi itself) is normalization, not a
+# verdict, and is not one of these.
+js_classify_lines() {
+  js_script_body | grep -E '\|[[:space:]]*(grep[[:space:]]+-[a-zA-Z]*[qv][a-zA-Z]*|awk)'
+}
+
+# The variables those lines read. The regexes on the same line are single
+# quoted, and a '$' anchor inside them is not followed by a name character, so
+# only the shell expansions come out.
+js_classify_vars() {
+  js_classify_lines | grep -oE '\$[A-Za-z_][A-Za-z_0-9]*' | sed 's/^\$//' | sort -u
+}
+
+n_classify=$(js_classify_lines | grep -c .)
+classify_vars=$(js_classify_vars)
+bad_vars=$(printf '%s\n' "$classify_vars" | grep -vE '^(out_plain|ev)$' | grep . || true)
+
+# Floor, same reason as in section 4: six decision points is what the JS path
+# was audited to have. An extraction that comes back empty — js_script renamed,
+# the matchers moved behind a helper — would leave the checks below inspecting
+# an empty list and passing over a gate nobody is guarding any more.
+check "gate.sh js_script has at least 6 classification points" \
+      "$([[ $n_classify -ge 6 ]] && echo 0 || echo 1)" \
+      "found $n_classify; the extractor no longer sees the matchers"
+
+check "every js_script classification reads out_plain or ev" \
+      "$([[ -z $bad_vars ]] && echo 0 || echo 1)" \
+      "reads: $(printf '%s' "$bad_vars" | tr '\n' ' ')-- \$out is the colored
+capture shown to the user; anchored regexes do not survive SGR escapes"
+
+# Without these two the invariant above is decorative: a gate with no strip_ansi
+# and no out_plain has no classification point reading it, so the check passes
+# by vacuity — over the exact code the fix removed.
+check "gate.sh defines strip_ansi" \
+      "$(grep -qE '^[[:space:]]*strip_ansi\(\)' scripts/gate.sh 2>/dev/null && echo 0 || echo 1)" \
+      "the normalization the classification depends on is gone"
+
+check "out_plain is derived from strip_ansi" \
+      "$(js_script_body | grep -qE 'out_plain=.*\|[[:space:]]*strip_ansi' && echo 0 || echo 1)" \
+      "out_plain must be the capture passed through strip_ansi, nothing else"
+
+# The four checks above are shape-based: they find classification by looking for
+# a pipeline that ends in a matcher. Five spellings escape that shape —
+# `case $out in`, `[[ $out == *FAIL* ]]`, `[ -n "$(... | grep FAIL)" ]`, a
+# here-string `grep -q <<<"$out"`, and `sed -n /FAIL/p` — so a detector written
+# any of those ways would read the colored capture with the section still green.
+# Counting closes all five at once and needs no catalogue of spellings: inside
+# js_script the raw `$out` has exactly two legitimate readers, and both are
+# named here. Anything else touching it is a third reader, and a third reader is
+# the bug coming back.
+raw_out=$(js_script_body | grep -oE '\$out\b|\$\{out\}' | grep -c .)
+check "js_script reads the raw capture exactly twice" \
+      "$([[ ${raw_out:-0} -eq 2 ]] && echo 0 || echo 1)" \
+      "found ${raw_out:-0} reads of \$out; the only two allowed are the passthrough
+that prints the user's own colored output and the one that feeds strip_ansi"
+
 # 13. The plugin manifests agree with each other and with the docs. ----------
 # The version in plugin.json is the cache key that decides whether an install
 # sees an update at all: pinned and never bumped, a user stays on the version

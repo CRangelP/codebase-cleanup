@@ -9,6 +9,73 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.2.1] — 2026-08-09
+
+Correção de um defeito que fazia o gate mentir sobre a suíte — nas duas direções.
+Fecha a [#35](https://github.com/CRangelP/codebase-cleanup/issues/35).
+
+### Corrigido
+
+- **O gate classificava saída de runner JS sem normalizar ANSI.** As regexes de
+  decisão são ancoradas em `^` ou `$`, e a cor quebra as duas pontas: o escape
+  vem antes do texto, o reset vem depois do último caractere. Consequências
+  reproduzidas com npm e node reais:
+
+  - repo com **zero arquivo de teste** era classificado **GREEN** — o nível que
+    libera deleção autônoma de exports e as fases 2, 3 e 4. A frase que sustenta
+    o cap no `SKILL.md`, "uma suíte que não existe não pode passar", era falsa;
+  - suíte que **falhou** com marcador de falha colorido (`FAIL` em vermelho ao
+    lado de uma linha de suíte vazia sem cor) era lida como suíte inexistente e
+    virava YELLOW em vez de RED. Essa segunda direção não estava na issue; foi
+    encontrada ao investigar a primeira.
+
+  Isso não era borda de CI: `FORCE_COLOR=1` e `CLICOLOR_FORCE=1` são injetados
+  por harness de agente, que é onde esta skill mais roda.
+
+  A correção é uma normalização única na fronteira de captura (`strip_ansi` →
+  `out_plain`), não seis regexes remendadas: há um só ponto de captura, todos os
+  sete consumidores derivam dele, e remendar cada regex deixaria o próximo
+  detector nascer cego. A saída que o usuário vê continua colorida — o gate
+  observa, não reescreve.
+
+  `sed` POSIX, sem perl: o gate já degrada quando perl falta, e a normalização
+  não podia herdar essa dependência.
+
+### Adicionado
+
+- Seis casos no `gate_test.sh` (127 → 133), quatro deles **reprovando** o
+  `gate.sh` anterior, mais um par de controle sem cor e um caso que trava a
+  decisão de projeto — a saída exibida tem de continuar contendo os escapes.
+- **Seção 15 do `coherence_test.sh`** (296 invariantes): nenhum ponto de
+  classificação de `js_script` pode ler `$out`, e o invariante exige que
+  `strip_ansi` exista e que `out_plain` derive dela — sem isso ele passaria por
+  vacuidade justamente sobre o código que o defeito removeria. O check de
+  contagem fecha as cinco formas que um teste baseado em forma deixaria passar
+  (`case`, `[[ ==` , `[ -n $(…) ]`, here-string, `sed -n /…/p`): dentro de
+  `js_script` a captura crua tem exatamente dois leitores legítimos, e um
+  terceiro leitor é o defeito voltando.
+
+### Corrigido também, achado na revisão do próprio PR
+
+- **`LC_ALL=C` no `strip_ansi`.** Sob locale UTF-8 o `sed` do BSD aborta com
+  `illegal byte sequence` no primeiro byte inválido — e um runner escreve
+  vários: multibyte truncado num limite de buffer, diff binário, nome de arquivo
+  em outra codificação. O `sed` saía sem escrever nada, `out_plain` voltava
+  **vazio**, nenhum detector casava e o ramo de exit 0 contava a suíte como
+  executada: GREEN sobre repo com zero teste, ou seja o defeito da #35
+  reentrando pela porta do próprio conserto. O default do macOS era o lado
+  inseguro.
+- **`\r` e OSC** entram na normalização. Um spinner reescreve a linha com
+  carriage return e a âncora `^` morre no lixo à esquerda; um hyperlink `OSC 8`
+  envolve o texto que linka, então o byte antes de `FAIL` é o `BEL` que fecha a
+  sequência e a guarda de falha cega igual à cor. O `s/${CR}$//` antes do
+  `s/.*${CR}//` existe porque a segunda regra sozinha apagaria a linha inteira
+  em CRLF e mataria o detector `tests 0`.
+- **`npm error`.** O npm renomeou o próprio prefixo de epílogo em v10, e o
+  filtro conhecia só `npm ERR!` — inerte em todo npm atual, com uma suíte
+  legitimamente vazia voltando RED porque o epílogo sobrevivia em `ev` e a
+  guarda lia o ruído do gerenciador como a falha.
+
 ## [0.2.0] — 2026-08-09
 
 A fase 4 — remodelagem local. As três fases anteriores apagam, consolidam e

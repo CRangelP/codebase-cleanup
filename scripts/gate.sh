@@ -227,6 +227,43 @@ uncounted_suite() {
   no_tests "$@"
 }
 
+# strip_ansi — drop CSI and OSC escapes from stdin. sed, not perl: the watchdog
+# already degrades when perl is missing and classification must not inherit that
+# dependency. bash 3.2 has no $'\033', so the ESC byte comes from printf. The
+# class covers the parameter bytes any terminal-coloured runner emits
+# ([0-9;?]) and any final letter, so cursor and erase sequences from a progress
+# reporter disappear too, not only colour.
+# OSC goes with them, and it is not decoration. A hyperlink (`OSC 8`) wraps the
+# text it links, so a runner that makes a failing path clickable emits
+# `ESC]8;;file://…BEL` immediately before `FAIL` — and the failure guard is
+# anchored on `(^|[[:space:]])`, so it goes blind exactly the way colour made it
+# blind. Terminal-title OSC is the harmless case; the hyperlink is the one that
+# would have reproduced this whole bug under a different escape, and unlike the
+# title it does not need a TTY, only the env that turns it on.
+# Scope: only the JS/TS stack classifies by runner *text*, so it is the only
+# caller. Go, Rust, Python, JVM, .NET and Ruby decide an empty suite from
+# filesystem evidence (*_test.go, tests/*.rs, #[test], tests/, csproj markers),
+# which no terminal ever colours — they do not need this and adding it there
+# would be noise. A new stack that classifies by runtime output must route its
+# capture through out_plain, or it is born with the same blindness.
+# LC_ALL=C is the load-bearing part, not tidiness. Under a UTF-8 locale BSD sed
+# aborts with "RE error: illegal byte sequence" on the first invalid byte — and a
+# test runner writes plenty of them: a truncated multibyte char at a buffer
+# boundary, a binary diff, a filename in another encoding. sed then exits
+# non-zero having written nothing, out_plain comes back EMPTY, no detector
+# matches anything, and the exit-0 path counts the suite as run: GREEN over a
+# repo with zero tests, which is the exact failure this whole change exists to
+# remove, re-entering through its own fix. Byte semantics also cost nothing
+# here: the escapes being deleted are ASCII, and every multibyte character —
+# the node:test marker among them — passes through untouched, so the
+# UTF-8-aware greps downstream see the same bytes they always did.
+ESC=$(printf '\033')
+BEL=$(printf '\007')
+CR=$(printf '\r')
+strip_ansi() {
+  LC_ALL=C sed "s/${CR}\$//; s/.*${CR}//; s/${ESC}\[[0-9;?]*[a-zA-Z]//g; s/${ESC}\][^${BEL}]*${BEL}//g"
+}
+
 py_missing() {
   echo "[gate] $1 present but toolchain '$2' missing — looked in \$VIRTUAL_ENV/bin," \
        ".venv/bin, venv/bin, uv/poetry and PATH — manual gate" >&2
@@ -290,7 +327,7 @@ if [[ -f package.json ]]; then
     # "No test files found" on an empty suite, which must be a YELLOW cap
     # (uncounted), not RED. Typecheck still goes through run() unchanged.
     js_script() {
-      local kind=$1 name=$2 out rc ev outfile
+      local kind=$1 name=$2 out out_plain rc ev outfile
       if [[ $kind != test ]]; then
         if [[ $PM == yarn ]]; then run "$kind" yarn "$name"
         else run "$kind" "$PM" run "$name"; fi
@@ -320,6 +357,25 @@ if [[ -f package.json ]]; then
       out=$(cat "$outfile")
       rm -f "$outfile"
       printf '%s\n' "$out"
+      # Normalise once, here, for classification only. Every detector below is
+      # anchored, and an anchor is exactly what colour breaks — at both ends.
+      # '^No test files found' misses because the escape is printed *before* the
+      # text, so the line does not start with 'N'; 'tests[[:space:]]+0$' misses
+      # because the reset is printed *after* the last character, so the line does
+      # not end with '0'. That is not cosmetic: a repo where zero tests ran was
+      # announced GREEN, the level that unlocks dead-export deletion, and a suite
+      # that actually failed was demoted to an uncounted YELLOW because the
+      # real-failure guard could not see a coloured FAIL.
+      # The fix belongs on the boundary, not in the regexes: there are six
+      # decision points reading this capture and patching each one means keeping
+      # six escape-tolerant patterns in sync forever, while the *next* detector
+      # someone adds is born blind again. One plain value makes correctness the
+      # default.
+      # The line printed above is the untouched, still-coloured output: it is the
+      # user's own command talking to the user's own terminal, and the gate is
+      # here to judge it, not to rewrite it. Colour also survives in any log the
+      # caller redirects, so the two concerns stay separate.
+      out_plain=$(printf '%s\n' "$out" | strip_ansi)
       if wd_timed_out $rc; then
         echo "[gate] TIMEOUT after ${GATE_TIMEOUT}s at '$*'" >&2
         exit 4
@@ -329,14 +385,20 @@ if [[ -f package.json ]]; then
       # 'ELIFECYCLE  Command failed', yarn 'error Command failed with exit code
       # 1.', bun 'error: script "test" exited with code 1' — non-empty lines
       # carrying "failed" after the runner's own message.
+      # npm renamed its own prefix: 'npm ERR!' through npm 9, 'npm error' from
+      # npm 10. Matching only the old spelling left this filter inert on every
+      # current npm — a legitimately empty suite came back RED because the
+      # epilogue survived into ev and the failure guard read it as the failure.
+      # Same lesson the pnpm line above already paid for, one package manager
+      # over: the spelling is the tool's, and tools rename theirs.
       # pnpm changed this line between majors: v9 and older print
       # ' ELIFECYCLE  Command failed with exit code 1.', v10/v11 print
       # '[ELIFECYCLE] Test failed. See above for more details.' (and
       # '[ELIFECYCLE] Command failed…' for a script not named test). Matching
       # only the older spelling left the fix inert on every current pnpm, so
       # both the brackets and both nouns are optional here.
-      ev=$(printf '%s\n' "$out" | grep -vE \
-        '^[[:space:]]*(error Command failed with exit code|.*\[?ELIFECYCLE\]?[[:space:]]+(Command|Test) failed|npm ERR!|error: script .* exited with code|info Visit https://yarnpkg)')
+      ev=$(printf '%s\n' "$out_plain" | grep -vE \
+        '^[[:space:]]*(error Command failed with exit code|.*\[?ELIFECYCLE\]?[[:space:]]+(Command|Test) failed|npm ERR!|npm error|error: script .* exited with code|info Visit https://yarnpkg)')
       if [[ $rc -eq 0 ]]; then
         # Exit 0 is not proof a suite ran. `--passWithNoTests` (jest, vitest)
         # turns an empty suite into a success on purpose, which is the right
