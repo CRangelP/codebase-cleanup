@@ -60,7 +60,6 @@ of it, not a preference.
 git rev-parse --is-inside-work-tree       # is there a repo at all?
 git status --porcelain                    # anything uncommitted?
 git rev-parse --abbrev-ref HEAD           # current branch (HEAD = detached)
-[ -f package.json ] && grep -E '"(test|typecheck|lint|build)"' package.json
 ```
 
 Read those three answers before running anything else:
@@ -102,8 +101,10 @@ it finds (compiling counts as typecheck).
 Classify by the `[gate] checks=...` line, which lists what actually ran, and
 not by the exit code alone: GREEN requires `typecheck` and `test` in the list;
 a partial list caps at YELLOW, and the script itself says so. Exit 0 =
-everything that ran passed; 1 = something failed; 2 = bad path (the argument is
-not a directory the script can enter, so nothing was checked — fix the path and
+everything that ran passed; 1 = a check failed, which is RED — and the script
+stops at the first red, so there is no `checks=` line to classify by, only the
+`RED at '<cmd>'` line naming what broke; 2 = bad path (the argument is not a
+directory the script can enter, so nothing was checked — fix the path and
 rerun); 3 = no runnable check **or** some detected stack had no toolchain
 (`PARTIAL` — including in a polyglot repo where another stack passed); 4 = a
 check hit the watchdog (`GATE_TIMEOUT`, 900s per check by default, `0`
@@ -119,19 +120,53 @@ timeout: a check that legitimately exits 124 is read as a timeout.
 | Signal | Level | Behavior |
 |---|---|---|
 | Typecheck **and** tests pass | **GREEN** | Runs phases 1 and 3 in full without asking. Phase 2 stops at the checkpoint. |
-| Tests exist but fail, or typecheck only | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Stops before phase 2 and reports. |
-| No tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. Delivers a report. |
+| A partial net, or no test file in the stack | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Stops before phase 2 and reports. |
+| A check fails, or no tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. Delivers a report. |
 | No git repository | **RED** | Diagnoses only, regardless of the gate result — there is no HEAD to roll back to. |
 
 `checks=typecheck` because the stack has **no test file** is YELLOW, not GREEN,
 even though the gate exits 0 — a suite that does not exist cannot pass. The
-script names the stack in the `'test' not counted` line. Only the user promotes
-it, by pointing at the suite that lives somewhere the gate does not look; the
-skill never promotes itself.
+script names the stack in the `'test' not counted` line, and every stack whose
+suite could not be counted goes through it. Read those lines, not only
+`checks=`: in a polyglot repo one stack supplies the suite while another has
+none, so `checks=typecheck,test` can be describing two different stacks. The
+gate refuses to announce GREEN there and says why (`a detected stack has no
+countable suite`). Only the user promotes a cap, by pointing at the suite that
+lives somewhere the gate does not look; the skill never promotes itself.
 
-If the baseline is already broken, **fix it or warn before touching
-anything**. You need an initial green to distinguish what you broke from what
-was already broken.
+**Which npm script the gate reads.** For typecheck it takes the first of
+`typecheck`, `type-check`, `check-types` the manifest defines, and stops there.
+`tsc` is deliberately not on that list: as a script name it usually means an
+emitting compile, and the output would land beside the sources right before
+`git add -A` stages everything. The reverse is not covered: a script *named*
+`typecheck` whose body is `tsc -p .` with no `--noEmit` emits just the same, and
+the gate cannot tell. If the manifest has one, read it before phase 1.
+
+For the suite it takes `test`; failing that, a lone `test:*` script, since a
+repo that declares one slice and no whole is declaring its suite. Two or more
+slices and no `test` count as nothing — half a net classified GREEN would
+unlock dead-export deletion on code the other half covers — and a slice
+declared with an empty command still counts as one of them. A watch-mode slice
+never runs at all, because it does not exit: `watch`, `ui` and `debug` are
+matched as whole segments of the name, so `test:watch:all` is caught and
+`test:watchdog` is not. Not running one and not counting one are separate
+questions. `watch` and `debug` name a mode of the suite — the same tests,
+started so they never stop — so a `test:watch` beside a lone `test:unit` does
+not split anything and the real slice is still the suite. `ui` is not a mode
+word: `vitest --ui` does not exit either, but `test:ui` is just as often a scope
+of its own, so it is never run *and* never leaves the count — `test:unit` next
+to `test:ui` is two slices, not one. All of these print the `'test' not counted`
+line naming the slices, and so does a manifest that declares no test script at
+all. A split
+suite is **not** promotable by hand: it is in the manifest, only divided, so
+run every slice before deciding.
+
+**A baseline that already fails is RED, not YELLOW.** Exit 1 says a check
+broke, and a broken baseline leaves no way to tell what the cleanup broke from
+what was already broken. It also has nowhere to go: every commit here needs a
+green gate, so a run that starts red deletes, rolls back and commits nothing,
+category after category. **Fix it or warn before touching anything** — until
+then the deliverable is the diagnosis, naming the check that failed.
 
 Announce the detected level in one line and move on. Do not ask permission for
 the level.
@@ -246,8 +281,21 @@ graph (entry, project, paths, plugin), not to silence the output.
 ## 1.2 Run in production mode
 
 ```bash
-npx knip --production --reporter json > knip-report.json
+npx knip --production --no-exit-code --reporter json > knip-report.json.tmp && mv knip-report.json.tmp knip-report.json
 ```
+
+Write to a temp file and move only on success. A plain `> knip-report.json`
+truncates the file before knip even starts, so a crash leaves an empty report
+that 1.3 reads as "nothing to delete" — a silent failure. `--no-exit-code` is
+what makes the `&&` usable: knip exits 1 whenever it finds issues, which is the
+normal case here, and 2 only when it actually failed.
+
+Check the report before 1.3 consumes it: `knip-report.json.tmp` has to be gone,
+and `knip-report.json` has to be non-empty and parse as JSON. The temp file is
+the check that catches a failed run — when knip breaks, the `&&` skips the `mv`
+and the *previous* report stays on disk, non-empty and perfectly parseable, so
+the content checks alone would wave a stale list through. A `.tmp` left behind
+means the run did not finish: delete it and fix knip instead of proceeding.
 
 Production mode excludes tests and devDependencies automatically. That matters
 because a function imported only by a test is technically alive, but it is dead
@@ -259,15 +307,53 @@ Never exclude tests with `ignore` to get the same effect.
 ## 1.3 Delete in atomic commits, one per category
 
 Run all three without asking (GREEN level) or the first two (YELLOW). Each one
-is: delete → `git add -A` → gate → commit. For the gate, use `scripts/gate.sh`
-(it detects the stack and the package manager and runs typecheck + tests in the
-right order); if it exits with code 3, run the stack's equivalent commands by
+is: delete → (deps only: install) → `git add -A` → gate → commit → regenerate
+the report. For the gate, use `scripts/gate.sh` (it detects the stack and the
+package manager and runs typecheck + tests in the right order); if it exits
+with code 3, find the stack's own check commands — the `package.json` scripts,
+the tox env, the Makefile target, whatever this repo uses — and run them by
 hand.
 
 Staging before the gate is what makes the rollback complete, and it is safe
 here precisely because Step 0 refused to start on a dirty tree: everything
 `git add -A` picks up was produced by this step, so the `-A` cannot swallow work
 of the user's.
+
+The one thing `-A` picks up that this step did not produce is knip's own
+output. Before the first category, put `knip-report.json` and
+`knip-report.json.tmp` in the repo's exclude file — repo-local, so the user's
+`.gitignore` stays untouched. Ask git where it is rather than typing the path:
+`git rev-parse --git-path info/exclude`, because in a linked worktree, a
+submodule or a `--separate-git-dir` checkout `.git` is a *file* and appending to
+`.git/info/exclude` fails with `Not a directory`. Otherwise every category
+commits the report the previous one was read from, and the user reverting
+`chore: remove unused deps` gets a tool artifact back along with the
+dependencies.
+
+That exclude only reaches **untracked** paths. If a previous run of this skill
+already committed `knip-report.json`, git keeps staging it no matter what the
+exclude says, and the regeneration below puts a fresh diff in every category
+commit. Check with `git status --porcelain` after writing the exclude lines; if
+the report still shows up, find out whose it is first — `git log -1 --format=%s
+-- knip-report.json`. A previous run of this skill left `chore:` there and the
+file is a tool artifact: untrack it in a commit of its own before the first
+category (`git rm --cached knip-report.json`, then `chore: untrack knip
+report`). Anything else means the user tracks it on purpose: leave it tracked,
+say so in the report, and expect the report's diff in each commit. Do not
+untrack it either way as part of another category — left staged, the next `git
+add -A` folds that deletion into the deps commit, and reverting the deps
+category hands the artifact back, which is the thing the exclude was for. On
+the way out, delete the report and drop from the exclude file only the lines
+you added — leave anything that was already there, it is the user's — because
+the exclude makes a leftover invisible to `git status` and nobody would find it
+later.
+
+One more thing `-A` can swallow, created by this step and not committed on
+purpose: `node_modules`, after the install below. Confirm the repo ignores it
+before the deps category — a global `.gitignore` does not travel with the repo
+— and add it to `.git/info/exclude` if it does not. Empty directories are not
+on this list: git tracks files, so `git add -A` never stages one. The leftovers
+`mkdir -p` creates in phase 3 are a working-tree problem and are swept there.
 
 ```
 1. unused deps        → "chore: remove unused deps"
@@ -278,12 +364,52 @@ of the user's.
 Kept separate because if something breaks in production two weeks from now, the
 user needs to revert *one* commit — not a 400-file cleanup.
 
+**Unused deps: install after pruning the manifest.** Removing an entry from
+`package.json` does not remove the package from `node_modules`, and the gate
+never installs — the resolver still finds the package on disk, typecheck and
+tests pass, and the break only surfaces on CI or on the next machine that
+installs from the pruned manifest. So, after editing the manifest and before
+`git add -A`, run the package manager's plain install:
+
+```bash
+npm install                          # npm
+pnpm install --no-frozen-lockfile    # pnpm
+yarn install --no-immutable          # yarn berry (yarn 1: yarn install)
+bun install                          # bun
+```
+
+Plain, never the frozen form. `--frozen-lockfile`, `--immutable` and the CI
+defaults that turn them on refuse a lockfile that no longer matches the
+manifest — which is exactly the state a correct prune produces, so a good
+deletion would come back as a red gate for the wrong reason. `npm ci` is the
+same refusal under another name: it aborts with `EUSAGE` when `package.json`
+and `package-lock.json` are out of sync, and it never writes the lockfile, so
+it cannot get the prune out of this state either. The updated lockfile goes in
+this category's commit: it is what carries the prune to every other machine.
+
+**Regenerate the report between categories.** After each category's commit, run
+the 1.2 command again — same hardened form, same file — and read the next
+category from the fresh report. The three feed each other: deleting orphan
+files kills exports the old report still saw as alive and frees deps it saw as
+used, while some exports it lists as dead live in files the previous category
+already removed. On a frozen report those second-order items survive the
+cleanup and a category tries to edit paths that no longer exist. The cost is
+one extra knip run per category that commits.
+
+A category that is skipped (YELLOW does not run exports) or that fails its gate
+leaves no commit and nothing in the tree for knip to read differently, so there
+is nothing to regenerate from — keep the current report and go to the next
+category. The regeneration after the last category that did commit is the one
+the final report counts against.
+
 **If the gate fails:** `git restore --staged --worktree .`, record the category
 as failed in `CLEANUP_PROGRESS.md` along with the error, and **move on to the
 next category**.
 Do not stop the entire pipeline and do not try to fix it — if typecheck broke,
 knip was wrong about that category, and the useful information is which
-category, not a patch.
+category, not a patch. On the deps category, that restore brings back
+`package.json` and the lockfile but not `node_modules`: run the install again
+before starting orphan files.
 
 Do not run `knip --fix` until the config has settled for two or three rounds
 with no surprises.
@@ -410,6 +536,7 @@ structure with a rationale. Only then execute.
 GREEN level runs the whole plan without asking. One folder per commit:
 
 ```bash
+mkdir -p src/features/billing
 git mv src/utils/format.ts src/features/billing/format.ts   # always git mv
 ```
 
@@ -479,5 +606,12 @@ Branch: `cleanup/YYYYMMDD` · Level: GREEN · N commits
 - (nothing)
 ```
 
+The phase 1 line counts what each category actually removed, tallied per commit
+from the report that category ran on — not the numbers of the first report,
+which stopped describing the repo the moment the first commit landed. The last
+regeneration settles the rest: whatever it still lists is what survived, and it
+belongs under "Failed / not done", along with any category that was skipped.
+
 If the level was RED, the report is diagnosis only: list what you would do and
-what needs to exist (tests, typecheck) to make it possible.
+what needs to exist or be fixed (tests, typecheck, a baseline that passes) to
+make it possible.

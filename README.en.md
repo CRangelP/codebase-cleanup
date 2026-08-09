@@ -111,7 +111,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validated 2026-08: 57/57 cases, 5/5 properties, 49/49 invariants
+# validated 2026-08: 86/86 cases, 5/5 properties, 77/77 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -155,15 +155,42 @@ into one of three levels:
 
 | Level | Condition | What it does |
 |---|---|---|
-| GREEN | typecheck and tests pass | runs the full phases without asking |
+| GREEN | typecheck and tests pass | runs the phases without asking; phase 2 stops at the checkpoint |
 | YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports |
-| RED | no tests and no typecheck | diagnoses only; nothing is deleted |
+| RED | no tests and no typecheck, or a baseline already failing | diagnoses only; nothing is deleted |
+
+A project that arrives with a red suite falls into RED, not YELLOW: with a
+broken baseline there is no telling what the cleanup broke from what was
+already broken, and since every commit demands a green gate, none of them would
+happen. The skill names the failing check and stops there.
 
 A stack with no test file at all does not count as tested: the gate does not
-run the empty suite and the level stays at YELLOW. That covers Go and .NET
-with no test file, a Rust crate with no `tests/*.rs` and no `#[test]`, and a
-pytest run that exits 5 having collected nothing. If your suite lives outside
-the usual place, promoting it is your call — the gate never promotes itself.
+count an empty suite, whether it declined to run it or ran it and got nothing
+back, and the level stays at YELLOW. That covers Go and .NET
+with no test file, a Rust crate with no `tests/*.rs` and no `#[test]`, a Maven
+or Gradle build with no `src/test` anywhere, and a pytest run that exits 5
+having collected nothing. A manifest carried for tooling and nothing else — a
+`requirements.txt` for the docs build, a `Gemfile` for fastlane — is not a stack
+without a suite: with no source of that language in the repo, the gate says
+nothing about it. If your suite lives outside the usual place, promoting it is
+your call — the gate never promotes itself.
+
+In JS/TS the same cap covers a sliced suite: with no `test` script and both
+`test:unit` and `test:e2e` in the manifest, no slice answers for the whole
+suite and the gate counts none of them. Promoting by hand is the wrong move
+here, because the suite is not somewhere else, it is split; run every slice. A
+lone slice does count as the suite, with one exception: watch mode never exits,
+so the gate skips it. `watch`, `ui` and `debug` are read as whole segments of
+the name, which catches `test:watch:all` and leaves `test:watchdog` alone. Being
+skipped and being uncounted are not the same, though: `watch` and `debug` are a
+mode of the suite, so `test:watch` next to a lone `test:unit` leaves that slice
+as the suite; `test:ui` may well be a suite of its own, so it is skipped and
+still counted, and `test:unit` next to it is a split.
+
+In a polyglot repo the cap survives the other stacks. Go with tests next to a
+JS half that was never counted still prints `checks=typecheck,test`, because
+each word came from a different manifest — and there the gate refuses to say
+GREEN, naming the stack that has no suite instead.
 
 With the level announced, it creates the cleanup branch and proceeds:
 
@@ -218,9 +245,10 @@ rollback discards is what the skill itself created.
 - A dynamic import with a string assembled at runtime is invisible to the
   graph. The skill handles this by teaching knip (explicit entry) instead of
   deleting, but it is worth reviewing the generated `knip.json`.
-- RED level returns a report, not a cleanup. If the project has neither tests
-  nor typecheck, the first step is to create a minimal verification; the skill
-  points the way in the report itself.
+- RED level returns a report, not a cleanup. That covers a project with
+  neither tests nor typecheck, and one that arrives with a red suite. With no
+  tests, the first step is to create a minimal verification; with a broken
+  suite, it is to fix the check the report names.
 - Exit 124 is reserved for the watchdog, exactly as in GNU `timeout`: a
   check that legitimately exits 124 under an active watchdog reads as TIMEOUT.
 - With a single `.sln`/`.slnx` at the root the gate passes it explicitly to
@@ -233,6 +261,12 @@ rollback discards is what the skill itself created.
 - A folder with no git falls into RED as well, even with typecheck and tests
   passing. With no commit there is no rollback, and the rollback is what holds
   up the autonomy of the rest of the pipeline.
+- The unused-deps category runs the package manager's plain install after
+  pruning the manifest, so the lockfile is rewritten and `node_modules`
+  re-resolved. That part is outside the rollback: `git restore` brings back
+  `package.json` and the lockfile, never the installed tree. Run the install
+  again if that category is the one that fails; the other two never touch the
+  manifest and do not need it.
 
 ## Credits
 

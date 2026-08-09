@@ -3,6 +3,8 @@
 # Detects the stack from the root manifest (there may be more than one; runs all).
 # Requires bash (macOS 3.2 is fine). Usage: gate.sh [dir]
 # Output: "[gate] checks=..." lists what actually ran (compiling counts as typecheck).
+#   The verdict line below it is GREEN only when checks=typecheck,test AND every
+#   detected stack had a countable suite; otherwise it names the cap(s).
 # Exit 0 = everything that ran passed · 1 = some check failed ·
 # 2 = bad path (the argument is not a reachable directory: nothing was checked) ·
 # 3 = no runnable check OR a detected stack has no toolchain (PARTIAL) —
@@ -23,6 +25,7 @@ cd "$target" || {
 ran_typecheck=0
 ran_test=0
 incomplete=0
+uncounted=0
 
 # --- Watchdog ---------------------------------------------------------
 # A hanging check (a test waiting on a port, a REPL, a prompt) would freeze the
@@ -161,7 +164,7 @@ run() {
     exit 4
   fi
   if [[ -n $no_tests_rc && $rc -eq $no_tests_rc ]]; then
-    no_tests "$nt_label" "no tests collected (exit $rc)"
+    uncounted_suite "$nt_label" "no tests collected (exit $rc)"
     return 0
   fi
   if [[ $rc -ne 0 ]]; then
@@ -180,12 +183,30 @@ missing() {
   incomplete=1
 }
 
-# no_tests <stack> <reason> — a green run with no test file is not a tested
-# repo. Does not set incomplete: the verdict stays exit 0 with checks=typecheck,
-# which is the YELLOW cap, and the user can promote it by hand.
+# no_tests <stack> <reason> [advice] — a green run with no test file is not a
+# tested repo. Does not set incomplete: the verdict stays exit 0, which is the
+# YELLOW cap, and the user can promote it by hand. Every stack whose suite could
+# not be counted goes through here, because the literal "'test' not counted" is
+# the marker SKILL.md tells the agent to classify by. A checks= list that is
+# merely short (checks=test, no typecheck) is also a YELLOW cap and does not
+# come through here — the missing word in checks= is its own marker.
+# <advice> is how the user gets past the cap; it defaults to promotion, which
+# is wrong for a suite that is present but sliced, so those callers pass their own.
 no_tests() {
-  echo "[gate] $1: $2 — 'test' not counted (YELLOW cap; promote by hand if the" \
-       "suite lives elsewhere)" >&2
+  local advice=${3:-"promote by hand if the suite lives elsewhere"}
+  echo "[gate] $1: $2 — 'test' not counted (YELLOW cap; $advice)" >&2
+}
+
+# uncounted_suite <stack> <reason> [advice] — no_tests for a whole stack, plus
+# the flag the verdict reads. Without it a polyglot repo hides the cap: another
+# stack supplies 'test', checks= reads typecheck,test and the run is announced
+# GREEN while this stack's suite never ran — which is exactly what GREEN is not
+# allowed to mean, since it unlocks dead-export deletion. Per-project caps
+# inside one stack (a .NET project with no test project next to one that has
+# them) are not this: there the stack's suite did run, so they call no_tests.
+uncounted_suite() {
+  uncounted=1
+  no_tests "$@"
 }
 
 py_missing() {
@@ -242,12 +263,106 @@ if [[ -f package.json ]]; then
     echo "[gate] package.json unparseable — JS/TS checks skipped" >&2
     incomplete=1
   else
-    for script in typecheck test; do
-      if node -e "const s=require('./package.json').scripts||{};process.exit(s['$script']?0:1)" 2>/dev/null; then
-        if [[ $PM == yarn ]]; then run "$script" yarn "$script"
-        else run "$script" "$PM" run "$script"; fi
-      fi
-    done
+    # js_script <kind> <script> — invokes one package.json script under the
+    # canonical <kind>. What reaches run() is the *kind*, never the alias,
+    # because run() classifies by kind and an unknown word there would run the
+    # check and count nothing. The alias stays visible in the human
+    # '[gate] <cmd>' line; checks= keeps its canonical vocabulary.
+    js_script() {
+      if [[ $PM == yarn ]]; then run "$1" yarn "$2"
+      else run "$1" "$PM" run "$2"; fi
+    }
+
+    # js_typecheck_script — the first of the accepted spellings the project
+    # actually defines, in a single node pass. Projects name this script freely
+    # ('type-check', 'check-types'), and refusing anything but the canonical
+    # spelling made a fully covered repo look uncheckable. Exactly one script
+    # runs: the first name the project defines wins, the rest are ignored, so
+    # nothing runs or counts twice.
+    # 'tsc' is deliberately NOT an alias: as a script name it usually means an
+    # emitting compile ("tsc": "tsc -p ."), which would drop .js/.d.ts/.tsbuildinfo
+    # beside the sources of the tree being judged, right before phase 1.3 stages
+    # everything with 'git add -A' — and the documented rollback
+    # ('git restore --staged --worktree .') cannot remove untracked files.
+    # Echoes the script name, or nothing when the manifest declares none.
+    js_typecheck_script() {
+      node -e 'var s = require("./package.json").scripts || {};
+var names = ["typecheck", "type-check", "check-types"];
+for (var i = 0; i < names.length; i++) {
+  if (s[names[i]]) { console.log(names[i]); break; }
+}' 2>/dev/null
+    }
+
+    # js_test_script — decides which script stands for the *whole* suite.
+    # A plain 'test' always wins. Failing that, a 'test:*' script counts as the
+    # canonical test only when it is the sole candidate in the manifest: a repo
+    # with 'test:unit' and 'test:e2e' would otherwise report checks=typecheck,test
+    # — GREEN, which unlocks dead-export deletion and phases 2 and 3 — on a net
+    # where half the suite never ran. A slice declared with an empty command
+    # still counts towards that cardinality: dropping it would turn the same two
+    # halves into a lone slice and hand back the GREEN this rule exists to deny.
+    # A watch/interactive slice is not a candidate at all: it never exits, so
+    # running it as the gate's test can only ever end at the watchdog — 900s of
+    # stall for an exit 4 that reads as "the safety net could not be measured".
+    # 'watch', 'ui' and 'debug' are matched as whole segments of the name, so
+    # 'test:watch:all' and 'test:ui:headed' are caught too and 'test:watchdog'
+    # is not. Not running one and not counting one are two different questions,
+    # though: 'watch' and 'debug' name a *mode* of the suite — the same tests,
+    # started so they never exit — so they do not split it. 'ui' is not a mode
+    # word: 'vitest --ui' never exits either, but 'test:ui' is just as often a
+    # scope of its own that runs once, and the gate cannot tell. So it neither
+    # runs it nor lets it vanish from the count: a lone 'test:unit' beside a
+    # 'test:ui' is half a net, and half a net announced GREEN is the one thing
+    # this rule exists to deny. Slices are still listed in the report, so the
+    # cap is explained instead of silent. Same reasoning as the 'tsc' exclusion
+    # above: a name that means "not a check" is not promoted to one.
+    # Echoes 'run:<name>'; 'partial:<names>' when two or more slices split the
+    # suite; 'watch:<names>' when no slice can be run at all; nothing at all
+    # when the manifest declares no test script.
+    js_test_script() {
+      node -e 'var s = require("./package.json").scripts || {};
+if (s.test) { console.log("run:test"); }
+else {
+  var p = Object.keys(s).filter(function (k) { return k.indexOf("test:") === 0; });
+  var slices = p.filter(function (k) { return !/(^|:)(watch|debug)(:|$)/.test(k); });
+  var runnable = slices.filter(function (k) { return !/(^|:)ui(:|$)/.test(k); });
+  if (slices.length === 1 && runnable.length === 1) console.log("run:" + runnable[0]);
+  else if (slices.length > 1) console.log("partial:" + slices.join(" "));
+  else if (p.length > 0) console.log("watch:" + p.join(" "));
+}' 2>/dev/null
+    }
+
+    # A node failure on either lookup used to be a fully silent path: the empty
+    # answer is indistinguishable from "this manifest declares no such script",
+    # and the run would cap at YELLOW without a word about why. Both lookups
+    # report it the same way now.
+    if ! js_tc=$(js_typecheck_script); then
+      echo "[gate] package.json scripts unreadable — JS/TS typecheck skipped" >&2
+      incomplete=1
+    elif [[ -n $js_tc ]]; then
+      js_script typecheck "$js_tc"
+    fi
+
+    if ! js_test=$(js_test_script); then
+      echo "[gate] package.json scripts unreadable — JS/TS test check skipped" >&2
+      incomplete=1
+    else
+      case $js_test in
+        run:*)
+          js_script test "${js_test#run:}" ;;
+        partial:*)
+          uncounted_suite js "no 'test' script; test:* slices found (${js_test#partial:})" \
+                   "none of them stands for the whole suite; run them by hand" ;;
+        watch:*)
+          # Not "only watch mode": a lone 'test:ui' lands here too, and it may
+          # well be a suite that runs once — the gate declines it because it
+          # cannot tell, not because it knows the script hangs.
+          uncounted_suite js "no 'test' script; no slice the gate will run (${js_test#watch:})" \
+                   "watch mode never exits and a 'ui' slice may not either; add a script that runs the suite once" ;;
+        *)
+          uncounted_suite js "no 'test' script in package.json" ;;
+      esac
+    fi
   fi
 fi
 
@@ -260,7 +375,7 @@ if [[ -f go.mod ]]; then
     if [[ -n $(find . -name '*_test.go' -not -path './vendor/*' -print -quit 2>/dev/null) ]]; then
       run test go test ./...
     else
-      no_tests go "no *_test.go found"
+      uncounted_suite go "no *_test.go found"
     fi
   else missing go.mod go; fi
 fi
@@ -286,7 +401,7 @@ if [[ -f Cargo.toml ]]; then
     if [[ -n $rust_tests ]]; then
       run test cargo test --quiet
     else
-      no_tests rust "no #[test] or tests/*.rs found"
+      uncounted_suite rust "no #[test] or tests/*.rs found"
     fi
   else missing Cargo.toml cargo; fi
 fi
@@ -303,19 +418,42 @@ if [[ -f pyproject.toml || -f setup.py || -f setup.cfg || -f requirements.txt ]]
   if [[ -f pytest.ini || -d tests || -d test ]] || grep -qs '^\[tool\.pytest' pyproject.toml \
       || grep -qs '^\[tool:pytest\]' setup.cfg || grep -qs '^\[pytest\]' tox.ini; then
     py_run "test:5:python" python-tests pytest -q
+  # A cap only means something where there is Python to clean. requirements.txt
+  # is the loosest stack marker in this script — a docs build, a pre-commit pin,
+  # a deploy helper — and capping on it alone drags an otherwise green JS or Go
+  # repo down to YELLOW forever, for a "stack" that is one pip file. Same
+  # evidence rule as Go and Rust: a source file, not a manifest.
+  # Pruned, not filtered: a virtualenv holds thousands of .py files that are
+  # someone else's, and descending into it to reject them costs the walk anyway.
+  elif [[ -n $(find . \( -name .venv -o -name venv -o -name node_modules \
+        -o -name .git \) -prune -o -name '*.py' -print -quit 2>/dev/null) ]]; then
+    uncounted_suite python "no pytest config and no tests/ directory"
   fi
 fi
 
 # --- JVM (pom.xml and/or build.gradle — hybrid repos run both) ---
+# 'mvn test' and 'gradle test' on a project with no test source exit 0 having
+# run nothing — the same trap as 'go test' on a repo with no _test.go, except
+# that 'run both' has already counted 'test' by the time it shows. Both runners
+# take the standard layout, so a src/test directory is the evidence; without one
+# the run is capped and can no longer be announced GREEN. target/, build/ and a
+# vendored node_modules are output or someone else's code, never evidence, and
+# they are pruned rather than filtered so the walk does not enter them at all.
+jvm_ran=0
 if [[ -f pom.xml ]]; then
-  if [[ -x ./mvnw ]]; then run both ./mvnw -q test
-  elif command -v mvn >/dev/null; then run both mvn -q test
+  if [[ -x ./mvnw ]]; then run both ./mvnw -q test; jvm_ran=1
+  elif command -v mvn >/dev/null; then run both mvn -q test; jvm_ran=1
   else missing pom.xml mvn; fi
 fi
 if [[ -f build.gradle || -f build.gradle.kts ]]; then
-  if [[ -x ./gradlew ]]; then run both ./gradlew test
-  elif command -v gradle >/dev/null; then run both gradle test
+  if [[ -x ./gradlew ]]; then run both ./gradlew test; jvm_ran=1
+  elif command -v gradle >/dev/null; then run both gradle test; jvm_ran=1
   else missing build.gradle gradle; fi
+fi
+if [[ $jvm_ran -eq 1 ]] && [[ -z $(find . \( -name target -o -name build \
+      -o -name node_modules -o -name .git \) -prune -o -type d -path '*/src/test' \
+      -print -quit 2>/dev/null) ]]; then
+  uncounted_suite jvm "no src/test directory found"
 fi
 
 # --- Ruby (Gemfile) ---
@@ -323,7 +461,15 @@ if [[ -f Gemfile ]]; then
   if command -v bundle >/dev/null; then
     [[ -f sorbet/config ]] && run typecheck bundle exec srb tc
     if [[ -d spec ]]; then run test bundle exec rspec
-    elif [[ -f Rakefile && -d test ]]; then run test bundle exec rake test; fi
+    elif [[ -f Rakefile && -d test ]]; then run test bundle exec rake test
+    # Same evidence rule as Python: a Gemfile alone (fastlane, Jekyll, danger)
+    # in a repo of another stack is not a Ruby stack without a suite, it is not
+    # a Ruby stack. Capping on it would pin that repo below GREEN forever.
+    elif [[ -n $(find . \( -name vendor -o -name node_modules -o -name .git \) \
+          -prune -o \( -name '*.rb' -o -name '*.gemspec' \) \
+          -print -quit 2>/dev/null) ]]; then
+      uncounted_suite ruby "no spec/ and no Rakefile with test/"
+    fi
   else missing Gemfile bundler; fi
 fi
 
@@ -355,6 +501,7 @@ else
 fi
 if [[ ${#dotnet_targets[@]} -gt 0 ]]; then
   if command -v dotnet >/dev/null; then
+    dotnet_counted=0
     for target in "${dotnet_targets[@]}"; do
       # 'dotnet test' on a solution with no test project is a no-op that exits
       # 0 — same trap as 'go test' on a repo with no _test.go file.
@@ -377,14 +524,22 @@ if [[ ${#dotnet_targets[@]} -gt 0 ]]; then
         if [[ $has_tests -eq 1 ]]; then
           # shellcheck disable=SC2086  # same expansion, same reason
           run test dotnet test --nologo -v minimal ${dotnet_root_arg:+"$dotnet_root_arg"}
-        else no_tests dotnet "no test project found"; fi
+          dotnet_counted=1
+        else uncounted_suite dotnet "no test project found"; fi
       else
         run typecheck dotnet build --nologo -v minimal "$target"
         if grep -qsE "$DOTNET_TEST_MARKERS" "$target"; then
           run test dotnet test --nologo -v minimal "$target"
+          dotnet_counted=1
         else no_tests dotnet "no test project found in '$target'"; fi
       fi
     done
+    # The per-project caps above really are per project: one project without a
+    # test project next to one that has them is a covered stack. No project with
+    # tests at all is not — that is the stack having no countable suite, and the
+    # verdict has to hear about it, or another stack's 'test' carries this one
+    # to GREEN and phase 1.3 deletes dead exports here with nothing to catch it.
+    [[ $dotnet_counted -eq 0 ]] && uncounted=1
   else missing 'sln/csproj' dotnet; fi
 fi
 
@@ -407,8 +562,21 @@ if [[ $incomplete -eq 1 ]]; then
   echo "[gate] PARTIAL — some detected stack had no toolchain; finish the gate manually" >&2
   exit 3
 fi
-if [[ $checks == "typecheck,test" ]]; then
+if [[ $checks == "typecheck,test" && $uncounted -eq 0 ]]; then
   echo "[gate] GREEN"
 else
-  echo "[gate] OK — only ran: $checks (missing full typecheck+test, YELLOW cap)"
+  # Two independent caps, and one run can hit both, so they are reported
+  # together: an if/elif dropped whichever came second. The first is a short
+  # checks= list. The second is that checks= can read typecheck,test in a
+  # polyglot repo where one stack supplied the suite and another has none —
+  # not GREEN either, because the stack without a suite would have its dead
+  # exports deleted with nothing to catch the mistake.
+  caps=""
+  if [[ $checks != "typecheck,test" ]]; then
+    caps="only ran: $checks (missing full typecheck+test)"
+  fi
+  if [[ $uncounted -eq 1 ]]; then
+    caps="${caps:+$caps; }a detected stack has no countable suite (see 'test' not counted above)"
+  fi
+  echo "[gate] OK — $caps — YELLOW cap"
 fi

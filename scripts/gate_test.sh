@@ -186,6 +186,145 @@ EOF
 mkdir -p "$TMP/js-bad-json"
 printf '{"name":"f",\n' > "$TMP/js-bad-json/package.json"
 
+# Alias fixtures: a project that names its scripts 'type-check'/'test:unit' has
+# the same safety net as one that spells them canonically, and must reach the
+# same verdict — with checks= still using the canonical words.
+mkdir -p "$TMP/js-alias"
+cat > "$TMP/js-alias/package.json" <<'EOF'
+{"name":"f","scripts":{"type-check":"node -e 0","test:unit":"node -e 0"}}
+EOF
+
+mkdir -p "$TMP/js-alias-test-only"
+cat > "$TMP/js-alias-test-only/package.json" <<'EOF'
+{"name":"f","scripts":{"test:unit":"node -e 0"}}
+EOF
+
+# 'tsc' as a script name usually means an emitting compile, so it is not an
+# alias: a project whose only typecheck-ish script is 'tsc' gets no typecheck.
+mkdir -p "$TMP/js-alias-tsc"
+cat > "$TMP/js-alias-tsc/package.json" <<'EOF'
+{"name":"f","scripts":{"tsc":"node -e \"console.log('TSC_RAN')\"","test":"node -e 0"}}
+EOF
+
+mkdir -p "$TMP/js-alias-check-types"
+cat > "$TMP/js-alias-check-types/package.json" <<'EOF'
+{"name":"f","scripts":{"check-types":"node -e 0","test":"node -e 0"}}
+EOF
+
+# Plain 'test' next to a slice: 'test' wins and the slice stays silent.
+mkdir -p "$TMP/js-test-and-unit"
+cat > "$TMP/js-test-and-unit/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e 0","test:unit":"node -e \"console.log('ALIAS_TEST_RAN')\""}}
+EOF
+
+# Two slices and no whole: neither stands for the suite, so 'test' is not
+# counted and the verdict falls back to the YELLOW cap.
+mkdir -p "$TMP/js-test-slices"
+cat > "$TMP/js-test-slices/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:unit":"node -e \"console.log('UNIT_RAN')\"","test:e2e":"node -e \"console.log('E2E_RAN')\""}}
+EOF
+
+# ...and with the slices as the only scripts at all, nothing countable ran.
+mkdir -p "$TMP/js-test-slices-only"
+cat > "$TMP/js-test-slices-only/package.json" <<'EOF'
+{"name":"f","scripts":{"test:unit":"node -e 0","test:e2e":"node -e 0"}}
+EOF
+
+# A single slice that is not 'test:unit': the rule is about test:*, not about
+# one blessed name.
+mkdir -p "$TMP/js-test-integration"
+cat > "$TMP/js-test-integration/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:integration":"node -e 0"}}
+EOF
+
+# A lone watch slice is not a suite: it never exits, so promoting it would end
+# at the watchdog — GATE_TIMEOUT seconds of stall for an inconclusive exit 4 on
+# a repo that has a perfectly good gate otherwise. The script here really does
+# hang, so the case proves the gate never starts it: it has to come back fast,
+# exit 0, and explain the cap.
+mkdir -p "$TMP/js-test-watch"
+cat > "$TMP/js-test-watch/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:watch":"node -e \"setInterval(function(){},1000)\""}}
+EOF
+
+# ...and the mode word is a segment of the name, not a suffix of it: 'test:watch:all'
+# hangs exactly as hard as 'test:watch'. Anchoring the exclusion at the end of the
+# name let this one through and cost a full GATE_TIMEOUT before exit 4.
+mkdir -p "$TMP/js-test-watch-nested"
+cat > "$TMP/js-test-watch-nested/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:watch:all":"node -e \"setInterval(function(){},1000)\""}}
+EOF
+
+# A slice declared with an empty command still splits the suite. Counting only
+# the non-empty ones turned two halves into a lone slice — and a lone slice is
+# promoted to the whole suite, which is the GREEN this rule exists to deny.
+mkdir -p "$TMP/js-slice-empty"
+cat > "$TMP/js-slice-empty/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:unit":"node -e \"console.log('UNIT_RAN')\"","test:e2e":""}}
+EOF
+
+# A manifest with a typecheck script and no test script of any spelling: the
+# plainest YELLOW cap there is, and the one that used to produce no explanation
+# at all — the run ended at 'checks=typecheck' with nothing on stderr saying why
+# the suite was missing, while every other stack said so.
+mkdir -p "$TMP/js-typecheck-only"
+cat > "$TMP/js-typecheck-only/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","build":"node -e 0"}}
+EOF
+
+# Polyglot: the JS suite is sliced and never runs, Go's does. checks= then reads
+# typecheck,test from Go alone, and announcing GREEN off that would unlock
+# dead-export deletion over the JS half that nothing tested.
+mkdir -p "$TMP/js-poly-uncounted"
+cat > "$TMP/js-poly-uncounted/package.json" <<'EOF'
+{"name":"f","scripts":{"test:unit":"node -e 0","test:e2e":"node -e 0"}}
+EOF
+printf 'module f\n\ngo 1.21\n' > "$TMP/js-poly-uncounted/go.mod"
+printf 'package f\n' > "$TMP/js-poly-uncounted/x_test.go"
+
+# 'ui' is excluded from *running* like 'watch' and 'debug', but not from the
+# count: 'vitest --ui' never exits, yet 'test:ui' is just as often a scope of
+# its own. Counting it as a mode turned this manifest into a lone slice and
+# announced GREEN with the UI half never run.
+mkdir -p "$TMP/js-test-ui"
+cat > "$TMP/js-test-ui/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:unit":"node -e \"console.log('UNIT_RAN')\"","test:ui":"node -e \"console.log('UI_RAN')\""}}
+EOF
+
+# ...and a lone 'test:ui' is neither run nor called watch mode: the gate declines
+# it because it cannot tell whether it exits, and says so.
+mkdir -p "$TMP/js-test-ui-only"
+cat > "$TMP/js-test-ui-only/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:ui":"node -e \"console.log('UI_RAN')\""}}
+EOF
+
+# ...while a watch slice beside a lone real one is still just a mode of it, so
+# the real slice is promoted and the watch one is neither run nor counted.
+mkdir -p "$TMP/js-test-unit-watch"
+cat > "$TMP/js-test-unit-watch/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:unit":"node -e 0","test:watch":"node -e \"setInterval(function(){},1000)\""}}
+EOF
+
+# Canonical and alias side by side: precedence says 'typecheck' wins and
+# 'type-check' never runs. The alias prints a marker so its silence is provable.
+mkdir -p "$TMP/js-alias-both"
+cat > "$TMP/js-alias-both/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","type-check":"node -e \"console.log('ALIAS_TYPECHECK_RAN')\"","test":"node -e 0"}}
+EOF
+
+mkdir -p "$TMP/js-alias-red"
+cat > "$TMP/js-alias-red/package.json" <<'EOF'
+{"name":"f","scripts":{"type-check":"node -e 0","test:unit":"node -e 'process.exit(1)'"}}
+EOF
+
+# yarn.lock picks the 'yarn <script>' invocation instead of '<pm> run <script>';
+# no fixture exercised that branch before, alias or not. The manifest is copied
+# from js-alias on purpose: the lockfile is the only difference the case is
+# about, and a second hand-written copy would let the two drift apart.
+mkdir -p "$TMP/js-yarn-alias"
+cp "$TMP/js-alias/package.json" "$TMP/js-yarn-alias/package.json"
+touch "$TMP/js-yarn-alias/yarn.lock"
+
 mkdir -p "$TMP/polyglot/tests"
 touch "$TMP/polyglot/pyproject.toml" "$TMP/polyglot/tests/test_x.py"
 printf 'module f\n\ngo 1.21\n' > "$TMP/polyglot/go.mod"
@@ -221,8 +360,56 @@ mkdir -p "$TMP/dotnet-no-tests" "$TMP/dotnet-sub-no-tests/src/App"
 printf '<Project></Project>\n' > "$TMP/dotnet-no-tests/App.csproj"
 printf '<Project></Project>\n' > "$TMP/dotnet-sub-no-tests/src/App/App.fsproj"
 
-mkdir -p "$TMP/jvm-hybrid"
+# The standard layout is the JVM's evidence of a suite: 'mvn test' and 'gradle
+# test' exit 0 on a project with no test source, and 'run both' has counted
+# 'test' by then. The hybrid fixture carries src/test so it is a real green.
+mkdir -p "$TMP/jvm-hybrid/src/test/java"
 touch "$TMP/jvm-hybrid/pom.xml" "$TMP/jvm-hybrid/build.gradle"
+
+# ...and the same repo without it is the cap: the build still runs, the verdict
+# refuses GREEN. Two modules deep, because a multi-module repo has no src/test
+# at the root and the scan has to reach the ones that do.
+mkdir -p "$TMP/jvm-no-tests"
+touch "$TMP/jvm-no-tests/pom.xml"
+
+mkdir -p "$TMP/jvm-module-tests/mod-a/src/test/java" "$TMP/jvm-module-tests/mod-b/src/main/java"
+touch "$TMP/jvm-module-tests/pom.xml"
+
+# Polyglot: JS supplies typecheck+test, the .NET half has no test project in any
+# of its projects. Announcing GREEN off the JS suite would unlock dead-export
+# deletion over C# that nothing tested — the same hole js-poly-uncounted covers
+# for the JS side, on the per-project .NET path that used to skip the flag.
+mkdir -p "$TMP/dotnet-poly-uncounted/src/App"
+cat > "$TMP/dotnet-poly-uncounted/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e 0"}}
+EOF
+printf '<Project></Project>\n' > "$TMP/dotnet-poly-uncounted/src/App/App.csproj"
+
+# A bare requirements.txt (docs build, a pre-commit pin) is the loosest stack
+# marker gate.sh has. Capping on it alone pinned an otherwise green repo below
+# GREEN forever, for a Python "stack" that is one pip file and no Python.
+mkdir -p "$TMP/py-reqs-no-source"
+cat > "$TMP/py-reqs-no-source/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e 0"}}
+EOF
+printf 'mkdocs\n' > "$TMP/py-reqs-no-source/requirements.txt"
+
+# ...and with actual Python next to it the cap is right and still fires.
+mkdir -p "$TMP/py-reqs-with-source"
+cp "$TMP/py-reqs-no-source/package.json" "$TMP/py-reqs-with-source/package.json"
+printf 'mkdocs\n' > "$TMP/py-reqs-with-source/requirements.txt"
+printf 'def f():\n    pass\n' > "$TMP/py-reqs-with-source/tool.py"
+
+# Same rule for Ruby: a Gemfile carrying only fastlane/Jekyll is not a Ruby
+# stack without a suite, it is not a Ruby stack.
+mkdir -p "$TMP/rb-gemfile-only"
+cp "$TMP/py-reqs-no-source/package.json" "$TMP/rb-gemfile-only/package.json"
+printf "source 'https://rubygems.org'\n" > "$TMP/rb-gemfile-only/Gemfile"
+
+mkdir -p "$TMP/rb-source-no-spec"
+cp "$TMP/py-reqs-no-source/package.json" "$TMP/rb-source-no-spec/package.json"
+printf "source 'https://rubygems.org'\n" > "$TMP/rb-source-no-spec/Gemfile"
+printf 'def f; end\n' > "$TMP/rb-source-no-spec/tool.rb"
 
 mkdir -p "$TMP/py-setupcfg/test"
 printf '[mypy]\n' > "$TMP/py-setupcfg/setup.cfg"
@@ -292,11 +479,19 @@ printf 'package f\n' > "$TMP/go-hang/x_test.go"
 
 # stubs ----------------------------------------------------------------
 OK="$TMP/stubs-ok"; FAIL="$TMP/stubs-fail"; HANG="$TMP/stubs-hang"; UV="$TMP/stubs-uv"
-for t in pytest mypy pyright dotnet mvn gradle; do stub "$OK" "$t" 0; done
+for t in pytest mypy pyright dotnet mvn gradle bundle; do stub "$OK" "$t" 0; done
 stub "$FAIL" dotnet 1
 stub_body "$HANG" go 'sleep 30'
 stub "$UV" uv 0
 GO="$TMP/stubs-go"; stub "$GO" go 0
+# yarn is not on every machine, and the branch under test is only *how* the
+# gate invokes it: a stub that always succeeds is enough, since the invocation
+# itself is echoed by run(). The dir is prepended to the real PATH rather than
+# replacing it, so the case runs node and the same watchdog backend as every
+# other JS case — a hand-built minimal PATH would silently drop timeout and
+# make this the one JS case gated by perl.
+YARN="$TMP/stubs-yarn"
+stub "$YARN" yarn 0
 CARGO="$TMP/stubs-cargo"; stub "$CARGO" cargo 0
 # pytest's "no tests collected" code, with a passing mypy next to it.
 PY5="$TMP/stubs-py5"; stub "$PY5" pytest 5; stub "$PY5" mypy 0
@@ -373,6 +568,60 @@ case_run js-test-only     0 "$TMP/js-test-only" -             "checks=test" "YEL
 case_run js-red           1 "$TMP/js-red"       -             "RED"
 case_run js-no-node       3 "$TMP/js-green"     "$NOTOOL"     "toolchain 'node' missing"
 case_run js-bad-json      3 "$TMP/js-bad-json"  -             "unparseable"
+case_run js-alias         0 "$TMP/js-alias"     -             "run type-check" "run test:unit" \
+         "checks=typecheck,test" "GREEN"
+case_run js-alias-test-only 0 "$TMP/js-alias-test-only" -     "run test:unit" "checks=test" "YELLOW"
+case_run js-alias-tsc     0 "$TMP/js-alias-tsc" -             "checks=test" "YELLOW" \
+         '!run tsc' '!TSC_RAN'
+case_run js-alias-check-types 0 "$TMP/js-alias-check-types" - "run check-types" \
+         "checks=typecheck,test" "GREEN"
+case_run js-test-and-unit 0 "$TMP/js-test-and-unit" -         "run test$" \
+         "checks=typecheck,test" "GREEN" '!run test:unit' '!ALIAS_TEST_RAN'
+# Two caps at once — a short checks= list and an uncounted suite — and the
+# verdict has to carry both on one line: an if/elif reported whichever came
+# first and dropped the other, and every other assertion here passed anyway.
+case_run js-test-slices   0 "$TMP/js-test-slices" -           "checks=typecheck$" "YELLOW" \
+         "test:\* slices found (test:unit test:e2e)" "'test' not counted" \
+         "only ran: typecheck (missing full typecheck+test); a detected stack has no countable suite" \
+         '!UNIT_RAN' '!E2E_RAN'
+case_run js-test-slices-only 3 "$TMP/js-test-slices-only" -   "no runnable checks" \
+         "test:\* slices found" "'test' not counted"
+case_run js-test-integration 0 "$TMP/js-test-integration" -   "run test:integration" \
+         "checks=typecheck,test" "GREEN"
+# Both watch fixtures hang for real, so they run under a short watchdog: if the
+# exclusion ever regresses the gate starts the script, and at the default 900s
+# the regression costs a quarter of an hour before elapsed_lt can report it.
+GATE_ENV="GATE_TIMEOUT=20"
+case_run js-test-watch    0 "$TMP/js-test-watch" -            "checks=typecheck$" "YELLOW" \
+         "no slice the gate will run (test:watch)" "'test' not counted" '!run test:watch'
+elapsed_lt js-test-watch-never-started 15
+GATE_ENV="GATE_TIMEOUT=20"
+case_run js-test-watch-nested 0 "$TMP/js-test-watch-nested" - "checks=typecheck$" "YELLOW" \
+         "no slice the gate will run (test:watch:all)" '!run test:watch:all'
+elapsed_lt js-test-watch-nested-never-started 15
+case_run js-slice-empty   0 "$TMP/js-slice-empty" -           "checks=typecheck$" "YELLOW" \
+         "test:\* slices found (test:unit test:e2e)" '!UNIT_RAN'
+case_run js-typecheck-only 0 "$TMP/js-typecheck-only" -       "checks=typecheck$" "YELLOW" \
+         "no 'test' script in package.json" "'test' not counted"
+case_run js-poly-uncounted 0 "$TMP/js-poly-uncounted" "$GO:$PATH" "checks=typecheck,test" \
+         "'test' not counted" "no countable suite" '!GREEN'
+case_run js-test-ui       0 "$TMP/js-test-ui" -              "checks=typecheck$" "YELLOW" \
+         "test:\* slices found (test:unit test:ui)" '!UNIT_RAN' '!UI_RAN' '!GREEN'
+case_run js-test-ui-only  0 "$TMP/js-test-ui-only" -          "checks=typecheck$" "YELLOW" \
+         "no slice the gate will run (test:ui)" "'test' not counted" \
+         '!UI_RAN' '!only watch-mode' '!GREEN'
+# Bounded like the other fixtures that hang for real: the promotion rule here is
+# about counting, but the slice it declines to run still never exits, so a
+# regression must cost 20s and not the default quarter of an hour.
+GATE_ENV="GATE_TIMEOUT=20"
+case_run js-test-unit-watch 0 "$TMP/js-test-unit-watch" -     "run test:unit" \
+         "checks=typecheck,test" "GREEN" '!run test:watch'
+elapsed_lt js-test-unit-watch-bounded 15
+case_run js-alias-both    0 "$TMP/js-alias-both" -            "run typecheck$" \
+         "checks=typecheck,test" "GREEN" '!run type-check' '!ALIAS_TYPECHECK_RAN'
+case_run js-alias-red     1 "$TMP/js-alias-red" -             "RED at 'npm run test:unit'"
+case_run js-yarn-alias    0 "$TMP/js-yarn-alias" "$YARN:$PATH" "yarn type-check" "yarn test:unit" \
+         "checks=typecheck,test" "GREEN" '!yarn run'
 case_run polyglot-partial 3 "$TMP/polyglot"     "$OK:$NOTOOL" "checks=test" "some detected stack"
 case_run partial-none-ran 3 "$TMP/go-only"      "$NOTOOL"     "nothing ran"
 case_run dotnet-green     0 "$TMP/dotnet-root"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
@@ -384,6 +633,20 @@ case_run dotnet-sln       0 "$TMP/dotnet-sln"   "$OK:$BASE" \
 case_run dotnet-two-slns  0 "$TMP/dotnet-two-slns" "$OK:$BASE" \
          "dotnet build --nologo -v minimal$" "checks=typecheck"
 case_run jvm-hybrid       0 "$TMP/jvm-hybrid"   "$OK:$BASE"   "mvn -q test" "gradle test" "GREEN"
+case_run jvm-no-tests     0 "$TMP/jvm-no-tests" "$OK:$BASE"   "mvn -q test" \
+         "no src/test directory found" "not counted" "no countable suite" '!GREEN'
+case_run jvm-module-tests 0 "$TMP/jvm-module-tests" "$OK:$BASE" "mvn -q test" "GREEN" \
+         '!not counted'
+case_run dotnet-poly-uncounted 0 "$TMP/dotnet-poly-uncounted" "$OK:$PATH" \
+         "checks=typecheck,test" "not counted" "no countable suite" '!GREEN'
+case_run py-reqs-no-source 0 "$TMP/py-reqs-no-source" -       "checks=typecheck,test" "GREEN" \
+         '!not counted'
+case_run py-reqs-with-source 0 "$TMP/py-reqs-with-source" -   "checks=typecheck,test" \
+         "no pytest config" "no countable suite" '!GREEN'
+case_run rb-gemfile-only  0 "$TMP/rb-gemfile-only" "$OK:$PATH" "checks=typecheck,test" "GREEN" \
+         '!not counted'
+case_run rb-source-no-spec 0 "$TMP/rb-source-no-spec" "$OK:$PATH" "checks=typecheck,test" \
+         "no spec/ and no Rakefile" "no countable suite" '!GREEN'
 case_run py-setupcfg      0 "$TMP/py-setupcfg"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
 case_run py-venv          0 "$TMP/py-venv"      "$BASE"       ".venv/bin/mypy" ".venv/bin/pytest" "GREEN"
 case_run py-no-tools      3 "$TMP/py-no-tools"  "$BASE"       "toolchain 'mypy' missing" "looked in"
