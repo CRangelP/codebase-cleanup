@@ -32,7 +32,7 @@ Fecha as [#37](https://github.com/CRangelP/codebase-cleanup/issues/37) e
   | M4 | a forma proibida `git add -A` oferecida viva ao lado da correta |
   | M5 | `npx` sem versão pinada |
 
-- **Seção 16 do `coherence_test.sh`** (305 invariantes), com os invariantes que fazem as cinco
+- **Seção 16 do `coherence_test.sh`** (309 invariantes), com os invariantes que fazem as cinco
   reprovarem:
 
   - a **coluna de comportamento** da tabela de níveis, não só a de condição — a seção 7 já dizia
