@@ -452,23 +452,82 @@ if [[ -f package.json ]]; then
         # RED while the docs promised YELLOW. When the line names the code and
         # it is the code the process exited with, the exit is accounted for and
         # the tail is diagnosis.
-        inline_rc=$(printf '%s\n' "$ev" | awk '
+        # When it names a code and that is NOT the code the process exited with,
+        # the exit is accounted for by something else — the runner said it was
+        # leaving with 0 and the shell reported 1, so a later command in the
+        # script set the status. That is decided on the two numbers alone, which
+        # matters because the case that motivated it prints nothing at all:
+        # The two codes are compared as numbers, and base 10 is forced: as
+        # strings 'code 01' would differ from an exit of 1 and cost a RED to a
+        # suite that did nothing wrong, and left to bash's own rules '010' would
+        # be read as octal 8. A false RED is the expensive mistake here — it
+        # blocks a pipeline over a repo that is merely empty — so anything that
+        # is not a plain run of digits falls through to the tail check instead
+        # of deciding, which is the same conservative path as announcing no code
+        # at all.
+        # `runner; failing-command` with a silent second command leaves no tail,
+        # and every tail-based test is blind on it by construction.
+        # The honest limit, because this comment used to promise past it: a
+        # chained failure is caught when the numbers disagree, not whenever one
+        # happens. If the runner announced code 1 and the silent command also
+        # failed with 1, the bytes are identical to a legitimately empty suite
+        # that exited on its own, and so is the case where no code is announced
+        # and nothing follows. Those cap, and they cap because the OUTPUT holds
+        # no evidence to do otherwise — not because the failure is forgiven.
+        # The distinction is worth the words, because this gate does hold
+        # evidence the output does not: `scripts.test` is right there in the
+        # manifest, and in `A; B` the status is B's by definition, so the script
+        # text proves a chained command ran. It is deliberately not read. Doing
+        # so means parsing shell: a semicolon inside quotes, inside a command
+        # substitution, or behind a conditional operator is not a separator, and
+        # getting that wrong costs a RED to a repo that is merely empty, which
+        # is the expensive direction. So the limit is a choice
+        # about which evidence is safe to trust, not an absence of evidence.
+        # The cap sets uncounted either way, so the run cannot reach GREEN on
+        # it; the cost is YELLOW where RED would have been more honest.
+        # Every announced code is weighed, not just the first one. A monorepo
+        # runs one runner per package and prints one empty-suite line per
+        # package, so stopping at the first code would call a disagreement on
+        # evidence that a later line accounts for and cost a RED to a repo where
+        # nothing failed. Any announced code matching the exit is enough: the
+        # exit is explained, and an explained exit is not a chained failure.
+        # awk compares numerically, which also settles a padded 'code 01'
+        # against an exit of 1 — as strings those differ, and the false RED is
+        # the expensive mistake here, since it blocks a pipeline over a repo
+        # that is merely empty.
+        # awk extracts, the shell decides. Keeping the exit code out of awk is
+        # not style: section 15 of coherence_test.sh forbids any variable other
+        # than out_plain or ev on a line that classifies, and passing -v rc here
+        # would have tripped it. The invariant is right to be that blunt — its
+        # job is to guarantee the matchers only ever see normalized text — so
+        # the code moves instead of the rule. `s + 0` also normalizes the digits
+        # decimally, which is what settles a padded 'code 01' against an exit of
+        # 1 without ever letting the shell read '010' as octal.
+        inline_codes=$(printf '%s\n' "$ev" | awk '
               tolower($0) ~ /^[[:space:]]*(no test files found|no tests found|did not find any tests)/ {
                 if (match(tolower($0), /exiting with code [0-9]+/)) {
                   s = substr(tolower($0), RSTART, RLENGTH)
                   sub(/exiting with code /, "", s)
-                  print s
-                  exit
+                  print s + 0
                 }
               }
             ')
+        inline_verdict=none
+        for announced in $inline_codes; do
+          inline_verdict=mismatch
+          if [[ $announced -eq $rc ]]; then
+            inline_verdict=match
+            break
+          fi
+        done
         if [[ $rc -eq 1 ]] \
           && printf '%s\n' "$ev" | grep -qiE \
             '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b' \
           && ! printf '%s\n' "$ev" | grep -qiE \
             '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b|(^|[[:space:]])(error|ERR!)([[:space:]:]|$)' \
-          && { [[ ${inline_rc:-x} == "$rc" ]] \
-               || ! printf '%s\n' "$ev" | awk '
+          && { [[ $inline_verdict == match ]] \
+               || { [[ $inline_verdict == none ]] \
+                    && ! printf '%s\n' "$ev" | awk '
                 # tolower(), not IGNORECASE: that variable is a gawk extension
                 # and is silently ignored by BSD awk (macOS) and mawk (the
                 # usual Debian/Ubuntu default) — both CI legs. Under it the
@@ -482,7 +541,7 @@ if [[ -f package.json ]]; then
                   found=1; exit
                 }
                 END { exit found ? 0 : 1 }
-              '; }; then
+              '; }; }; then
           uncounted_suite js "no test files found (exit $rc)"
           return 0
         fi

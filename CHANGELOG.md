@@ -9,6 +9,60 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.2.2] — 2026-08-09
+
+Fecha a [#36](https://github.com/CRangelP/codebase-cleanup/issues/36), e fecha
+metade dela corrigindo o código e metade corrigindo o que o código prometia.
+
+### Corrigido
+
+- **Falha encadeada silenciosa depois da suíte vazia era lida como cap.** Com
+  `"test": "runner; comando-que-falha-calado"`, a linha de suíte vazia casa,
+  nada é impresso depois, e não há cauda para julgar — toda a guarda anterior
+  era baseada em cauda, logo cega por construção nesse caso.
+
+  A metade decidível não precisa de cauda nenhuma: quando o runner **anuncia o
+  próprio código de saída** e o processo sai com **outro**, algo depois do
+  runner definiu o status. `No test files found, exiting with code 0` seguido de
+  `exit=1` não é ambíguo. Agora é RED.
+
+### Sem mudança, e agora dito em voz alta
+
+- **O comentário prometia que "qualquer comando encadeado que falhou permanece
+  RED".** Não permanecia, e não pode permanecer: se o runner anuncia `code 1` e
+  o comando calado também falha com `1`, os bytes são idênticos aos de uma suíte
+  legitimamente vazia que saiu sozinha — e o mesmo vale quando nenhum código é
+  anunciado e nada se segue. Esses dois casos continuam YELLOW **porque o gate
+  não tem evidência para decidir**, não porque a falha esteja perdoada.
+
+  O cap marca `uncounted` de qualquer jeito, então o run nunca alcança GREEN
+  neles: o custo é YELLOW onde RED seria mais honesto. Inventar a diferença
+  custaria um RED a uma suíte legitimamente vazia, que é o erro mais caro dos
+  dois. Ambos os casos viraram fixture, para que o limite seja documentação
+  executável e ninguém o "conserte" no chute.
+
+  E o limite é uma **escolha sobre qual evidência é segura**, não ausência de
+  evidência: o gate lê o `package.json`, e em `A; B` o status é o de `B` por
+  definição, então o texto de `scripts.test` prova que houve comando encadeado.
+  Ele é deliberadamente não lido, porque isso exigiria parsear shell — ponto e
+  vírgula dentro de aspas, dentro de substituição de comando, atrás de
+  operador condicional — e errar isso cobra RED de um repo apenas vazio.
+
+### Evitado
+
+- **Dois falsos RED que a própria correção poderia introduzir.** Um repo
+  vazio levando RED bloqueia pipeline, e é o erro mais caro que este código
+  comete.
+
+  Comparar os códigos como **string** faria `exiting with code 01` discordar de
+  um exit `1`; deixar o shell comparar sozinho leria `010` como **octal 8**. A
+  normalização é numérica e decimal, feita no `awk` com `s + 0`.
+
+  E parar no **primeiro** código anunciado quebraria monorepo: um pacote por
+  linha de suíte vazia, e a linha que explica o exit pode ser a última. Agora
+  qualquer código anunciado que bata com o exit encerra a questão — a detecção
+  sobrevive quando **nenhum** deles bate.
+
 ## [0.2.1] — 2026-08-09
 
 Correção de um defeito que fazia o gate mentir sobre a suíte — nas duas direções.
