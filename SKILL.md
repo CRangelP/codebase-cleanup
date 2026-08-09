@@ -159,6 +159,20 @@ as a plain failure would report a hung check as a broken one.
 | A check fails, or no tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. May create the cleanup branch; does **not** commit `CLEANUP_PROGRESS.md`. Delivers a report. |
 | No git repository | **RED** | Diagnoses only, regardless of the gate result — there is no HEAD to roll back to. |
 
+**Take the quality baseline in the same breath**, at every level including RED —
+the measurer is read-only, and this is the only chance to see the repo before
+the run changes it:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-.}/scripts/metrics.sh" . > /tmp/metrics-before.txt
+```
+
+Copy the `[metrics]` lines into `CLEANUP_PROGRESS.md` as well, so the baseline
+survives a `/clear` and a swept temp directory. Exit 2 means the path was wrong
+and 3 that no source was recognized; neither is a gate result and neither
+changes the level — note it and move on. Without this file the final report has
+no delta to show.
+
 **Stack caps in `references/other-stacks.md` override the GREEN column.**
 Python always confirms before deleting; JVM and Ruby are diagnosis / YELLOW by
 default; .NET is YELLOW by default for code (deps flagged by the compiler may
@@ -304,7 +318,8 @@ same four points:
 
 Step 0 (calibrating the level, creating the branch), the phase 2 checkpoint,
 the phase 3 checkpoint and the phase 4 tier B checkpoint stay with the
-orchestrator — a subagent does not talk to the user. Level and branch reach the subagents ready-made, through
+orchestrator — a subagent does not talk to the user. Level and branch reach
+the subagents ready-made, through
 `CLEANUP_PROGRESS.md`.
 
 ---
@@ -710,7 +725,10 @@ gate is real evidence for it. **Tier B stops at a checkpoint** (`extract-class`,
 `domain-type`, `polymorphism`, `parameter-object`, `delegation`,
 `type-boundary`): it picks an abstraction or a domain name, and a green test
 proves the behavior did not change — not that the choice was right. Same
-argument as phase 2, one altitude down.
+argument as phase 2, one altitude down. `type-boundary` is the typing and
+nothing else: adding schema validation at the boundary rejects input that used
+to pass, which is a behavior change and therefore not a refactor here — it
+leaves as a recommendation in the report, never as a `refactor()` commit.
 
 One operation per commit, `refactor(<operation-id>): <what>`. Stage with
 pathspecs of what the operation touched (`git add -- src/billing/invoice.ts`),
@@ -778,8 +796,19 @@ Branch: `cleanup/YYYYMMDD` · Level: GREEN · N commits
 | 4 — local reshaping | 5 tier A operations, 1 tier B; 2 targets skipped (uncovered) |
 
 ### Quality delta
+Run the measurer again and diff it against the Step 0 baseline:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-.}/scripts/metrics.sh" . > /tmp/metrics-after.txt
+diff /tmp/metrics-before.txt /tmp/metrics-after.txt
+```
+
 `[metrics] maxfn 214 → 61 · fn_over_50 9 → 4 · maxnest 7 → 4 (approx) · loose_types 31 → 31`
-Evidence, not a target: nothing here is optimized for its own sake.
+Evidence, not a target: nothing here is optimized for its own sake. Report the
+lines that moved and say which phase moved them; a line that did not move is
+not worth a row. No baseline (the run started before it was taken, or the file
+is gone) means no delta section — an unanchored "after" is a number pretending
+to be a comparison.
 
 ### Revert anything
 `git revert <sha>` — commits are atomic per category.

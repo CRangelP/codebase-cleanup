@@ -27,6 +27,13 @@
 # TODOs is one todo here. This project prefers a declared limit to a pretty false
 # number.
 #
+# NOT MEASURED HERE, on purpose: import cycles. A cycle is a property of the module
+# graph, and the graph needs a language-aware resolver — aliases, re-exports, dynamic
+# imports. Approximating it by text would produce the one thing this script refuses to
+# produce, a confident wrong number. The pipeline already gets that count from a real
+# resolver: `npx knip@6.32.0 --cycles` and `npx madge@8.0.0 --circular` in the phase 1.4
+# audit and the phase 3 diagnosis. Read it from there, not from here.
+#
 # These metrics are evidence, not a target: none of them is to be optimized for its own
 # sake (Goodhart), because chopping a function in half to lower an average is exactly the
 # damage this skill exists to prevent.
