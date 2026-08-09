@@ -452,6 +452,23 @@ if [[ -f package.json ]]; then
         # RED while the docs promised YELLOW. When the line names the code and
         # it is the code the process exited with, the exit is accounted for and
         # the tail is diagnosis.
+        # When it names a code and that is NOT the code the process exited with,
+        # the exit is accounted for by something else — the runner said it was
+        # leaving with 0 and the shell reported 1, so a later command in the
+        # script set the status. That is decided on the two numbers alone, which
+        # matters because the case that motivated it prints nothing at all:
+        # `runner; failing-command` with a silent second command leaves no tail,
+        # and every tail-based test is blind on it by construction.
+        # The honest limit, because this comment used to promise past it: a
+        # chained failure is caught when the numbers disagree, not whenever one
+        # happens. If the runner announced code 1 and the silent command also
+        # failed with 1, the bytes are identical to a legitimately empty suite
+        # that exited on its own, and so is the case where no code is announced
+        # and nothing follows. Those cap, and they cap because the gate has no
+        # evidence to do otherwise — not because the failure is forgiven. The
+        # cap sets uncounted either way, so the run cannot reach GREEN on it;
+        # the cost is YELLOW where RED would have been more honest, and
+        # inventing the difference would cost a legitimately empty suite a RED.
         inline_rc=$(printf '%s\n' "$ev" | awk '
               tolower($0) ~ /^[[:space:]]*(no test files found|no tests found|did not find any tests)/ {
                 if (match(tolower($0), /exiting with code [0-9]+/)) {
@@ -468,7 +485,8 @@ if [[ -f package.json ]]; then
           && ! printf '%s\n' "$ev" | grep -qiE \
             '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b|(^|[[:space:]])(error|ERR!)([[:space:]:]|$)' \
           && { [[ ${inline_rc:-x} == "$rc" ]] \
-               || ! printf '%s\n' "$ev" | awk '
+               || { [[ -z ${inline_rc:-} ]] \
+                    && ! printf '%s\n' "$ev" | awk '
                 # tolower(), not IGNORECASE: that variable is a gawk extension
                 # and is silently ignored by BSD awk (macOS) and mawk (the
                 # usual Debian/Ubuntu default) — both CI legs. Under it the
@@ -482,7 +500,7 @@ if [[ -f package.json ]]; then
                   found=1; exit
                 }
                 END { exit found ? 0 : 1 }
-              '; }; then
+              '; }; }; then
           uncounted_suite js "no test files found (exit $rc)"
           return 0
         fi
