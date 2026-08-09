@@ -158,6 +158,17 @@ case_run() { # case_run <name> <expected_exit> <dir> <PATH|-> <grep_pattern...>
   fi
 }
 
+# skipped <name> <reason> — a case the environment cannot run, counted anyway.
+# The total is not cosmetic: coherence_test.sh section 9 checks it against the
+# number the READMEs publish, so a case that silently vanishes on one runner
+# turns the docs into a lie there. The macOS runner ships no GNU timeout, so
+# the -k cases below only ever execute on Linux; counting the skip keeps one
+# number true on both, and the reason is printed so nobody reads it as a pass.
+skipped() {
+  total=$((total+1))
+  echo "ok: $1 (skipped: $2)"
+}
+
 elapsed_lt() { # elapsed_lt <name> <seconds> — asserts on the last case_run
   local name=$1 limit=$2
   total=$((total+1))
@@ -1084,7 +1095,8 @@ if command -v timeout >/dev/null 2>&1 && timeout -k 2 1 true >/dev/null 2>&1; th
   case_run wd-kill-after-137 4 "$TMP/go-hang" "$IGNTERM:$BASE" "TIMEOUT after 2s" '!RED'
   elapsed_lt wd-kill-after-137-is-bounded 15
 else
-  echo "skip: wd-kill-after-137 (no timeout with -k support)"
+  skipped wd-kill-after-137 "no timeout with -k support"
+  skipped wd-kill-after-137-is-bounded "no timeout with -k support"
 fi
 
 # The perl backend is the one that only shows up on a machine without coreutils;
