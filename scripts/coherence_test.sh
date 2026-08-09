@@ -284,8 +284,19 @@ IFS=$'\n'
 for f in $derived; do
   # Require the pathspec form `git add -- <…>` (space after --). A bare
   # `git add --` substring would also match `git add --all` (≡ `git add -A`).
-  if grep -qE -- 'git add --[[:space:]]' "$f" 2>/dev/null; then
+  # The test stays on the *positive* form, as the reasoning above demands: prose
+  # that forbids a spelling still contains it, so keying on `git add -- .` as a
+  # forbidden substring would fail a file whose only sin is documenting the ban.
+  # Instead, collect the pathspecs actually written and ask whether any of them
+  # names something narrower than the whole tree — `.` and `./` do not, they are
+  # `git add .` wearing pathspec syntax, while `./src`, `.env` and `..` do.
+  specs=$(grep -oE -- 'git add --[[:space:]]+[^[:space:]`"'"'"']+' "$f" 2>/dev/null \
+          | sed -E 's/^git add --[[:space:]]+//')
+  if [[ -n $specs ]] && printf '%s\n' "$specs" | grep -qvxE '\.|\./'; then
     pass "gate step pairs with pathspec staging in $f"
+  elif [[ -n $specs ]]; then
+    fail "gate step pairs with pathspec staging in $f" \
+         "every \`git add --\` pathspec is \`.\` or \`./\`, which is \`git add .\` in disguise"
   else
     fail "gate step pairs with pathspec staging in $f" \
          "runs the gate as a protocol step without \`git add --\` pathspecs first"
@@ -720,7 +731,10 @@ for marker in \
   'Rust' \
   'Maven' \
   'Gradle' \
-  'pytest'
+  'pytest' \
+  'Exit 137' \
+  'passWithNoTests' \
+  '_spec.rb'
 do
   for f in README.md README.en.md; do
     check "$f carries normative marker [$marker]" \

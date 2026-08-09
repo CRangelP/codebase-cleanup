@@ -1,6 +1,6 @@
 ---
 name: codebase-cleanup
-description: Full three-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules and reorganizes the folder structure, running autonomously with atomic commits and automatic rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, messy folders, confusing structure or a bloated codebase; mentions duplicated code, duplicate functions, copy-paste code, "código duplicado" or "função repetida"; asks to "give the codebase a deep clean" or to "reorganiza essas pastas"; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the three phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
+description: Full three-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules and reorganizes the folder structure, running autonomously with atomic commits and rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, messy folders, confusing structure or a bloated codebase; mentions duplicated code, duplicate functions, copy-paste code, "código duplicado" or "função repetida"; asks to "give the codebase a deep clean", to "reorganiza essas pastas", or for an audit or health check; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the three phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
 ---
 
 # Codebase Cleanup
@@ -128,7 +128,10 @@ nothing about the code: treat it as red (rollback, record what timed out in
 `CLEANUP_PROGRESS.md`) and never promote it to GREEN. On the Step 0 baseline,
 exit 4 means the safety net could not be measured — report it and do not run
 autonomously. Exit code 124 is reserved for the watchdog, exactly as in GNU
-timeout: a check that legitimately exits 124 is read as a timeout.
+timeout: a check that legitimately exits 124 is read as a timeout. So is 137
+(128+SIGKILL) while the watchdog runs with `-k`, because that is what the
+kill-after escalation produces against a check that ignores TERM — reading it
+as a plain failure would report a hung check as a broken one.
 
 | Signal | Level | Behavior |
 |---|---|---|

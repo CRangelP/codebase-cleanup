@@ -52,7 +52,7 @@ vulture src/ whitelist.py
 `pyproject.toml` / `requirements*.txt` does not remove the package from an
 already-populated venv, so the gate can still import it. After pruning and
 before staging, re-resolve with the project's tool — never a frozen/locked
-form that refuses a intentionally changed lock:
+form that refuses an intentionally changed lock:
 
 ```bash
 pip install -r requirements.txt          # plain requirements

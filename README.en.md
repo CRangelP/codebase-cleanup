@@ -111,7 +111,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validated 2026-08: 105/105 cases, 5/5 properties, 145/145 invariants
+# validated 2026-08: 124/124 cases, 5/5 properties, 151/151 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -155,7 +155,7 @@ into one of three levels:
 
 | Level | Condition | What it does |
 |---|---|---|
-| GREEN | typecheck and tests pass | runs the phases without asking; phase 2 and phase 3 stop at the human checkpoint |
+| GREEN | typecheck and tests pass | runs phase 1 without asking; phase 2 and phase 3 stop at the human checkpoint |
 | YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports; does not run phase 2 or phase 3 |
 | RED | no tests and no typecheck, or a baseline already failing | diagnoses only; nothing is deleted; no `CLEANUP_PROGRESS` commit |
 
@@ -171,9 +171,13 @@ happen. The skill names the failing check and stops there.
 A stack with no test file at all does not count as tested: the gate does not
 count an empty suite, whether it declined to run it or ran it and got nothing
 back, and the level stays at YELLOW. That covers JS/TS whose runner exits on an
-empty suite ("No test files found"), Go and .NET with no test file, a Rust
+empty suite ("No test files found") — including when it exits 0 because it was
+told to, as with `--passWithNoTests`, since exit 0 is not proof a suite ran —,
+Go and .NET with no test file, a Rust
 crate with no `tests/*.rs` and no `#[test]`, a Maven or Gradle build with no
-`src/test` anywhere, and a pytest run that exits 5 having collected nothing. A
+`src/test` anywhere, a Ruby `spec/` or `test/` holding no `*_spec.rb`,
+`*_test.rb` or `test_*.rb` (the `Rake::TestTask` default), and a pytest run
+that exits 5 having collected nothing. A
 manifest carried for tooling and nothing else — a `requirements.txt` for the
 docs build, a `Gemfile` for fastlane — is not a stack without a suite: with no
 source of that language in the repo, the gate says nothing about it. If your
@@ -263,6 +267,8 @@ commit.
   suite, it is to fix the check the report names.
 - Exit 124 is reserved for the watchdog, exactly as in GNU `timeout`: a
   check that legitimately exits 124 under an active watchdog reads as TIMEOUT.
+  Exit 137 reads the same way while the watchdog runs with `-k`, since that is
+  the code the kill-after escalation produces against a check that ignores TERM.
 - With a single `.sln`/`.slnx` at the root the gate passes it explicitly to
   `dotnet`; with two or more it abstains and invokes with no argument, and
   the ambiguity is MSBuild's again. It fails closed: run the gate by hand

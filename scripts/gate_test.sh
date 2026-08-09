@@ -269,6 +269,50 @@ cat > "$TMP/js-empty-suite-chained-exit1/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.error('No test files found'); console.error('configuration crashed'); process.exit(1)\""}}
 EOF
 
+# --passWithNoTests: the runner is told to make an empty suite a success, so it
+# exits 0 having run nothing. The empty-suite detection used to sit inside the
+# non-zero branch only, so this reached GREEN — the level that unlocks
+# dead-export deletion — over a repo where no test ever ran.
+mkdir -p "$TMP/js-pwnt"
+cat > "$TMP/js-pwnt/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No tests found, exiting with code 0')\""}}
+EOF
+
+# node:test on an empty run: exit 0 and a count, none of the phrases the other
+# runners print. Both reporters are covered — the default one's marker is
+# multibyte, which a greedy negated class skips under a UTF-8 locale.
+mkdir -p "$TMP/js-node-test-empty"
+cat > "$TMP/js-node-test-empty/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('\\u2139 tests 0'); console.log('\\u2139 pass 0')\""}}
+EOF
+
+mkdir -p "$TMP/js-node-test-tap"
+cat > "$TMP/js-node-test-tap/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('TAP version 13'); console.log('1..0'); console.log('# tests 0')\""}}
+EOF
+
+# Counts that must NOT cap: a real node:test run, and a two-digit total.
+mkdir -p "$TMP/js-node-test-real"
+cat > "$TMP/js-node-test-real/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('\\u2139 tests 10'); console.log('\\u2139 pass 10')\""}}
+EOF
+
+# The counterpart that must stay GREEN: a real suite reporting real passes.
+# Without this, capping on exit 0 could silently swallow every healthy repo.
+mkdir -p "$TMP/js-real-pass"
+cat > "$TMP/js-real-pass/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('Test Files 3 passed (3)'); console.log('Tests 12 passed (12)')\""}}
+EOF
+
+# Same chained failure, lowercase runner line. The guard used to lean on awk's
+# IGNORECASE — a gawk extension that BSD awk and mawk ignore, i.e. both CI legs
+# — so only the exact casing of the fixtures above was ever caught and this
+# shape slipped through as YELLOW.
+mkdir -p "$TMP/js-empty-suite-chained-lower"
+cat > "$TMP/js-empty-suite-chained-lower/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.error('no test files found'); console.error('configuration crashed'); process.exit(1)\""}}
+EOF
+
 mkdir -p "$TMP/js-alias-check-types"
 cat > "$TMP/js-alias-check-types/package.json" <<'EOF'
 {"name":"f","scripts":{"check-types":"node -e 0","test":"node -e 0"}}
@@ -397,6 +441,19 @@ mkdir -p "$TMP/js-bun"
 cp "$TMP/js-green/package.json" "$TMP/js-bun/package.json"
 touch "$TMP/js-bun/bun.lock"
 
+# The empty-suite cap has to survive the package manager's own epilogue. Every
+# manager but npm prints a line after the runner's message — pnpm 'ELIFECYCLE
+# Command failed', yarn 'error Command failed with exit code 1.', bun 'error:
+# script "test" exited with code 1' — all of them non-empty and carrying
+# "failed", which read as a real failure and sank an empty suite to RED. One
+# fixture per manager, distinguished only by the lockfile.
+for pm in pnpm yarn bun; do
+  mkdir -p "$TMP/js-empty-$pm"
+  cp "$TMP/js-empty-suite/package.json" "$TMP/js-empty-$pm/package.json"
+done
+touch "$TMP/js-empty-pnpm/pnpm-lock.yaml" "$TMP/js-empty-yarn/yarn.lock" \
+      "$TMP/js-empty-bun/bun.lock"
+
 mkdir -p "$TMP/polyglot/tests"
 touch "$TMP/polyglot/pyproject.toml" "$TMP/polyglot/tests/test_x.py"
 printf 'module f\n\ngo 1.21\n' > "$TMP/polyglot/go.mod"
@@ -514,6 +571,43 @@ touch "$TMP/rb-both-runners/Rakefile" "$TMP/rb-both-runners/sorbet/config"
 printf 'RSpec.describe "x" do; end\n' > "$TMP/rb-both-runners/spec/x_spec.rb"
 printf 'class XTest; end\n' > "$TMP/rb-both-runners/test/x_test.rb"
 
+# A spec/ holding no *_spec.rb is not a suite: rspec exits 0 on "0 examples",
+# so judging by the directory alone announced GREEN for a repo with zero tests
+# — the same trap go/cargo already guard against. Same for a rake test/ with
+# no *_test.rb. sorbet is present so typecheck still runs and the cap shows as
+# YELLOW instead of exit 3 with nothing runnable.
+mkdir -p "$TMP/rb-spec-empty/spec" "$TMP/rb-spec-empty/sorbet"
+printf "source 'https://rubygems.org'\n" > "$TMP/rb-spec-empty/Gemfile"
+touch "$TMP/rb-spec-empty/sorbet/config"
+printf '# support file, not a spec\n' > "$TMP/rb-spec-empty/spec/spec_helper.rb"
+
+mkdir -p "$TMP/rb-test-empty/test" "$TMP/rb-test-empty/sorbet"
+printf "source 'https://rubygems.org'\n" > "$TMP/rb-test-empty/Gemfile"
+touch "$TMP/rb-test-empty/Rakefile" "$TMP/rb-test-empty/sorbet/config"
+printf '# support file, not a test\n' > "$TMP/rb-test-empty/test/helper.rb"
+
+# `test/test*.rb` is the DEFAULT pattern of Rake::TestTask, so this naming is
+# the common one, not the exotic one. Recognising only the `*_test.rb` suffix
+# dropped the both-runners cap here and announced GREEN with the rake half
+# never measured.
+mkdir -p "$TMP/rb-both-prefix/spec" "$TMP/rb-both-prefix/test" "$TMP/rb-both-prefix/sorbet"
+printf "source 'https://rubygems.org'\n" > "$TMP/rb-both-prefix/Gemfile"
+touch "$TMP/rb-both-prefix/Rakefile" "$TMP/rb-both-prefix/sorbet/config"
+printf 'RSpec.describe "x" do; end\n' > "$TMP/rb-both-prefix/spec/x_spec.rb"
+printf 'class TestX; end\n' > "$TMP/rb-both-prefix/test/test_x.rb"
+
+# Rake-only repo using the same default naming: a real suite, so it runs.
+mkdir -p "$TMP/rb-rake-prefix/test"
+printf "source 'https://rubygems.org'\n" > "$TMP/rb-rake-prefix/Gemfile"
+touch "$TMP/rb-rake-prefix/Rakefile"
+printf 'class TestX; end\n' > "$TMP/rb-rake-prefix/test/test_x.rb"
+
+# test_helper.rb matches the prefix pattern but is support code, not a suite.
+mkdir -p "$TMP/rb-helper-only/test" "$TMP/rb-helper-only/sorbet"
+printf "source 'https://rubygems.org'\n" > "$TMP/rb-helper-only/Gemfile"
+touch "$TMP/rb-helper-only/Rakefile" "$TMP/rb-helper-only/sorbet/config"
+printf 'require "minitest"\n' > "$TMP/rb-helper-only/test/test_helper.rb"
+
 mkdir -p "$TMP/py-setupcfg/test"
 printf '[mypy]\n' > "$TMP/py-setupcfg/setup.cfg"
 touch "$TMP/py-setupcfg/test/test_x.py"
@@ -603,6 +697,18 @@ OK="$TMP/stubs-ok"; FAIL="$TMP/stubs-fail"; HANG="$TMP/stubs-hang"; UV="$TMP/stu
 for t in pytest mypy pyright dotnet mvn gradle bundle; do stub "$OK" "$t" 0; done
 stub "$FAIL" dotnet 1
 stub_body "$HANG" go 'sleep 30'
+# Ignores TERM, so the watchdog's -k escalation has to finish it with KILL and
+# the shell reports 137, not 124. Used against the *real* timeout, not a
+# logging stub: the passthrough case below only proves the flag is forwarded,
+# never that the resulting exit code is read as a timeout.
+IGNTERM="$TMP/stubs-ignterm"
+stub_body "$IGNTERM" go 'trap "" TERM
+sleep 30'
+# The real timeout has to be reachable from the case's PATH, or the gate falls
+# back to the perl backend, which raises 124 by hand and never exercises the
+# -k/137 path this fixture exists to cover. On macOS GNU timeout lives outside
+# /usr/bin, so $BASE alone is not enough.
+link_bin "$IGNTERM" timeout sleep
 stub "$UV" uv 0
 GO="$TMP/stubs-go"; stub "$GO" go 0
 # yarn is not on every machine, and the branch under test is only *how* the
@@ -617,6 +723,34 @@ PNPM="$TMP/stubs-pnpm"
 stub "$PNPM" pnpm 0
 BUN="$TMP/stubs-bun"
 stub "$BUN" bun 0
+# Empty-suite stubs: typecheck succeeds, the test script prints the runner's
+# empty-suite line and then the manager's own epilogue, exiting 1 — the exact
+# shape each manager produces on a repo with no test files.
+# pnpm v10/v11 — the shape a current pnpm actually prints, verified against
+# pnpm 11.18.0. Writing only the v9 line here would have let the filter look
+# covered while being inert on every supported pnpm.
+EMPTY_PNPM="$TMP/stubs-empty-pnpm"
+stub_body "$EMPTY_PNPM" pnpm 'for a in "$@"; do [ "$a" = typecheck ] && exit 0; done
+echo "No test files found, exiting with code 1"
+echo "[ELIFECYCLE] Test failed. See above for more details."
+exit 1'
+# pnpm v9 and older, still in the wild on pinned CI images.
+EMPTY_PNPM9="$TMP/stubs-empty-pnpm9"
+stub_body "$EMPTY_PNPM9" pnpm 'for a in "$@"; do [ "$a" = typecheck ] && exit 0; done
+echo "No test files found, exiting with code 1"
+echo " ELIFECYCLE  Command failed with exit code 1."
+exit 1'
+EMPTY_YARN="$TMP/stubs-empty-yarn"
+stub_body "$EMPTY_YARN" yarn 'for a in "$@"; do [ "$a" = typecheck ] && exit 0; done
+echo "No test files found, exiting with code 1"
+echo "error Command failed with exit code 1."
+echo "info Visit https://yarnpkg.com/en/docs/cli/run for documentation."
+exit 1'
+EMPTY_BUN="$TMP/stubs-empty-bun"
+stub_body "$EMPTY_BUN" bun 'for a in "$@"; do [ "$a" = typecheck ] && exit 0; done
+echo "No test files found, exiting with code 1"
+echo "error: script \"test\" exited with code 1"
+exit 1'
 POETRY="$TMP/stubs-poetry"
 stub "$POETRY" poetry 0
 CARGO="$TMP/stubs-cargo"; stub "$CARGO" cargo 0
@@ -663,6 +797,29 @@ sleep 45
 EOF
   chmod +x "$1/go"
 }
+
+# The JS test path captures the runner's output, and that capture is the one
+# place where a leaked process can stall the gate without any signal reaching
+# it: a detached grandchild that inherited stdout holds the pipe open, so a
+# reader waits for the grandchild, not the runner, with GATE_TIMEOUT long
+# elapsed and the watchdog powerless — it kills what it launched, not a reader
+# blocked on a pipe. Note this is the inverse of make_escapee above, which
+# sends its output to /dev/null precisely to avoid the stall; here the
+# inherited stdout *is* the case. npm exits 0 immediately; only the grandchild
+# lingers, so anything slower than a couple of seconds means the gate waited.
+JS_HOLD="$TMP/stubs-js-hold"
+mkdir -p "$JS_HOLD"
+cat > "$JS_HOLD/npm" <<EOF
+#!/bin/sh
+[ "\$1" = run ] && [ "\$2" = typecheck ] && exit 0
+perl -e 'use POSIX; POSIX::setsid(); open(F, ">", "$TMP/escapee-jshold.pid") or exit 1;
+         print F \$\$; close F; sleep 30' &
+exit 0
+EOF
+chmod +x "$JS_HOLD/npm"
+mkdir -p "$TMP/js-hold"
+printf '%s\n' '{"name":"f","scripts":{"typecheck":"node -e 0","test":"leaks"}}' \
+  > "$TMP/js-hold/package.json"
 
 ESCAPE="$TMP/stubs-escape"
 ESCAPEE_PID_FILE="$TMP/escapee.pid"
@@ -719,6 +876,18 @@ case_run js-empty-suite-chained 1 "$TMP/js-empty-suite-chained" - "RED" \
          '!YELLOW' "!'test' not counted"
 case_run js-empty-suite-chained-exit1 1 "$TMP/js-empty-suite-chained-exit1" - "RED" \
          '!YELLOW' "!'test' not counted"
+case_run js-empty-suite-chained-lower 1 "$TMP/js-empty-suite-chained-lower" - "RED" \
+         '!YELLOW' "!'test' not counted"
+case_run js-pwnt          0 "$TMP/js-pwnt" -                "checks=typecheck$" "YELLOW" \
+         "runner reported no tests" "'test' not counted" '!GREEN' '!RED'
+case_run js-real-pass     0 "$TMP/js-real-pass" -           "checks=typecheck,test" "GREEN" \
+         "!'test' not counted"
+case_run js-node-test-empty 0 "$TMP/js-node-test-empty" -   "checks=typecheck$" "YELLOW" \
+         "0 tests" "'test' not counted" '!GREEN' '!RED'
+case_run js-node-test-tap   0 "$TMP/js-node-test-tap" -     "checks=typecheck$" "YELLOW" \
+         "0 tests" "'test' not counted" '!GREEN' '!RED'
+case_run js-node-test-real  0 "$TMP/js-node-test-real" -    "checks=typecheck,test" "GREEN" \
+         "!'test' not counted"
 case_run js-alias-check-types 0 "$TMP/js-alias-check-types" - "run check-types" \
          "checks=typecheck,test" "GREEN"
 case_run js-test-and-unit 0 "$TMP/js-test-and-unit" -         "run test$" \
@@ -772,6 +941,21 @@ case_run js-pnpm          0 "$TMP/js-pnpm"       "$PNPM:$PATH" "pnpm run typeche
          "checks=typecheck,test" "GREEN"
 case_run js-bun           0 "$TMP/js-bun"        "$BUN:$PATH"  "bun run typecheck" "bun run test" \
          "checks=typecheck,test" "GREEN"
+# The empty-suite cap must not depend on which manager ran the script: each of
+# these prints its own epilogue after the runner's line, and every one of them
+# used to be read as a chained failure and sink the run to RED.
+case_run js-empty-pnpm    0 "$TMP/js-empty-pnpm" "$EMPTY_PNPM:$PATH" \
+         "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
+         '!RED' '!GREEN'
+case_run js-empty-pnpm9   0 "$TMP/js-empty-pnpm" "$EMPTY_PNPM9:$PATH" \
+         "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
+         '!RED' '!GREEN'
+case_run js-empty-yarn    0 "$TMP/js-empty-yarn" "$EMPTY_YARN:$PATH" \
+         "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
+         '!RED' '!GREEN'
+case_run js-empty-bun     0 "$TMP/js-empty-bun"  "$EMPTY_BUN:$PATH" \
+         "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
+         '!RED' '!GREEN'
 case_run polyglot-partial 3 "$TMP/polyglot"     "$OK:$NOTOOL" "checks=test" "some detected stack"
 case_run partial-none-ran 3 "$TMP/go-only"      "$NOTOOL"     "nothing ran"
 case_run dotnet-green     0 "$TMP/dotnet-root"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
@@ -809,6 +993,26 @@ case_run rb-both-runners  0 "$TMP/rb-both-runners" "$OK:$BASE" \
          "bundle exec srb tc" "checks=typecheck$" "YELLOW" \
          "both rspec" "rake test" "'test' not counted" "no countable suite" \
          '!bundle exec rspec' '!bundle exec rake' '!GREEN'
+# A directory is not a suite: rspec on a spec/ with no *_spec.rb exits 0 on
+# "0 examples" and used to reach GREEN, which unlocks dead-export deletion on a
+# repo that has no tests at all. The runner must not even be invoked.
+case_run rb-spec-empty    0 "$TMP/rb-spec-empty" "$OK:$BASE" \
+         "bundle exec srb tc" "checks=typecheck$" "YELLOW" \
+         "holds no" "'test' not counted" "no countable suite" \
+         '!bundle exec rspec' '!GREEN'
+case_run rb-test-empty    0 "$TMP/rb-test-empty" "$OK:$BASE" \
+         "bundle exec srb tc" "checks=typecheck$" "YELLOW" \
+         "holds no" "'test' not counted" "no countable suite" \
+         '!bundle exec rake' '!GREEN'
+# Rake::TestTask's default naming counts as a real suite on both sides.
+case_run rb-both-prefix   0 "$TMP/rb-both-prefix" "$OK:$BASE" \
+         "checks=typecheck$" "YELLOW" "both rspec" "'test' not counted" \
+         '!bundle exec rspec' '!bundle exec rake' '!GREEN'
+case_run rb-rake-prefix   0 "$TMP/rb-rake-prefix" "$OK:$BASE" \
+         "bundle exec rake test" "checks=test" "YELLOW" "!'test' not counted"
+case_run rb-helper-only   0 "$TMP/rb-helper-only" "$OK:$BASE" \
+         "checks=typecheck$" "YELLOW" "holds no" "'test' not counted" \
+         '!bundle exec rake' '!GREEN'
 case_run py-setupcfg      0 "$TMP/py-setupcfg"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
 case_run py-venv          0 "$TMP/py-venv"      "$BASE"       ".venv/bin/mypy" ".venv/bin/pytest" "GREEN"
 case_run py-venv-plain    0 "$TMP/py-venv-plain" "$BASE"      "venv/bin/mypy" "venv/bin/pytest" "GREEN"
@@ -869,6 +1073,20 @@ GATE_ENV="GATE_TIMEOUT=2"
 case_run wd-kill-after-passthrough 4 "$TMP/go-hang" "$WD_K:$GO:$BASE" "TIMEOUT after 2s"
 assert_log wd-kill-after-args "$WD_LOG_K" "-k 2 2 go build ./..."
 
+# And the code that escalation actually produces. Against the real timeout, a
+# check that ignores TERM dies from the -k KILL and the shell reports 137 —
+# which used to miss the `rc -eq 124` test and be announced as "RED at 'go
+# build ./...'", turning "we could not tell, it hung" into "your code is
+# broken". Skipped where the -k probe found no support, since then no
+# escalation happens at all.
+if command -v timeout >/dev/null 2>&1 && timeout -k 2 1 true >/dev/null 2>&1; then
+  GATE_ENV="GATE_TIMEOUT=2"
+  case_run wd-kill-after-137 4 "$TMP/go-hang" "$IGNTERM:$BASE" "TIMEOUT after 2s" '!RED'
+  elapsed_lt wd-kill-after-137-is-bounded 15
+else
+  echo "skip: wd-kill-after-137 (no timeout with -k support)"
+fi
+
 # The perl backend is the one that only shows up on a machine without coreutils;
 # a minimal PATH keeps it covered even when the suite runs on Linux.
 if command -v perl >/dev/null; then
@@ -884,6 +1102,16 @@ if command -v perl >/dev/null; then
   case_run wd-escapee 4 "$TMP/go-hang" "$ESCAPE:$MINI" "TIMEOUT after 2s"
   elapsed_lt wd-escapee-is-bounded 10
   assert_reaped wd-escapee-reaped "$ESCAPEE_PID_FILE"
+
+  # Regression: the JS test path captures output, and a detached grandchild
+  # holding the inherited stdout kept that capture blocked for the
+  # grandchild's whole life — GATE_TIMEOUT=2 with a 30s leak returned in 30s,
+  # verdict GREEN, exit 4 never raised. The runner itself exits 0 at once, so
+  # the gate is only allowed the couple of seconds that costs.
+  GATE_ENV="GATE_TIMEOUT=2"
+  case_run js-hold-detached 0 "$TMP/js-hold" "$JS_HOLD:$PATH" \
+           "checks=typecheck,test" "GREEN"
+  elapsed_lt js-hold-detached-is-bounded 10
 
   # Without ps there is no tree to snapshot and no start time to confirm, so
   # the watchdog only kills the group: the escapee survives, and asserting
