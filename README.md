@@ -22,11 +22,11 @@ commitar o que está pendente ou abortar, e nada acontece antes da sua resposta.
 - `git` — todo o trabalho acontece numa branch `cleanup/YYYYMMDD`, nunca na
   main. Sem repositório git a skill só diagnostica: o rollback dela depende de
   ter um commit bom para onde voltar.
-- Para projetos JS/TS: Node com `npx` (o knip roda via `npx knip`, sem
-  instalação prévia).
+- Para projetos JS/TS: Node com `npx` (o knip roda via `npx knip@6.32.0`,
+  versão pinada — nunca `npx knip` sem versão).
 - Outros stacks usam as ferramentas de cada ecossistema (vulture, deadcode,
   cargo-udeps, ReferenceTrimmer). O que faltar, a skill aponta em vez de
-  instalar por conta.
+  instalar por conta; `pip install` só com confirmação.
 - O gate (`scripts/gate.sh`) detecta o stack pelo manifesto e roda typecheck +
   testes em JS/TS, Go, Rust, Python, JVM, Ruby e .NET. O toolchain precisa
   estar alcançável: no PATH na maioria dos stacks e, em Python, também vale
@@ -108,7 +108,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validado em 08/2026: 86/86 casos, 5/5 propriedades, 77/77 invariantes
+# validado em 08/2026: 127/127 casos, 5/5 propriedades, 151/151 invariantes
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -152,9 +152,13 @@ e se classifica em um de três níveis:
 
 | Nível | Condição | O que ela faz |
 |---|---|---|
-| GREEN | typecheck e testes passam | executa as fases sem perguntar; a fase 2 para no checkpoint |
-| YELLOW | rede parcial, ou nenhum arquivo de teste no stack | só deps e arquivos órfãos, sem mexer em exports |
-| RED | sem testes e sem typecheck, ou baseline já vermelho | só diagnostica; nada é deletado |
+| GREEN | typecheck e testes passam | executa a fase 1 sem perguntar; fase 2 e fase 3 param no checkpoint humano |
+| YELLOW | rede parcial, ou nenhum arquivo de teste no stack | só deps e arquivos órfãos, sem mexer em exports; não roda fase 2 nem fase 3 |
+| RED | sem testes e sem typecheck, ou baseline já vermelho | só diagnostica; nada é deletado; não commit de `CLEANUP_PROGRESS` |
+
+Os caps por stack em `references/other-stacks.md` sobrescrevem a coluna GREEN
+(Python confirma antes de deletar; JVM/Ruby/.NET código ficam em YELLOW ou só
+diagnóstico por padrão).
 
 Projeto que já chega com a suíte vermelha cai em RED, não em YELLOW: com o
 baseline quebrado não dá para separar o que a limpeza quebrou do que já estava
@@ -163,18 +167,26 @@ skill diz qual check falhou e para por aí.
 
 Stack sem nenhum arquivo de teste não conta como testado: o gate não conta
 suíte vazia, seja porque não a rodou, seja porque rodou e não voltou nada, e o
-nível fica em YELLOW. Vale para Go e .NET sem arquivo de
-teste, para crate Rust sem `tests/*.rs` nem `#[test]`, para build Maven ou
-Gradle sem nenhum `src/test`, e para pytest que sai 5 sem coletar nada.
-Manifesto que está ali só por ferramenta — um `requirements.txt` do build da
-documentação, um `Gemfile` do fastlane — não é stack sem suíte: sem código
-daquela linguagem no repositório, o gate não fala dele. Se a sua suíte mora
-fora do lugar padrão, a promoção é sua — o gate não se promove sozinho.
+nível fica em YELLOW. Vale para JS/TS cujo runner sai com suíte vazia
+("No test files found") — inclusive quando ele sai 0 porque mandaram, como em
+`--passWithNoTests`, já que exit 0 não é prova de que uma suíte rodou —,
+Go e .NET sem arquivo de teste, crate Rust sem
+`tests/*.rs` nem `#[test]`, build Maven ou Gradle sem nenhum `src/test`, Ruby
+cujo `spec/` ou `test/` não guarda nenhum `*_spec.rb`, `*_test.rb` nem
+`test_*.rb` (o padrão do `Rake::TestTask`), e pytest
+que sai 5 sem coletar nada. Manifesto que está ali só por ferramenta —
+um `requirements.txt` do build da documentação, um `Gemfile` do fastlane —
+não é stack sem suíte: sem código daquela linguagem no repositório, o gate
+não fala dele. Se a sua suíte mora fora do lugar padrão, a promoção é sua —
+o gate não se promove sozinho.
 
-Em JS/TS o mesmo cap pega a suíte fatiada: sem script `test`, com `test:unit`
-e `test:e2e` no manifesto, nenhuma fatia responde pela suíte inteira e o gate
-não conta nenhuma delas. Promover à mão aqui é o caminho errado, porque a
-suíte não está fora do lugar, está dividida; rode as fatias todas. Uma fatia
+Em JS/TS o placeholder exato do `npm init` (`echo "Error: no test specified"
+&& exit 1`) também cai em YELLOW com a linha `'test' not counted` e o marcador
+`npm init placeholder` — não é RED de suíte quebrada. O mesmo cap pega a suíte
+fatiada: sem script `test`, com `test:unit` e `test:e2e` no manifesto, nenhuma
+fatia responde pela suíte inteira e o gate não conta nenhuma delas. Promover
+à mão aqui é o caminho errado, porque a suíte não está fora do lugar, está
+dividida; rode as fatias todas. Uma fatia
 sozinha vale como a suíte, com uma exceção: modo watch nunca termina, então o
 gate não o executa. `watch`, `ui` e `debug` são lidos como segmentos inteiros
 do nome, o que pega `test:watch:all` e deixa `test:watchdog` em paz. Só que não
@@ -192,8 +204,9 @@ Com o nível anunciado, ela cria a branch de limpeza e segue:
 
 - **Fase 1 — código morto.** Configura o knip até os hints zerarem, roda em
   modo produção e deleta em commits atômicos, um por categoria: deps não
-  usadas, arquivos órfãos, exports mortos. Cada commit só entra com gate
-  verde. No fim, produz uma auditoria do que sobrou.
+  usadas, arquivos órfãos, exports mortos. Cada passo faz stage só com
+  pathspecs dos artefatos daquele passo (`git add -- …`, nunca `git add -A`),
+  e só entra com gate verde. No fim, produz uma auditoria do que sobrou.
 - **Fase 1.5 — funções duplicadas** (fecha a fase 1). Varre funções com nomes
   diferentes fazendo a mesma coisa (similarity-ts ou fallow em JS/TS, jscpd
   nos demais stacks) e aplica a regra do churn: par que muda junto no git é
@@ -224,12 +237,15 @@ git revert <sha>           # desfaz só aquela categoria
 O merge da branch é decisão sua, no seu tempo. A skill nunca faz push, nunca
 commita na main e nunca usa `git reset --hard` — o rollback dela é
 `git restore --staged --worktree .`, que joga fora tudo o que ainda não foi
-commitado e convive com hooks que bloqueiam comandos destrutivos.
+commitado. Se um hook de segurança bloquear esse restore, a skill **aborta**
+o pipeline (não contorna o hook): reporta a branch, a árvore suja e o comando
+manual, e para.
 
 Note o "tudo": alteração sua que estava no diretório antes de a skill começar
 entraria nessa conta. É por isso que ela exige árvore limpa no início e
 interrompe para perguntar quando não está — com a árvore limpa, o que o
-rollback joga fora foi ela mesma que criou.
+rollback joga fora foi ela mesma que criou. O stage por pathspec (em vez de
+`git add -A`) evita engolir rascunhos e `.env` locais no commit da categoria.
 
 ## Limites conhecidos
 
@@ -244,7 +260,9 @@ rollback joga fora foi ela mesma que criou.
   passo é criar uma verificação mínima; com a suíte quebrada, é consertar o
   check que o relatório nomeia.
 - Exit 124 é reservado ao watchdog, igual ao GNU `timeout`: um check que
-  legitimamente sai 124 sob watchdog ativo é lido como TIMEOUT.
+  legitimamente sai 124 sob watchdog ativo é lido como TIMEOUT. Exit 137 vale
+  o mesmo enquanto o watchdog roda com `-k`, porque é o código que a escalada
+  kill-after produz contra um check que ignora TERM.
 - Com uma única `.sln`/`.slnx` na raiz o gate a passa explícita ao `dotnet`;
   com duas ou mais ele se abstém e invoca sem argumento, e a ambiguidade
   volta a ser do MSBuild. Falha fechada: rode o gate manual apontando a

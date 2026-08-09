@@ -3,9 +3,10 @@
 # than one file at once. A doc drift that used to be caught by reading — a
 # rollback command typed slightly differently, an exit code the READMEs never
 # heard of, a script missing from the file tree — fails here instead.
-# Read-only over the repository: it opens the repo's files and never writes,
-# stages or runs anything inside it. Its self-tests need files to scan, so they
-# build them in a mktemp -d of their own and delete it on the way out.
+# Read-only over the repository: it opens the repo's files and never writes or
+# stages inside it. Section 9 runs gate_test.sh only to read the NN/NN it prints
+# (that suite uses its own stubs/tempdirs). Its self-tests need files to scan,
+# so they build them in a mktemp -d of their own and delete it on the way out.
 # Usage: coherence_test.sh   (exit 0 = every invariant held)
 set -u
 
@@ -74,13 +75,27 @@ files_with() {
   repo_files "${2:-.}" | xargs -0 grep -l -F -- "$1" /dev/null 2>/dev/null | sort
 }
 
-# tree_scripts <readme> — the *.sh names listed in the README's file tree
-tree_scripts() {
+# tree_block <readme> — the fenced file-tree body (between codebase-cleanup/ and
+# the closing fence). Shared by the script-name and doc-name extractors so a
+# tree edited in one place cannot be read two different ways.
+tree_block() {
   awk '
     /^codebase-cleanup\/$/ { inblock = 1; next }
     inblock && /^```/ { inblock = 0 }
     inblock { print }
-  ' "$1" | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u
+  ' "$1"
+}
+
+# tree_scripts <readme> — the *.sh names listed in the README's file tree
+tree_scripts() {
+  tree_block "$1" | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u
+}
+
+# tree_docs <readme> — SKILL.md, LICENSE, README*.md and references/*.md names
+# listed in the tree. Same shape as tree_scripts: the tree is the contract for
+# what the skill ships, not only for the scripts.
+tree_docs() {
+  tree_block "$1" | grep -oE '([A-Za-z0-9_.-]+\.md|LICENSE)' | sort -u
 }
 
 # bash_body — reads a shell script on stdin and prints its bash body with
@@ -240,8 +255,12 @@ check "\"$GITMV\" appears exactly once in references/phase-3-structure.md" \
       "$([[ ${n:-0} -eq 1 ]] && echo 0 || echo 1)" "count=${n:-0}"
 
 # 4. Whoever documents the gate as a step also documents staging. -------------
-# The gate reads the working tree, so a protocol that runs it without `git
-# add -A` first checks something the commit will not contain.
+# The gate reads the working tree, so a protocol that runs it without staging
+# first checks something the commit will not contain. Staging is pathspec-only
+# (`git add -- <paths…>`): blind `git add -A` / `git add .` would swallow
+# unrelated untracked files into the category commit. Prose that says "never
+# git add -A" still contains that substring, so the invariant keys on the
+# positive form `git add --`, not on the forbidden spellings.
 derived=$(protocol_files)
 
 # Floor: the three files that carry the protocol today have to be in the
@@ -263,11 +282,24 @@ done
 old_ifs=$IFS
 IFS=$'\n'
 for f in $derived; do
-  if grep -q -F -- 'git add -A' "$f" 2>/dev/null; then
-    pass "gate step pairs with git add -A in $f"
+  # Require the pathspec form `git add -- <…>` (space after --). A bare
+  # `git add --` substring would also match `git add --all` (≡ `git add -A`).
+  # The test stays on the *positive* form, as the reasoning above demands: prose
+  # that forbids a spelling still contains it, so keying on `git add -- .` as a
+  # forbidden substring would fail a file whose only sin is documenting the ban.
+  # Instead, collect the pathspecs actually written and ask whether any of them
+  # names something narrower than the whole tree — `.` and `./` do not, they are
+  # `git add .` wearing pathspec syntax, while `./src`, `.env` and `..` do.
+  specs=$(grep -oE -- 'git add --[[:space:]]+[^[:space:]`"'"'"']+' "$f" 2>/dev/null \
+          | sed -E 's/^git add --[[:space:]]+//')
+  if [[ -n $specs ]] && printf '%s\n' "$specs" | grep -qvxE '\.|\./'; then
+    pass "gate step pairs with pathspec staging in $f"
+  elif [[ -n $specs ]]; then
+    fail "gate step pairs with pathspec staging in $f" \
+         "every \`git add --\` pathspec is \`.\` or \`./\`, which is \`git add .\` in disguise"
   else
-    fail "gate step pairs with git add -A in $f" \
-         "runs the gate as a protocol step without staging first"
+    fail "gate step pairs with pathspec staging in $f" \
+         "runs the gate as a protocol step without \`git add --\` pathspecs first"
   fi
 done
 IFS=$old_ifs
@@ -290,6 +322,54 @@ for readme in README.md README.en.md; do
       fail "$name of the tree of $readme exists on disk" "listed but there is no scripts/$name"
     fi
   done
+
+  # Same bidirectional contract for the docs the tree claims to ship: SKILL.md,
+  # LICENSE, and every references/*.md. A script-only check let a reference
+  # disappear from the tree (or land on disk unlisted) without a failure.
+  docs=$(tree_docs "$readme")
+  for required in SKILL.md LICENSE; do
+    if printf '%s\n' "$docs" | grep -qx -F -- "$required"; then
+      pass "$required listed in the tree of $readme"
+    else
+      fail "$required listed in the tree of $readme" "absent from the tree"
+    fi
+    if [[ -f $required ]]; then
+      pass "$required of the tree of $readme exists on disk"
+    else
+      fail "$required of the tree of $readme exists on disk" "listed but missing on disk"
+    fi
+  done
+  for path in references/*.md; do
+    name=${path##*/}
+    if printf '%s\n' "$docs" | grep -qx -F -- "$name"; then
+      pass "references/$name listed in the tree of $readme"
+    else
+      fail "references/$name listed in the tree of $readme" "on disk but absent from the tree"
+    fi
+  done
+  old_ifs=$IFS
+  IFS=$'\n'
+  for name in $docs; do
+    [[ $name == *.md ]] || continue
+    case $name in
+      SKILL.md|README.md|README.en.md)
+        if [[ -f $name ]]; then
+          pass "$name of the tree of $readme exists on disk"
+        else
+          fail "$name of the tree of $readme exists on disk" "listed but missing on disk"
+        fi
+        ;;
+      *)
+        if [[ -f references/$name ]]; then
+          pass "references/$name of the tree of $readme exists on disk"
+        else
+          fail "references/$name of the tree of $readme exists on disk" \
+               "listed but there is no references/$name"
+        fi
+        ;;
+    esac
+  done
+  IFS=$old_ifs
 done
 
 # 6. Whoever shows a `git mv` also shows the mkdir -p it needs. ---------------
@@ -338,10 +418,16 @@ done
 # read the wrong token in either case — a flag shifted the fields, and the
 # wrong token usually has no `/`, so the move was quietly exempted instead of
 # checked. Trailing comments are cut first (the repo's own example carries one),
-# option words are skipped, and surrounding double quotes are stripped so a
-# quoted path registers under the name the move actually uses.
+# option words are skipped, and surrounding single or double quotes are stripped
+# so a quoted path registers under the name the move actually uses. `&&` and `;`
+# split a line into commands before either rule runs: a one-liner
+# `mkdir -p X && git mv …` used to match only the mkdir rule (and then `next`),
+# so the move was never checked and every non-flag token — including `&&` and
+# the move's own paths — polluted `made`.
 gitmv_orphans() {
-  awk '
+  local q
+  q=$(printf '\047')
+  awk -v q="$q" '
     function args(line,   i, n, out) {   # the words of <line>, comments and flags out
       sub(/[[:space:]]+#.*$/, "", line)
       n = split(line, out, "[[:space:]]+")   # a string, not a /literal/: mawk
@@ -349,21 +435,36 @@ gitmv_orphans() {
       for (i = 1; i <= n; i++) {
         if (out[i] == "" || out[i] ~ /^-/) continue
         gsub(/"/, "", out[i])
+        gsub(q, "", out[i])
         argv[++argc] = out[i]
       }
       return argc
     }
+    function split_cmds(line, segs,   tmp) {
+      tmp = line
+      gsub(/&&/, "\034", tmp)
+      gsub(/;/, "\034", tmp)
+      return split(tmp, segs, "\034")
+    }
+    function process(line,   n, i, d, dest) {
+      if (line ~ /^[[:space:]]*mkdir -p/) {
+        n = args(line)
+        for (i = 2; i <= n; i++) {      # argv[1] is "mkdir"
+          d = argv[i]; gsub(/\/+$/, "", d); made[d] = 1
+        }
+      } else if (line ~ /^[[:space:]]*git mv /) {
+        n = args(line)
+        dest = argv[n]                  # last word, never $4
+        if (sub(/\/[^\/]*$/, "", dest) && !(dest in made))
+          print FILENAME ":" FNR ": " $0
+      }
+    }
     /^[[:space:]]*```/       { split("", made); next }
     /^[[:space:]]*$/         { split("", made); next }
-    /^[[:space:]]*mkdir -p/  { n = args($0)
-                               for (i = 2; i <= n; i++) {      # argv[1] is "mkdir"
-                                 d = argv[i]; gsub(/\/+$/, "", d); made[d] = 1
-                               }
-                               next }
-    /^[[:space:]]*git mv /   { n = args($0)
-                               dest = argv[n]                  # last word, never $4
-                               if (sub(/\/[^\/]*$/, "", dest) && !(dest in made))
-                                 print FILENAME ":" FNR ": " $0 }
+    {
+      n = split_cmds($0, segs)
+      for (i = 1; i <= n; i++) process(segs[i])
+    }
   ' "$1"
 }
 
@@ -376,24 +477,33 @@ gitmv_orphans() {
 # uncover it), `git mv g` the blank-line reset for the same reason, `git mv d`
 # the leading-whitespace tolerance. `git mv h i` renames in place and must stay
 # unflagged even though no mkdir names `i`.
-# The last block pays for the argument reader: `git mv j` is only unflagged if
-# the quotes came off the mkdir, and `git mv -f k` and the multi-source
-# `git mv l m src/s/` are only flagged if the destination is read as the last
-# word — a fixed `$4` reads `k` and `m`, neither of which has a `/`, so both
-# uncovered moves would slip through as renames in place.
+# The last block pays for the argument reader and the command splitter:
+# `git mv j` is only unflagged if single quotes came off the mkdir;
+# `mkdir && git mv p` is only unflagged if `&&` splits before the rules run
+# (otherwise the mkdir rule `next`s and the move is never checked);
+# `mkdir && git mv r` into a different folder must stay flagged — proof the
+# move half of a one-liner is still subject to the destination check;
+# `git mv -f k` and the multi-source `git mv l m src/s/` are only flagged if
+# the destination is read as the last word — a fixed `$4` reads `k` and `m`,
+# neither of which has a `/`, so both uncovered moves would slip through as
+# renames in place. `git mv q` is a plain uncovered move in the same block.
 printf '%s\n' '```bash' 'mkdir -p src/x' 'git mv a src/x/a' 'git mv b src/x/b' \
               'git mv c src/y/c' '```' 'git mv e src/x/e' \
               '```bash' 'mkdir -p src/y' 'git mv f src/y/f' '' 'git mv g src/y/g' '```' \
               '' '   git mv d gone/d' \
               '```bash' 'mkdir -p src/z' 'git mv h i' '```' \
-              '```bash' 'mkdir -p "src/q"' 'git mv j src/q/j' 'git mv -f k src/r/k' \
-              'git mv l m src/s/' '```' \
+              '```bash' "mkdir -p 'src/q'" 'git mv j src/q/j' \
+              'mkdir -p src/ok && git mv p src/ok/p' \
+              'mkdir -p src/other && git mv r src/missing/r' \
+              'git mv -f k src/r/k' \
+              'git mv l m src/s/' \
+              'git mv q src/bad/q' '```' \
               > "$SELFTMP/moves.md"
 orphans=$(gitmv_orphans "$SELFTMP/moves.md")
 got=$(printf '%s' "$orphans" | grep -c .)
 check "git mv scanner flags the uncovered moves and only those" \
-      "$([[ $got -eq 6 ]] && echo 0 || echo 1)" \
-      "flagged $got line(s), expected 6:
+      "$([[ $got -eq 8 ]] && echo 0 || echo 1)" \
+      "flagged $got line(s), expected 8:
 $orphans"
 
 # IFS is pinned to newline: the list comes from grep -l, and the default IFS
@@ -528,7 +638,7 @@ done
 # report before knip starts, so a crash reads as "nothing to delete"; the
 # unwindowed churn command ranks by lifetime touch count, where a file rewritten
 # three years ago outranks whatever is hot now.
-KNIP_CMD='npx knip --production --no-exit-code --reporter json > knip-report.json.tmp && mv knip-report.json.tmp knip-report.json'
+KNIP_CMD='npx knip@6.32.0 --production --no-exit-code --reporter json > knip-report.json.tmp && mv knip-report.json.tmp knip-report.json'
 KNIP_FILES="SKILL.md references/knip-config.md"
 
 CHURN_CMD='git log --no-merges --since="6 months ago" --format= --name-only | sed '\''/^$/d'\'' | sort | uniq -c | sort -rn'
@@ -566,25 +676,89 @@ check "no churn ranking variant in the repo" \
 # contract was exercised. That number drifted once — the suite grew by eleven
 # cases and the line was bumped by six — and a stale count is worse than none,
 # because a reader who runs the command and gets a different total has to guess
-# which of the two is lying. gate_test.sh calls its counting helpers exactly
-# once per line, continuation lines included (they start with the argument, not
-# with the helper), so the call sites are the total without running anything.
-# One assumption the count makes and cannot check: ten of those call sites are
-# inside gate_test.sh's `if command -v perl`, so the total counted here is the
-# one the documented docker image produces — node:22-bookworm ships perl. A host
-# without perl skips that block and prints ten fewer; the READMEs quote the
-# figure from the command they publish, which is the docker one.
-# The properties and invariants figures come from loops over derived lists and
-# have no static equivalent; they stay on the honour system.
-gate_cases=$(grep -cE '^[[:space:]]*(case_run|assert_log|assert_no_log|assert_reaped|elapsed_lt) ' \
-             scripts/gate_test.sh)
+# which of the two is lying. The total is whatever gate_test.sh prints at the
+# end of a real run (`NN/NN cases passed`): call-site grep silently desyncs when
+# cases move behind a loop or a conditional, and the perl-guarded block already
+# proves the point — a host without perl runs ten fewer cases than a grep of
+# the file would claim. Running the suite makes the READMEs answer to the same
+# number a reader sees. The properties and invariants figures come from loops
+# over derived lists and have no single printed total to pin; they stay on the
+# honour system (Integrator syncs the README figures to the printed totals).
+# Prefer the count from the parent `scripts/test.sh` run when present — that
+# suite already exercised gate_test.sh under the same $BASH — so a full
+# `scripts/test.sh` does not pay for a second full matrix pass. Alone, re-run
+# under this process's interpreter (never bare `bash` from PATH: macOS CI pins
+# /bin/bash 3.2 and Homebrew bash on PATH would defeat that premise).
+gate_log="$SELFTMP/gate_test.out"
+if [[ -n ${GATE_TEST_CASE_COUNT:-} ]]; then
+  gate_cases=$GATE_TEST_CASE_COUNT
+  : >"$gate_log"
+else
+  "${BASH:-bash}" scripts/gate_test.sh >"$gate_log" 2>&1 || true
+  gate_cases=$(sed -n 's|^[0-9][0-9]*/\([0-9][0-9]*\) cases passed$|\1|p' "$gate_log" | tail -1)
+fi
+check "gate_test.sh printed a parsable NN/NN cases summary" \
+      "$([[ -n $gate_cases ]] && echo 0 || echo 1)" \
+      "GATE_TEST_CASE_COUNT=${GATE_TEST_CASE_COUNT:-unset}; last lines of gate_test.sh:
+$(tail -n 5 "$gate_log" 2>/dev/null)"
 for pair in 'README.md|casos' 'README.en.md|cases'; do
   f=${pair%%|*}
   word=${pair#*|}
   check "$f quotes gate_test.sh's real case count" \
-        "$(grep -q -F -- "$gate_cases/$gate_cases $word" "$f" 2>/dev/null && echo 0 || echo 1)" \
-        "gate_test.sh has $gate_cases cases; the validated-run line of $f does not say so"
+        "$([[ -n $gate_cases ]] && grep -q -F -- "$gate_cases/$gate_cases $word" "$f" 2>/dev/null && echo 0 || echo 1)" \
+        "gate_test.sh ran $gate_cases cases; the validated-run line of $f does not say so"
 done
+
+# 10. Normative PT↔EN markers, and the SKILL.md frontmatter budget. ----------
+# Section 7 already locks the level-table shape and per-row conditions. What
+# still drifted without a failure was the shared vocabulary around empty-suite
+# caps and the exit contract outside the file-tree caption — language-neutral
+# tokens that must appear in both READMEs — plus the description frontmatter,
+# which is the only line that can eject the skill from auto-dispatch when it
+# grows past the host's limit. Fail closed above 1000 characters so there is
+# margin under the usual 1024 cap before a new trigger phrase breaks discovery.
+for marker in \
+  'exit 0/1/2/3/4' \
+  'Exit 124' \
+  'tests/*.rs' \
+  '#[test]' \
+  'src/test' \
+  'test:unit' \
+  'test:e2e' \
+  'checks=typecheck,test' \
+  'Go' \
+  '.NET' \
+  'Rust' \
+  'Maven' \
+  'Gradle' \
+  'pytest' \
+  'Exit 137' \
+  'passWithNoTests' \
+  '_spec.rb'
+do
+  for f in README.md README.en.md; do
+    check "$f carries normative marker [$marker]" \
+          "$(grep -q -F -- "$marker" "$f" 2>/dev/null && echo 0 || echo 1)" \
+          "missing [$marker]"
+  done
+done
+
+# Bash ${#var} counts characters under a UTF-8 locale; awk's length() counts
+# bytes and would burn the margin on the em dash and Portuguese accents that
+# already live in the description (keep headroom under the 1000-char cap).
+desc=$(awk '
+  /^---[[:space:]]*$/ { fm++; next }
+  fm == 1 && /^description:[[:space:]]*/ {
+    sub(/^description:[[:space:]]*/, "")
+    print
+    exit
+  }
+  fm >= 2 { exit }
+' SKILL.md)
+desc_len=${#desc}
+check "SKILL.md description stays at or under 1000 characters" \
+      "$([[ -n $desc && $desc_len -le 1000 ]] && echo 0 || echo 1)" \
+      "description is ${desc_len} characters (limit 1000)"
 
 echo "----"
 echo "$((total-failures))/$total invariants held"

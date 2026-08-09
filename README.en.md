@@ -23,11 +23,11 @@ answer.
 - `git` — all work happens on a `cleanup/YYYYMMDD` branch, never on main. With
   no git repository the skill only diagnoses: its rollback depends on having a
   good commit to go back to.
-- For JS/TS projects: Node with `npx` (knip runs via `npx knip`, no prior
-  installation).
+- For JS/TS projects: Node with `npx` (knip runs via `npx knip@6.32.0`,
+  pinned — never bare `npx knip`).
 - Other stacks use the tools of each ecosystem (vulture, deadcode,
   cargo-udeps, ReferenceTrimmer). Whatever is missing, the skill reports
-  instead of installing on its own.
+  instead of installing on its own; `pip install` only with confirmation.
 - The gate (`scripts/gate.sh`) detects the stack from the manifest and runs
   typecheck + tests for JS/TS, Go, Rust, Python, JVM, Ruby and .NET. The
   toolchain has to be reachable: on PATH for most stacks and, for Python, also
@@ -111,7 +111,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validated 2026-08: 86/86 cases, 5/5 properties, 77/77 invariants
+# validated 2026-08: 127/127 cases, 5/5 properties, 151/151 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -155,9 +155,13 @@ into one of three levels:
 
 | Level | Condition | What it does |
 |---|---|---|
-| GREEN | typecheck and tests pass | runs the phases without asking; phase 2 stops at the checkpoint |
-| YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports |
-| RED | no tests and no typecheck, or a baseline already failing | diagnoses only; nothing is deleted |
+| GREEN | typecheck and tests pass | runs phase 1 without asking; phase 2 and phase 3 stop at the human checkpoint |
+| YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports; does not run phase 2 or phase 3 |
+| RED | no tests and no typecheck, or a baseline already failing | diagnoses only; nothing is deleted; no `CLEANUP_PROGRESS` commit |
+
+Stack caps in `references/other-stacks.md` override the GREEN column (Python
+always confirms before deleting; JVM/Ruby/.NET code stay YELLOW or diagnosis
+by default).
 
 A project that arrives with a red suite falls into RED, not YELLOW: with a
 broken baseline there is no telling what the cleanup broke from what was
@@ -166,18 +170,26 @@ happen. The skill names the failing check and stops there.
 
 A stack with no test file at all does not count as tested: the gate does not
 count an empty suite, whether it declined to run it or ran it and got nothing
-back, and the level stays at YELLOW. That covers Go and .NET
-with no test file, a Rust crate with no `tests/*.rs` and no `#[test]`, a Maven
-or Gradle build with no `src/test` anywhere, and a pytest run that exits 5
-having collected nothing. A manifest carried for tooling and nothing else — a
-`requirements.txt` for the docs build, a `Gemfile` for fastlane — is not a stack
-without a suite: with no source of that language in the repo, the gate says
-nothing about it. If your suite lives outside the usual place, promoting it is
-your call — the gate never promotes itself.
+back, and the level stays at YELLOW. That covers JS/TS whose runner exits on an
+empty suite ("No test files found") — including when it exits 0 because it was
+told to, as with `--passWithNoTests`, since exit 0 is not proof a suite ran —,
+Go and .NET with no test file, a Rust
+crate with no `tests/*.rs` and no `#[test]`, a Maven or Gradle build with no
+`src/test` anywhere, a Ruby `spec/` or `test/` holding no `*_spec.rb`,
+`*_test.rb` or `test_*.rb` (the `Rake::TestTask` default), and a pytest run
+that exits 5 having collected nothing. A
+manifest carried for tooling and nothing else — a `requirements.txt` for the
+docs build, a `Gemfile` for fastlane — is not a stack without a suite: with no
+source of that language in the repo, the gate says nothing about it. If your
+suite lives outside the usual place, promoting it is your call — the gate never
+promotes itself.
 
-In JS/TS the same cap covers a sliced suite: with no `test` script and both
-`test:unit` and `test:e2e` in the manifest, no slice answers for the whole
-suite and the gate counts none of them. Promoting by hand is the wrong move
+In JS/TS the exact `npm init` placeholder (`echo "Error: no test specified" &&
+exit 1`) is also YELLOW, with `'test' not counted` and the `npm init
+placeholder` marker — not RED for a broken suite. The same cap covers a sliced
+suite: with no `test` script and both `test:unit` and `test:e2e` in the
+manifest, no slice answers for the whole suite and the gate counts none of
+them. Promoting by hand is the wrong move
 here, because the suite is not somewhere else, it is split; run every slice. A
 lone slice does count as the suite, with one exception: watch mode never exits,
 so the gate skips it. `watch`, `ui` and `debug` are read as whole segments of
@@ -196,8 +208,9 @@ With the level announced, it creates the cleanup branch and proceeds:
 
 - **Phase 1 — dead code.** Configures knip until the hints reach zero, runs
   in production mode and deletes in atomic commits, one per category: unused
-  deps, orphan files, dead exports. Each commit only lands with a green gate.
-  At the end, it produces an audit of what is left.
+  deps, orphan files, dead exports. Each step stages only pathspecs of that
+  step's artifacts (`git add -- …`, never `git add -A`), and only lands with a
+  green gate. At the end, it produces an audit of what is left.
 - **Phase 1.5 — duplicate functions** (closes phase 1). Sweeps for functions
   with different names doing the same thing (similarity-ts or fallow on
   JS/TS, jscpd on other stacks) and applies the churn rule: a pair that
@@ -229,13 +242,16 @@ git revert <sha>           # undoes only that category
 Merging the branch is your decision, on your schedule. The skill never
 pushes, never commits on main and never uses `git reset --hard` — its
 rollback is `git restore --staged --worktree .`, which throws away everything
-that has not been committed yet and coexists with hooks that block destructive
-commands.
+that has not been committed yet. If a security hook blocks that restore, the
+skill **aborts** the pipeline (it does not work around the hook): it reports
+the branch, the dirty tree and the manual command, then stops.
 
 Note the "everything": a change of yours sitting in the working tree before the
 skill started would go with it. That is why it demands a clean tree up front
 and stops to ask when it does not find one — with a clean tree, what the
-rollback discards is what the skill itself created.
+rollback discards is what the skill itself created. Pathspec staging (instead
+of `git add -A`) keeps drafts and local `.env` files out of the category
+commit.
 
 ## Known limits
 
@@ -251,6 +267,8 @@ rollback discards is what the skill itself created.
   suite, it is to fix the check the report names.
 - Exit 124 is reserved for the watchdog, exactly as in GNU `timeout`: a
   check that legitimately exits 124 under an active watchdog reads as TIMEOUT.
+  Exit 137 reads the same way while the watchdog runs with `-k`, since that is
+  the code the kill-after escalation produces against a check that ignores TERM.
 - With a single `.sln`/`.slnx` at the root the gate passes it explicitly to
   `dotnet`; with two or more it abstains and invokes with no argument, and
   the ambiguity is MSBuild's again. It fails closed: run the gate by hand

@@ -29,10 +29,13 @@ uncounted=0
 
 # --- Watchdog ---------------------------------------------------------
 # A hanging check (a test waiting on a port, a REPL, a prompt) would freeze the
-# gate forever. Resolve one backend up front; all three exit 124 on timeout,
-# copying GNU timeout so run() only has to know that number. Contract: 124 is
-# reserved for the watchdog, exactly as in GNU timeout — a check that
-# legitimately exits 124 under an active watchdog is read as TIMEOUT.
+# gate forever. Resolve one backend up front; all three raise 124 when the
+# alarm itself fires, copying GNU timeout. That is not the only code a timeout
+# can produce, which is why the test lives in wd_timed_out() instead of a bare
+# comparison: with -k, a check that ignores TERM is finished off with KILL and
+# the shell reports 137. Contract: 124 is reserved for the watchdog, exactly as
+# in GNU timeout — a check that legitimately exits 124 under an active watchdog
+# is read as TIMEOUT, and so is 137 while -k is in play.
 # Limit: what still escapes the kill is a double fork already reparented to
 # init/launchd when the alarm fires, and anything created between the snapshot
 # and the kill. The perl backend also sweeps descendants by parent pid (needs
@@ -141,6 +144,21 @@ guard() {
   esac
 }
 
+# wd_timed_out <rc> — true when <rc> is the watchdog reporting a timeout.
+# 124 is GNU timeout's own code, and the perl backend copies it. It is not the
+# only one: with -k, a check that ignores TERM is finished off with KILL and
+# the shell reports 128+9 = 137, which fell through to the generic non-zero
+# branch and was announced as 'RED at <cmd>' — a hung check reported as a
+# broken one, the exact distinction exit 4 exists to preserve. 137 only counts
+# when -k is actually in play; a process killed by something else (an OOM
+# reaper, say) reaching this arm is still read as inconclusive, never as GREEN.
+wd_timed_out() {
+  [[ -n $WATCHDOG ]] || return 1
+  [[ $1 -eq 124 ]] && return 0
+  [[ -n $WD_KILL_AFTER && $1 -eq 137 ]] && return 0
+  return 1
+}
+
 # run <kind> <cmd...>
 # <kind> is typecheck|test|both, optionally extended as <kind>:<rc>:<stack>:
 # that <rc> is the runner's "I collected nothing" code, and it is a YELLOW cap
@@ -159,7 +177,7 @@ run() {
   rc=$?
   # The watchdog keeps absolute priority: a check killed at the timeout is
   # inconclusive, never "no tests collected", whatever code it happens to share.
-  if [[ -n $WATCHDOG && $rc -eq 124 ]]; then
+  if wd_timed_out $rc; then
     echo "[gate] TIMEOUT after ${GATE_TIMEOUT}s at '$*'" >&2
     exit 4
   fi
@@ -268,9 +286,147 @@ if [[ -f package.json ]]; then
     # because run() classifies by kind and an unknown word there would run the
     # check and count nothing. The alias stays visible in the human
     # '[gate] <cmd>' line; checks= keeps its canonical vocabulary.
+    # The test path captures the runner's output: vitest/jest exit 1 with
+    # "No test files found" on an empty suite, which must be a YELLOW cap
+    # (uncounted), not RED. Typecheck still goes through run() unchanged.
     js_script() {
-      if [[ $PM == yarn ]]; then run "$1" yarn "$2"
-      else run "$1" "$PM" run "$2"; fi
+      local kind=$1 name=$2 out rc ev outfile
+      if [[ $kind != test ]]; then
+        if [[ $PM == yarn ]]; then run "$kind" yarn "$name"
+        else run "$kind" "$PM" run "$name"; fi
+        return
+      fi
+      if [[ $PM == yarn ]]; then set -- yarn "$name"
+      else set -- "$PM" run "$name"; fi
+      echo "[gate] $*"
+      # A file, not `out=$(...)`. Command substitution reads a pipe and only
+      # returns once every writer closes it — a test script that leaves a
+      # detached grandchild holding the inherited stdout keeps that pipe open
+      # long after the runner exited, so the gate blocked for the grandchild's
+      # whole lifetime with GATE_TIMEOUT already elapsed and the watchdog
+      # powerless (it kills the process it launched, not a reader waiting on a
+      # pipe). Redirecting to a file gives the watchdog its timing back.
+      # Not exit 2: that code means "bad path, nothing was checked", and by here
+      # typecheck may already have run. A tmpdir we cannot write to is the same
+      # shape as a missing toolchain — we could not measure, so the gate degrades
+      # to PARTIAL and says so, instead of claiming the suite failed.
+      outfile=$(mktemp) || {
+        echo "[gate] cannot create a temp file for the test output — manual gate" >&2
+        incomplete=1
+        return 0
+      }
+      guard "$@" > "$outfile" 2>&1
+      rc=$?
+      out=$(cat "$outfile")
+      rm -f "$outfile"
+      printf '%s\n' "$out"
+      if wd_timed_out $rc; then
+        echo "[gate] TIMEOUT after ${GATE_TIMEOUT}s at '$*'" >&2
+        exit 4
+      fi
+      # The package manager's own epilogue is not runner output, and both the
+      # exit-0 and the exit-1 path have to judge without it. pnpm prints
+      # 'ELIFECYCLE  Command failed', yarn 'error Command failed with exit code
+      # 1.', bun 'error: script "test" exited with code 1' — non-empty lines
+      # carrying "failed" after the runner's own message.
+      # pnpm changed this line between majors: v9 and older print
+      # ' ELIFECYCLE  Command failed with exit code 1.', v10/v11 print
+      # '[ELIFECYCLE] Test failed. See above for more details.' (and
+      # '[ELIFECYCLE] Command failed…' for a script not named test). Matching
+      # only the older spelling left the fix inert on every current pnpm, so
+      # both the brackets and both nouns are optional here.
+      ev=$(printf '%s\n' "$out" | grep -vE \
+        '^[[:space:]]*(error Command failed with exit code|.*\[?ELIFECYCLE\]?[[:space:]]+(Command|Test) failed|npm ERR!|error: script .* exited with code|info Visit https://yarnpkg)')
+      if [[ $rc -eq 0 ]]; then
+        # Exit 0 is not proof a suite ran. `--passWithNoTests` (jest, vitest)
+        # turns an empty suite into a success on purpose, which is the right
+        # call for CI and the wrong one here: counting it would announce GREEN
+        # — the level that unlocks dead-export deletion — over a repo where
+        # zero tests executed. The empty-suite detection used to live only
+        # inside the non-zero branch, so this path was never even considered.
+        if printf '%s\n' "$ev" | grep -qiE \
+            '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b'; then
+          uncounted_suite js "runner reported no tests and exited 0 (--passWithNoTests)"
+          return 0
+        fi
+        # node:test — the runtime's own runner — never prints any of those
+        # phrases. On an empty run it exits 0 and reports a count instead:
+        # 'ℹ tests 0' in the default reporter, '# tests 0' under TAP. Anchoring
+        # the end of the line keeps 'tests 1' and 'tests 10' out of it. The
+        # prefix is matched as "start of line, or one non-alphanumeric" rather
+        # than "any run of non-alphanumerics": the default reporter's marker is
+        # multibyte, and a negated class does not step over it under a UTF-8
+        # locale (it does under LC_ALL=C), so the greedy form silently missed
+        # the very reporter that is on by default. Without this a repo on the
+        # built-in runner with no test file reached GREEN.
+        if printf '%s\n' "$ev" | grep -qE \
+            '(^|[^[:alnum:]])tests[[:space:]]+0[[:space:]]*$'; then
+          uncounted_suite js "runner reported 0 tests and exited 0 (node:test)"
+          return 0
+        fi
+        ran_test=1
+        return 0
+      fi
+      if [[ $rc -ne 0 ]]; then
+        # Empty-suite cap: only a runner empty-message *line* (vitest/jest
+        # shape), never a mid-line substring in a real failure. A failing suite
+        # whose log happens to contain "No tests found" in fixture names or
+        # assertion text must stay RED. The runner's empty-suite exit is 1;
+        # any other code, or any non-empty line after the empty-suite message
+        # that is not an "exiting with code N" trailer, means a chained
+        # command failed and must stay RED — printing the empty line alone
+        # is not proof the process exited for an empty suite. Leaving the
+        # manager's epilogue in (it is stripped into $ev above) made every
+        # manager except npm read as a chained failure and sink a legitimately
+        # empty suite to RED.
+        # What the empty-suite line itself says about the exit is stronger
+        # evidence than anything that follows it. Both runners the docs name
+        # print the code inline — vitest 'No test files found, exiting with
+        # code 1', jest the same — and then keep going: vitest lists its
+        # include/exclude globs, jest prints 'N files checked' and every
+        # testMatch pattern it tried. That tail is the runner explaining an
+        # empty suite, not a second command failing, so reading it as a chained
+        # failure sent every real vitest and jest repo without a test file to
+        # RED while the docs promised YELLOW. When the line names the code and
+        # it is the code the process exited with, the exit is accounted for and
+        # the tail is diagnosis.
+        inline_rc=$(printf '%s\n' "$ev" | awk '
+              tolower($0) ~ /^[[:space:]]*(no test files found|no tests found|did not find any tests)/ {
+                if (match(tolower($0), /exiting with code [0-9]+/)) {
+                  s = substr(tolower($0), RSTART, RLENGTH)
+                  sub(/exiting with code /, "", s)
+                  print s
+                  exit
+                }
+              }
+            ')
+        if [[ $rc -eq 1 ]] \
+          && printf '%s\n' "$ev" | grep -qiE \
+            '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b' \
+          && ! printf '%s\n' "$ev" | grep -qiE \
+            '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b|(^|[[:space:]])(error|ERR!)([[:space:]:]|$)' \
+          && { [[ ${inline_rc:-x} == "$rc" ]] \
+               || ! printf '%s\n' "$ev" | awk '
+                # tolower(), not IGNORECASE: that variable is a gawk extension
+                # and is silently ignored by BSD awk (macOS) and mawk (the
+                # usual Debian/Ubuntu default) — both CI legs. Under it the
+                # chained-failure guard only ever matched the exact casing the
+                # fixtures happen to use, so a runner spelling its empty-suite
+                # line differently slipped a real failure through as YELLOW.
+                tolower($0) ~ /^[[:space:]]*(no test files found|no tests found|did not find any tests)([[:space:],]|$)/ {
+                  seen=1; next
+                }
+                seen && NF && tolower($0) !~ /^[[:space:]]*exiting with code [0-9]+[[:space:]]*$/ {
+                  found=1; exit
+                }
+                END { exit found ? 0 : 1 }
+              '; }; then
+          uncounted_suite js "no test files found (exit $rc)"
+          return 0
+        fi
+        echo "[gate] RED at '$*'" >&2
+        exit 1
+      fi
     }
 
     # js_typecheck_script — the first of the accepted spellings the project
@@ -279,18 +435,28 @@ if [[ -f package.json ]]; then
     # spelling made a fully covered repo look uncheckable. Exactly one script
     # runs: the first name the project defines wins, the rest are ignored, so
     # nothing runs or counts twice.
-    # 'tsc' is deliberately NOT an alias: as a script name it usually means an
-    # emitting compile ("tsc": "tsc -p ."), which would drop .js/.d.ts/.tsbuildinfo
-    # beside the sources of the tree being judged, right before phase 1.3 stages
-    # everything with 'git add -A' — and the documented rollback
-    # ('git restore --staged --worktree .') cannot remove untracked files.
+    # 'tsc' as a bare name usually means an emitting compile ("tsc": "tsc -p ."),
+    # which would drop .js/.d.ts/.tsbuildinfo beside the sources of the tree
+    # being judged, right before phase 1.3 stages pathspecs of that step
+    # — and the documented rollback ('git restore --staged --worktree .') cannot
+    # remove untracked files. It is therefore NOT an alias by name alone. The
+    # one exception is when the script value itself carries --noEmit as a real
+    # shell word (after stripping # / // comments): that is a check, not a
+    # build, and counts. A trailing comment like `# use --noEmit in CI` must
+    # NOT promote an emitting compile.
     # Echoes the script name, or nothing when the manifest declares none.
     js_typecheck_script() {
       node -e 'var s = require("./package.json").scripts || {};
 var names = ["typecheck", "type-check", "check-types"];
+var found = "";
 for (var i = 0; i < names.length; i++) {
-  if (s[names[i]]) { console.log(names[i]); break; }
-}' 2>/dev/null
+  if (s[names[i]]) { found = names[i]; break; }
+}
+if (!found && s.tsc) {
+  var body = String(s.tsc).replace(/#.*/g, "").replace(/\/\/.*/g, "");
+  if (/(?:^|[\s"'"'"'=])--noEmit(?:[\s"'"'"']|$)/.test(body)) found = "tsc";
+}
+if (found) console.log(found);' 2>/dev/null
     }
 
     # js_test_script — decides which script stands for the *whole* suite.
@@ -316,12 +482,17 @@ for (var i = 0; i < names.length; i++) {
     # this rule exists to deny. Slices are still listed in the report, so the
     # cap is explained instead of silent. Same reasoning as the 'tsc' exclusion
     # above: a name that means "not a check" is not promoted to one.
-    # Echoes 'run:<name>'; 'partial:<names>' when two or more slices split the
-    # suite; 'watch:<names>' when no slice can be run at all; nothing at all
-    # when the manifest declares no test script.
+    # The exact npm-init placeholder ('echo "Error: no test specified" && exit 1')
+    # is recognised by value and reported as 'placeholder:test': running it would
+    # only ever produce RED for a project that has never defined a suite.
+    # Echoes 'run:<name>'; 'placeholder:test'; 'partial:<names>' when two or
+    # more slices split the suite; 'watch:<names>' when no slice can be run at
+    # all; nothing at all when the manifest declares no test script.
     js_test_script() {
       node -e 'var s = require("./package.json").scripts || {};
-if (s.test) { console.log("run:test"); }
+var npmPlaceholder = "echo \u0022Error: no test specified\u0022 && exit 1";
+if (s.test === npmPlaceholder) { console.log("placeholder:test"); }
+else if (s.test) { console.log("run:test"); }
 else {
   var p = Object.keys(s).filter(function (k) { return k.indexOf("test:") === 0; });
   var slices = p.filter(function (k) { return !/(^|:)(watch|debug)(:|$)/.test(k); });
@@ -350,6 +521,9 @@ else {
       case $js_test in
         run:*)
           js_script test "${js_test#run:}" ;;
+        placeholder:*)
+          uncounted_suite js "npm init placeholder test script" \
+                   "replace scripts.test with a real suite" ;;
         partial:*)
           uncounted_suite js "no 'test' script; test:* slices found (${js_test#partial:})" \
                    "none of them stands for the whole suite; run them by hand" ;;
@@ -460,8 +634,36 @@ fi
 if [[ -f Gemfile ]]; then
   if command -v bundle >/dev/null; then
     [[ -f sorbet/config ]] && run typecheck bundle exec srb tc
-    if [[ -d spec ]]; then run test bundle exec rspec
-    elif [[ -f Rakefile && -d test ]]; then run test bundle exec rake test
+    # A directory is not a suite. 'bundle exec rspec' on a spec/ holding only a
+    # spec_helper.rb exits 0 reporting "0 examples", and 'rake test' on a test/
+    # with no *_test.rb does the same — the exact trap 'go test' and 'cargo
+    # test' already have guards for. Judging by the directory alone let a Ruby
+    # repo with zero real tests reach GREEN, which unlocks dead-export deletion.
+    # Count a layout only when a real test file backs it.
+    # Both minitest spellings count: `x_test.rb` and `test_x.rb`. The second is
+    # not exotic — `test/test*.rb` is the DEFAULT pattern of Rake::TestTask, so
+    # any `Rake::TestTask.new(:test)` without an explicit pattern collects only
+    # that shape, and `bundle gem` scaffolds it. Matching just the suffix form
+    # made a real minitest suite invisible: it dropped the "both runners" cap on
+    # a repo that has rspec *and* rake (announcing GREEN with the rake half
+    # never measured) and demoted a rake-only repo to a YELLOW whose message was
+    # simply false. `test_helper.rb` fits the prefix pattern and is support
+    # code, not a suite, so it is excluded by name.
+    rb_specs=""; rb_tests=""
+    [[ -d spec ]] && rb_specs=$(find ./spec -name '*_spec.rb' -print -quit 2>/dev/null)
+    [[ -f Rakefile && -d test ]] && \
+      rb_tests=$(find ./test \( -name '*_test.rb' -o -name 'test_*.rb' \) \
+                 ! -name 'test_helper.rb' -print -quit 2>/dev/null)
+    # rspec and rake are two halves of a suite when both layouts exist — running
+    # only one would announce GREEN with the other half never measured. Cap and
+    # name both, same shape as JS test:* slices.
+    if [[ -n $rb_specs && -n $rb_tests ]]; then
+      uncounted_suite ruby "both rspec (spec/) and rake test (Rakefile+test/) present" \
+               "neither stands for the whole suite alone; run them by hand"
+    elif [[ -n $rb_specs ]]; then run test bundle exec rspec
+    elif [[ -n $rb_tests ]]; then run test bundle exec rake test
+    elif [[ -d spec || ( -f Rakefile && -d test ) ]]; then
+      uncounted_suite ruby "spec/ or test/ present but holds no *_spec.rb / *_test.rb"
     # Same evidence rule as Python: a Gemfile alone (fastlane, Jekyll, danger)
     # in a repo of another stack is not a Ruby stack without a suite, it is not
     # a Ruby stack. Capping on it would pin that repo below GREEN forever.

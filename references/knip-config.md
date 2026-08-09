@@ -2,10 +2,12 @@
 
 Read this before writing `knip.json`. Applies to JS/TS only.
 
-This guide was written against knip v6. Check the installed major with
-`npx knip --version`; if it differs, validate whatever diverges against the
-official docs (knip.dev) — especially the schema, cycle detection and option
-names. Adjust the `$schema` version below to the major in use.
+This guide was written against knip v6. The pipeline pins
+`npx knip@6.32.0` (verified 2026-08-09); check that pin with
+`npx knip@6.32.0 --version`. If you intentionally use another major, validate
+whatever diverges against the official docs (knip.dev) — especially the
+schema, cycle detection and option names. Adjust the `$schema` version below
+to the major in use. Never bare `npx knip`.
 
 ## Index
 - [Order of work](#order-of-work)
@@ -20,11 +22,11 @@ names. Adjust the `$schema` version below to the major in use.
 
 ## Order of work
 
-1. `npx knip` with no config at all
+1. `npx knip@6.32.0` with no config at all
 2. Resolve **every** configuration hint
 3. Only then write/adjust `knip.json`
 4. Repeat 2–3 until the hints reach zero
-5. `npx knip --production --no-exit-code --reporter json > knip-report.json.tmp && mv knip-report.json.tmp knip-report.json`
+5. `npx knip@6.32.0 --production --no-exit-code --reporter json > knip-report.json.tmp && mv knip-report.json.tmp knip-report.json`
 6. Check the result before using it: `knip-report.json.tmp` gone, and
    `knip-report.json` non-empty and parsing as JSON
 
@@ -81,7 +83,7 @@ without `*` are exact matches. Each workspace can have its own `paths`.
 ## Production mode
 
 ```bash
-npx knip --production
+npx knip@6.32.0 --production
 ```
 
 Excludes tests and devDependencies automatically. This is what separates "alive"
@@ -182,7 +184,7 @@ ones it depends on. Add `--strict` so each dependency is required to be in
 that workspace's own `package.json` instead of being resolved from the root:
 
 ```bash
-npx knip -W packages/api --strict
+npx knip@6.32.0 -W packages/api --strict
 ```
 
 ## Cycle detection

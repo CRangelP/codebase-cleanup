@@ -43,19 +43,22 @@ The same author ships `similarity-py`/`similarity-rs` (beta) and
 jscpd instead because it is the mature option, not because the family does
 not exist.
 
-**2. fallow** — runs without installing anything (`npx fallow dupes`) and
-finds clone families (not just pairs) with four modes: `strict` (exact
-tokens), `mild` (default), `weak` (different literals), `semantic` (renamed
-variables). Start on `mild`, escalate to `semantic` if the output is thin.
-Also covers dead code, complexity and boundaries in the same binary. TS/JS
-only.
+**2. fallow** — runs without a global install (`npx fallow@3.14.0 dupes`;
+pin verified 2026-08-09) and finds clone families (not just pairs) with four
+modes: `strict` (exact tokens), `mild` (default), `weak` (different
+literals), `semantic` (renamed variables). Start on `mild`, escalate to
+`semantic` if the output is thin. Also covers dead code, complexity and
+boundaries in the same binary. TS/JS only. Always pin the exact version —
+never bare `npx fallow`.
 
 **3. jscpd** — the multi-language fallback (223 formats), and the only rung
 for non-JS/TS stacks:
 
 ```bash
-npx jscpd src --reporters ai --min-tokens 50 --cross-formats "js-ts"
+npx jscpd@5.0.14 src --reporters ai --min-tokens 50 --cross-formats "js-ts"
 ```
+
+Pin verified 2026-08-09. Always `npx jscpd@5.0.14`, never bare `npx jscpd`.
 
 - Token-level: it finds copy-paste (including with edits), **not** renamed
   intent. In Python, Go or Java this is the honest ceiling; say so in the

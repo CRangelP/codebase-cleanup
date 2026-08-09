@@ -23,4 +23,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - run: /bin/bash --version && /bin/bash scripts/test.sh
+      # Hard premise of this job: stock /bin/bash must be 3.2. A print alone
+      # would let the suite silently run under a different bash if the runner
+      # image ever ships something else.
+      - run: |
+          /bin/bash --version
+          /bin/bash -c '[[ ${BASH_VERSINFO[0]} -eq 3 && ${BASH_VERSINFO[1]} -eq 2 ]]'
+          /bin/bash scripts/test.sh
