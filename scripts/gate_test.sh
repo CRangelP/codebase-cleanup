@@ -309,6 +309,17 @@ cat > "$TMP/js-empty-inline-mismatch/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 0')\"; false"}}
 EOF
 
+# The mismatch rule compares numbers, and this is the guard against it costing a
+# RED to a repo that did nothing wrong. Written as strings '01' is not '1', so a
+# runner padding its code would be read as disagreeing with the exit and sink an
+# empty suite to RED; read with bash's default rules '010' would be octal 8,
+# which is a different wrong answer. A false RED blocks a pipeline over a repo
+# that is merely empty, so the expensive direction gets the fixture.
+mkdir -p "$TMP/js-empty-inline-leading-zero"
+cat > "$TMP/js-empty-inline-leading-zero/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 01'); process.exit(1)\""}}
+EOF
+
 # The other half, and it is NOT decidable — this fixture exists to say so. Same
 # silent chained failure, but the runner announced code 1 and the process exited
 # 1, so the bytes are identical to a legitimately empty vitest suite that exited
@@ -1023,6 +1034,8 @@ case_run js-empty-suite-chained-exit1 1 "$TMP/js-empty-suite-chained-exit1" - "R
          '!YELLOW' "!'test' not counted"
 case_run js-empty-inline-mismatch 1 "$TMP/js-empty-inline-mismatch" - "RED" \
          '!YELLOW' "!'test' not counted"
+case_run js-empty-inline-leading-zero 0 "$TMP/js-empty-inline-leading-zero" - \
+         "no test files found" "'test' not counted" '!RED'
 case_run js-empty-inline-match-chained 0 "$TMP/js-empty-inline-match-chained" - \
          "no test files found" "'test' not counted" '!RED'
 case_run js-empty-suite-chained-lower 1 "$TMP/js-empty-suite-chained-lower" - "RED" \

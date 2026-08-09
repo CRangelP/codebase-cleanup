@@ -457,6 +457,14 @@ if [[ -f package.json ]]; then
         # leaving with 0 and the shell reported 1, so a later command in the
         # script set the status. That is decided on the two numbers alone, which
         # matters because the case that motivated it prints nothing at all:
+        # The two codes are compared as numbers, and base 10 is forced: as
+        # strings 'code 01' would differ from an exit of 1 and cost a RED to a
+        # suite that did nothing wrong, and left to bash's own rules '010' would
+        # be read as octal 8. A false RED is the expensive mistake here — it
+        # blocks a pipeline over a repo that is merely empty — so anything that
+        # is not a plain run of digits falls through to the tail check instead
+        # of deciding, which is the same conservative path as announcing no code
+        # at all.
         # `runner; failing-command` with a silent second command leaves no tail,
         # and every tail-based test is blind on it by construction.
         # The honest limit, because this comment used to promise past it: a
@@ -484,8 +492,8 @@ if [[ -f package.json ]]; then
             '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b' \
           && ! printf '%s\n' "$ev" | grep -qiE \
             '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b|(^|[[:space:]])(error|ERR!)([[:space:]:]|$)' \
-          && { [[ ${inline_rc:-x} == "$rc" ]] \
-               || { [[ -z ${inline_rc:-} ]] \
+          && { { [[ ${inline_rc:-} =~ ^[0-9]+$ ]] && (( 10#$inline_rc == rc )); } \
+               || { [[ ! ${inline_rc:-} =~ ^[0-9]+$ ]] \
                     && ! printf '%s\n' "$ev" | awk '
                 # tolower(), not IGNORECASE: that variable is a gawk extension
                 # and is silently ignored by BSD awk (macOS) and mawk (the
