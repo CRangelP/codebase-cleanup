@@ -780,6 +780,69 @@ check "SKILL.md description stays at or under 1000 characters" \
       "$([[ -n $desc && $desc_len -le 1000 ]] && echo 0 || echo 1)" \
       "description is ${desc_len} characters (limit 1000)"
 
+# 11. The guard blocks what the READMEs say it blocks. -----------------------
+# The guard is the plugin half of five rules the skill states in prose, and a
+# table that drifts from the script is worse than no table: a reader plans
+# around a command that is not actually stopped, or fights one that is. So each
+# command is one string in three places — the executable proof, and both
+# READMEs — and the invariant is that the three agree. The proof is the anchor
+# and not guard.sh itself on purpose: the script matches `-A` inside a case arm
+# and never spells the whole command out, while guard_test.sh has to run it
+# verbatim to test it.
+GUARD_SECTION_PT='### Os guardas'
+GUARD_SECTION_EN='### The guards'
+
+guard_section() { # guard_section <readme> <heading> — the section's body
+  awk -v h="$2" '
+    $0 == h { inside = 1; next }
+    inside && /^## / { exit }
+    inside { print }
+  ' "$1"
+}
+
+for f in scripts/guard.sh scripts/guard_test.sh hooks/hooks.json; do
+  check "$f exists" "$([[ -f $f ]] && echo 0 || echo 1)" "the guard ships incomplete without it"
+done
+
+check "hooks.json runs the guard through the plugin root" \
+      "$(grep -q -F -- '${CLAUDE_PLUGIN_ROOT}/scripts/guard.sh' hooks/hooks.json 2>/dev/null && echo 0 || echo 1)" \
+      "the hook command has to resolve from the plugin directory, not the cleaned project"
+
+check "hooks.json registers the guard on PreToolUse" \
+      "$(grep -q -F -- 'PreToolUse' hooks/hooks.json 2>/dev/null && echo 0 || echo 1)" \
+      "any later event fires after the command already ran"
+
+check "test.sh chains guard_test.sh" \
+      "$(grep -q -F -- 'guard_test.sh' scripts/test.sh 2>/dev/null && echo 0 || echo 1)" \
+      "a suite nobody runs is a suite that rots"
+
+while IFS= read -r cmd; do
+  [[ -n $cmd ]] || continue
+  check "guard_test.sh exercises '$cmd'" \
+        "$(grep -q -F -- "$cmd" scripts/guard_test.sh 2>/dev/null && echo 0 || echo 1)" \
+        "the READMEs promise it is blocked and no case runs it"
+  check "the guard table of README.md names '$cmd'" \
+        "$(guard_section README.md "$GUARD_SECTION_PT" | grep -q -F -- "$cmd" && echo 0 || echo 1)" \
+        "blocked by the guard and absent from the table"
+  check "the guard table of README.en.md names '$cmd'" \
+        "$(guard_section README.en.md "$GUARD_SECTION_EN" | grep -q -F -- "$cmd" && echo 0 || echo 1)" \
+        "blocked by the guard and absent from the table"
+done <<'GUARDED'
+git reset --hard
+git clean
+git push
+git commit
+git add -A
+GUARDED
+
+# The guard's own exit codes. Exit 1 does not block — the hook contract reads
+# it as a non-fatal error and lets the command through — so a guard that ever
+# exits 1 fails silently, which is the one failure mode nobody would notice.
+guard_codes=$(exit_codes < scripts/guard.sh | sort -u | tr '\n' ' ')
+check "guard.sh only exits 0 or 2" \
+      "$([[ $(printf '%s' "$guard_codes" | tr -d ' ') == "02" ]] && echo 0 || echo 1)" \
+      "exit codes found: ${guard_codes:-none} (1 would not block)"
+
 echo "----"
 echo "$((total-failures))/$total invariants held"
 [[ $failures -eq 0 ]]

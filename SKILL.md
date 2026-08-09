@@ -57,6 +57,16 @@ it. Branch on which command was blocked:
 
 A guard is environment policy, not an obstacle.
 
+Installed as a plugin, this skill ships guards of its own (`hooks/hooks.json`
+→ `scripts/guard.sh`) for exactly the five commands the rules above forbid:
+`git reset --hard`, `git clean`, push, commit on `main`, and whole-tree
+staging. They are awake only inside a run — a `cleanup/` branch, or an
+untracked `CLEANUP_PROGRESS.md` — and they fail open. Hitting one of them
+means the step was about to break the protocol, so the answer is never to
+rephrase the command until it slips through: re-read the rule the guard names
+and follow it. Everything the protocol actually runs is allowed, the rollback
+and pathspec staging included.
+
 There are **two scheduled checkpoints** in the pipeline (phase 2, choosing the
 consolidation candidate; phase 3 on GREEN, confirming the folder plan before
 any `git mv`) and **one conditional stop** at Step 0, when the working tree is

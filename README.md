@@ -62,6 +62,10 @@ codebase-cleanup/
 ├── README.md                         este arquivo
 ├── README.en.md                      versão em inglês
 ├── LICENSE                           MIT
+├── .claude-plugin/
+│   └── plugin.json                   manifesto do plugin (nome, versão, licença)
+├── hooks/
+│   └── hooks.json                    registra o guarda no evento PreToolUse
 ├── references/
 │   ├── audit.md                      protocolo de auditoria da fase 1.4
 │   ├── knip-config.md                configuração do knip sem armadilhas
@@ -71,8 +75,10 @@ codebase-cleanup/
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
     ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/2/3/4
-    ├── test.sh                       roda as três suítes em sequência
+    ├── guard.sh                      bloqueia os cinco comandos que o protocolo proíbe
+    ├── test.sh                       roda as quatro suítes em sequência
     ├── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
+    ├── guard_test.sh                 o que o guarda bloqueia e o que ele deixa passar
     ├── rollback_test.sh              prova executável do protocolo de rollback
     └── coherence_test.sh             invariantes de coerência entre doc e código
 ```
@@ -82,24 +88,25 @@ veja se `codebase-cleanup` aparece na lista de skills disponíveis.
 
 ### Testes
 
-Três suítes, sem dependência além de `bash` e `git`:
+Quatro suítes, sem dependência além de `bash` e `git`:
 
 ```bash
-bash scripts/test.sh            # roda as três, para na primeira que falhar
+bash scripts/test.sh            # roda as quatro, para na primeira que falhar
 
 bash scripts/gate_test.sh       # contrato do gate: exit codes, linha checks=, PARTIAL
+bash scripts/guard_test.sh      # o que o guarda bloqueia, e o que ele deixa passar
 bash scripts/rollback_test.sh   # o que `git restore` recupera e o que ele destrói
 bash scripts/coherence_test.sh  # doc e código dizendo a mesma coisa
 ```
 
 Cada uma sai 0 quando tudo passou e imprime o caso que falhou quando não; o
-`test.sh` só encadeia as três e para na primeira vermelha.
-Nenhuma das três toca o repositório em que você a rodou: o gate usa stubs de
-toolchain, o rollback cria repositórios descartáveis dentro de um `mktemp -d`,
-com `HOME` redirecionado e identidade de commit passada por `-c` — sua config
-do git não é lida nem escrita —, e a de coerência só lê arquivos.
+`test.sh` só encadeia as quatro e para na primeira vermelha.
+Nenhuma das quatro toca o repositório em que você a rodou: o gate usa stubs de
+toolchain, o guarda e o rollback criam repositórios descartáveis dentro de um
+`mktemp -d`, com `HOME` redirecionado e identidade de commit passada por `-c`
+— sua config do git não é lida nem escrita —, e a de coerência só lê arquivos.
 
-A CI roda as três suítes a cada push e PR: ubuntu (GNU `timeout` real,
+A CI roda as quatro suítes a cada push e PR: ubuntu (GNU `timeout` real,
 procps) e macOS com o `/bin/bash` 3.2 de fábrica.
 
 As suítes também rodam fora do macOS. Num container Linux, o caso de hang
@@ -246,6 +253,34 @@ entraria nessa conta. É por isso que ela exige árvore limpa no início e
 interrompe para perguntar quando não está — com a árvore limpa, o que o
 rollback joga fora foi ela mesma que criou. O stage por pathspec (em vez de
 `git add -A`) evita engolir rascunhos e `.env` locais no commit da categoria.
+
+### Os guardas
+
+Instalada como plugin, essas proibições deixam de ser texto que o modelo pode
+esquecer. `hooks/hooks.json` registra `scripts/guard.sh` no evento
+`PreToolUse`, e ele barra cinco comandos antes de rodarem:
+
+| Comando | Por quê |
+|---|---|
+| `git reset --hard` | levaria junto trabalho que estava na árvore antes da limpeza |
+| `git clean` | apagaria arquivos não rastreados que precisam sobreviver: saída de ferramenta, caches, `.env` locais |
+| `git push` | a skill nunca publica; o merge é decisão sua |
+| `git commit` na `main` | todo o trabalho vive na branch de limpeza |
+| `git add -A` | staging de árvore inteira engole no commit o que não é da categoria |
+
+O guarda só acorda dentro de uma run: HEAD numa branch `cleanup/`, ou um
+`CLEANUP_PROGRESS.md` **não rastreado** — que é o que uma run RED deixa, e o
+que existe antes do primeiro commit. Log rastreado numa branch normal é
+limpeza já mergeada, não run em curso, e aí ele volta a dormir; sem isso ele
+ficaria ativo na main para sempre depois do primeiro merge. Fora disso esses
+comandos são trabalho normal, e ele não diz nada.
+
+Na dúvida ele libera. Sem repo, sem JSON, sem comando: sai 0 e cala. Um guarda
+que bloqueia por engano é pior que guarda nenhum, porque a skill **aborta** o
+pipeline quando um comando do protocolo é barrado — um falso positivo derruba
+uma run legítima. O que ele bloqueia e o que ele deixa passar está em
+`scripts/guard_test.sh`, incluindo `git restore --staged --worktree .`,
+`git revert`, `git mv`, `git stash push -u` e o `git add --` por pathspec.
 
 ## Limites conhecidos
 
