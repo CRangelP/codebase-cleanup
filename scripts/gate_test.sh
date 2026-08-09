@@ -377,6 +377,18 @@ cat > "$TMP/js-empty-mixed-color/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 1'); console.log('\\u001b[31mFAIL\\u001b[39m src/a.test.ts'); process.exit(1)\""}}
 EOF
 
+# The same laundering under a different escape, and the one that proves the
+# normalisation had to cover more than colour. A runner that makes a failing
+# path clickable wraps it in an OSC 8 hyperlink, so the byte before FAIL is the
+# BEL that closes `ESC]8;;file://…` — the failure guard is anchored on
+# `(^|[[:space:]])` and goes blind exactly as it did under SGR. Unlike a
+# terminal-title OSC this one does not need a TTY, only the env that turns
+# hyperlinks on, which is the same class of env that turned colour on here.
+mkdir -p "$TMP/js-empty-osc-hyperlink"
+cat > "$TMP/js-empty-osc-hyperlink/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 1'); console.log('\\u001b]8;;file:///a.test.ts\\u0007\\u001b[31mFAIL\\u001b[39m\\u001b]8;;\\u0007 src/a.test.ts'); process.exit(1)\""}}
+EOF
+
 # The gate observes, it does not repaint: normalisation exists to classify, so
 # the bytes the user sees must still carry their colour. This case asserts the
 # raw escape survives into the gate's own output — a fix that stripped colour
@@ -1008,6 +1020,8 @@ case_run js-node-test-empty-color 0 "$TMP/js-node-test-empty-color" - \
 # No FORCE_COLOR here: npm would colour its own ERR! epilogue and sink the run
 # to RED for a reason that has nothing to do with the guard under test.
 case_run js-empty-mixed-color 1 "$TMP/js-empty-mixed-color" - "RED" \
+         '!YELLOW' "!'test' not counted"
+case_run js-empty-osc-hyperlink 1 "$TMP/js-empty-osc-hyperlink" - "RED" \
          '!YELLOW' "!'test' not counted"
 GATE_ENV="FORCE_COLOR=1 CLICOLOR_FORCE=1"
 case_run js-empty-npm-color 0 "$TMP/js-empty-suite" "$EMPTY_NPM_COLOR:$PATH" \

@@ -227,12 +227,19 @@ uncounted_suite() {
   no_tests "$@"
 }
 
-# strip_ansi — drop SGR/CSI escapes from stdin. sed, not perl: the watchdog
+# strip_ansi — drop CSI and OSC escapes from stdin. sed, not perl: the watchdog
 # already degrades when perl is missing and classification must not inherit that
 # dependency. bash 3.2 has no $'\033', so the ESC byte comes from printf. The
 # class covers the parameter bytes any terminal-coloured runner emits
 # ([0-9;?]) and any final letter, so cursor and erase sequences from a progress
 # reporter disappear too, not only colour.
+# OSC goes with them, and it is not decoration. A hyperlink (`OSC 8`) wraps the
+# text it links, so a runner that makes a failing path clickable emits
+# `ESC]8;;file://…BEL` immediately before `FAIL` — and the failure guard is
+# anchored on `(^|[[:space:]])`, so it goes blind exactly the way colour made it
+# blind. Terminal-title OSC is the harmless case; the hyperlink is the one that
+# would have reproduced this whole bug under a different escape, and unlike the
+# title it does not need a TTY, only the env that turns it on.
 # Scope: only the JS/TS stack classifies by runner *text*, so it is the only
 # caller. Go, Rust, Python, JVM, .NET and Ruby decide an empty suite from
 # filesystem evidence (*_test.go, tests/*.rs, #[test], tests/, csproj markers),
@@ -240,7 +247,10 @@ uncounted_suite() {
 # would be noise. A new stack that classifies by runtime output must route its
 # capture through out_plain, or it is born with the same blindness.
 ESC=$(printf '\033')
-strip_ansi() { sed "s/${ESC}\[[0-9;?]*[a-zA-Z]//g"; }
+BEL=$(printf '\007')
+strip_ansi() {
+  sed "s/${ESC}\[[0-9;?]*[a-zA-Z]//g; s/${ESC}\][^${BEL}]*${BEL}//g"
+}
 
 py_missing() {
   echo "[gate] $1 present but toolchain '$2' missing — looked in \$VIRTUAL_ENV/bin," \
