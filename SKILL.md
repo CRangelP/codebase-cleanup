@@ -1,6 +1,6 @@
 ---
 name: codebase-cleanup
-description: Full three-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules and reorganizes the folder structure, running autonomously with atomic commits and automatic rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, messy folders, confusing structure or a bloated codebase; mentions duplicated code, duplicate functions, copy-paste code, "código duplicado" or "função repetida"; asks to "give the codebase a deep clean", to "reorganiza essas pastas", or for an audit or health check; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the three phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
+description: Full three-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules and reorganizes the folder structure, running autonomously with atomic commits and automatic rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, messy folders, confusing structure or a bloated codebase; mentions duplicated code, duplicate functions, copy-paste code, "código duplicado" or "função repetida"; asks to "give the codebase a deep clean" or to "reorganiza essas pastas"; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the three phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
 ---
 
 # Codebase Cleanup
@@ -32,22 +32,35 @@ and both are the pipeline's job to guarantee: the tree was clean when the work
 started (Step 0 stops if it was not), and everything the step changed is staged
 before the gate runs — `git restore --staged --worktree .` undoes a staged new
 file, but leaves an untracked one behind. Hence the rule that repeats at every
-step: **`git add -A` before the gate.**
+step: **stage with pathspecs of this step's artifacts before the gate** —
+`git add -- <paths this step produced or edited>`, never `git add -A` or
+`git add .`, which would swallow unrelated untracked files (drafts, a local
+`.env`, secrets) into the category commit.
 
 Never use `git reset --hard` or `git clean`. `restore` covers the case and
 survives environments with hooks that block destructive commands; `git clean`
 would additionally wipe untracked files that must survive — tool output,
 caches, local env files that never belonged to this cleanup.
 
-**If a security hook blocks a command from the protocol** (rollback, branch
-creation, file deletion), do not work around it: record the pending item in
-`CLEANUP_PROGRESS.md`, hand the ready-to-run command to the user and move on to
-the next step that does not depend on it. A guard is environment policy, not an
-obstacle.
+**If a security hook blocks a command from the protocol**, do not work around
+it. Branch on which command was blocked:
 
-There is **one scheduled checkpoint** in the entire pipeline (phase 2, choosing
-the consolidation candidate) and **one conditional stop** at Step 0, when the
-working tree is dirty before anything starts. Everything else runs on its own.
+- **Rollback** (`git restore --staged --worktree .`) — **abort the pipeline.**
+  The failed category's work is still in the tree; the next stage would fold
+  it into another category and destroy atomic revert. Report: the branch name,
+  that the tree is dirty with the failed step's changes, and the exact command
+  the user must run by hand (`git restore --staged --worktree .`, or their
+  environment's approved equivalent). Do not start the next category or folder.
+- **Anything else** (branch creation, file deletion, …) — record the pending
+  item in `CLEANUP_PROGRESS.md`, hand the ready-to-run command to the user and
+  move on to the next step that does not depend on it.
+
+A guard is environment policy, not an obstacle.
+
+There are **two scheduled checkpoints** in the pipeline (phase 2, choosing the
+consolidation candidate; phase 3 on GREEN, confirming the folder plan before
+any `git mv`) and **one conditional stop** at Step 0, when the working tree is
+dirty before anything starts. Everything else runs on its own.
 
 ---
 
@@ -119,10 +132,16 @@ timeout: a check that legitimately exits 124 is read as a timeout.
 
 | Signal | Level | Behavior |
 |---|---|---|
-| Typecheck **and** tests pass | **GREEN** | Runs phases 1 and 3 in full without asking. Phase 2 stops at the checkpoint. |
-| A partial net, or no test file in the stack | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Stops before phase 2 and reports. |
-| A check fails, or no tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. Delivers a report. |
+| Typecheck **and** tests pass | **GREEN** | Runs phase 1 in full without asking. Phase 2 and phase 3 each stop at their human checkpoint before mutating. |
+| A partial net, or no test file in the stack | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Does **not** run phase 2 or phase 3; reports and stops. |
+| A check fails, or no tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. May create the cleanup branch; does **not** commit `CLEANUP_PROGRESS.md`. Delivers a report. |
 | No git repository | **RED** | Diagnoses only, regardless of the gate result — there is no HEAD to roll back to. |
+
+**Stack caps in `references/other-stacks.md` override the GREEN column.**
+Python always confirms before deleting; JVM and Ruby are diagnosis / YELLOW by
+default; .NET is YELLOW by default for code (deps flagged by the compiler may
+go). Read that file before autonomous deletion — a GREEN gate on a stack whose
+graph is unreliable does not unlock code deletion.
 
 `checks=typecheck` because the stack has **no test file** is YELLOW, not GREEN,
 even though the gate exits 0 — a suite that does not exist cannot pass. The
@@ -136,30 +155,33 @@ lives somewhere the gate does not look; the skill never promotes itself.
 
 **Which npm script the gate reads.** For typecheck it takes the first of
 `typecheck`, `type-check`, `check-types` the manifest defines, and stops there.
-`tsc` is deliberately not on that list: as a script name it usually means an
-emitting compile, and the output would land beside the sources right before
-`git add -A` stages everything. The reverse is not covered: a script *named*
-`typecheck` whose body is `tsc -p .` with no `--noEmit` emits just the same, and
-the gate cannot tell. If the manifest has one, read it before phase 1.
+`tsc` is not on that list by name alone: as a script name it usually means an
+emitting compile, and the output would land beside the sources. Exception: when
+the script *value* carries `--noEmit` as a real shell word (comments stripped),
+`tsc` counts as typecheck — a trailing `# use --noEmit in CI` does not. The
+reverse is still uncovered: a script *named* `typecheck` whose body is
+`tsc -p .` with no `--noEmit` emits just the same, and the gate cannot tell. If
+the manifest has one, read it before phase 1.
 
 For the suite it takes `test`; failing that, a lone `test:*` script, since a
 repo that declares one slice and no whole is declaring its suite. Two or more
 slices and no `test` count as nothing — half a net classified GREEN would
 unlock dead-export deletion on code the other half covers — and a slice
-declared with an empty command still counts as one of them. A watch-mode slice
-never runs at all, because it does not exit: `watch`, `ui` and `debug` are
-matched as whole segments of the name, so `test:watch:all` is caught and
-`test:watchdog` is not. Not running one and not counting one are separate
-questions. `watch` and `debug` name a mode of the suite — the same tests,
-started so they never stop — so a `test:watch` beside a lone `test:unit` does
-not split anything and the real slice is still the suite. `ui` is not a mode
-word: `vitest --ui` does not exit either, but `test:ui` is just as often a scope
-of its own, so it is never run *and* never leaves the count — `test:unit` next
-to `test:ui` is two slices, not one. All of these print the `'test' not counted`
-line naming the slices, and so does a manifest that declares no test script at
-all. A split
-suite is **not** promotable by hand: it is in the manifest, only divided, so
-run every slice before deciding.
+declared with an empty command still counts as one of them. The exact npm-init
+placeholder (`echo "Error: no test specified" && exit 1`) is recognised by
+value and reported as `'test' not counted` with `npm init placeholder` — YELLOW,
+not RED. A watch-mode slice never runs at all, because it does not exit:
+`watch`, `ui` and `debug` are matched as whole segments of the name, so
+`test:watch:all` is caught and `test:watchdog` is not. Not running one and not
+counting one are separate questions. `watch` and `debug` name a mode of the
+suite — the same tests, started so they never stop — so a `test:watch` beside a
+lone `test:unit` does not split anything and the real slice is still the suite.
+`ui` is not a mode word: `vitest --ui` does not exit either, but `test:ui` is
+just as often a scope of its own, so it is never run *and* never leaves the
+count — `test:unit` next to `test:ui` is two slices, not one. All of these print
+the `'test' not counted` line naming the slices, and so does a manifest that
+declares no test script at all. A split suite is **not** promotable by hand: it
+is in the manifest, only divided, so run every slice before deciding.
 
 **A baseline that already fails is RED, not YELLOW.** Exit 1 says a check
 broke, and a broken baseline leaves no way to tell what the cleanup broke from
@@ -184,12 +206,18 @@ force, never delete the branch that is in the way.
 
 ## Step 0.1 — Persistent state
 
-Create `CLEANUP_PROGRESS.md` at the root and **commit it right away**
-(`chore: start cleanup log`), before any other work. It is the only artifact
-that has to outlive a rollback: an untracked file survives
+**At RED, skip this step.** Do not create or commit `CLEANUP_PROGRESS.md` —
+diagnosis goes only into the final report. The cleanup branch from Step 0 may
+exist; nothing else is written into the repo.
+
+On GREEN/YELLOW, create `CLEANUP_PROGRESS.md` at the root and **commit it
+right away** (`chore: start cleanup log`), before any other work. It is the
+only artifact that has to outlive a rollback: an untracked file survives
 `git restore --staged --worktree .` by accident, a committed one survives by
 design, and a staged one would be thrown away with the failed step. Keep it
 updated at the end of every step, committed along with that step's changes.
+Stage it with a pathspec (`git add -- CLEANUP_PROGRESS.md`), never
+`git add -A`.
 
 Phases are separated by `/clear` (dirty context from one phase degrades the
 next), so this file is what allows resuming without the user re-explaining
@@ -232,9 +260,10 @@ The contract of each delegation:
 - returning a summary of what it did, with `CLEANUP_PROGRESS.md` updated as the
   canonical state.
 
-Step 0 (calibrating the level, creating the branch) and the phase 2 checkpoint
-stay with the orchestrator — a subagent does not talk to the user. Level and
-branch reach the subagents ready-made, through `CLEANUP_PROGRESS.md`.
+Step 0 (calibrating the level, creating the branch), the phase 2 checkpoint
+and the phase 3 checkpoint stay with the orchestrator — a subagent does not
+talk to the user. Level and branch reach the subagents ready-made, through
+`CLEANUP_PROGRESS.md`.
 
 ---
 
@@ -251,10 +280,11 @@ assumes JS/TS (step 1.5 names its own fallback for other stacks).
 
 ## 1.1 Configure knip until the hints reach zero
 
-Run `npx knip` with no config at all first. knip has plugins for the vast
-majority of the ecosystem's tools (Next, Vitest, ESLint, Playwright, and dozens
-of others) that read their configuration and work out entry points on their own
-— writing config before seeing what it already knows is wasted work.
+Run `npx knip@6.32.0` with no config at all first (pin verified 2026-08-09;
+never bare `npx knip`). knip has plugins for the vast majority of the
+ecosystem's tools (Next, Vitest, ESLint, Playwright, and dozens of others)
+that read their configuration and work out entry points on their own — writing
+config before seeing what it already knows is wasted work.
 
 **Handle the configuration hints before looking at any finding.** Hints mean
 knip could not resolve a dependency, plugin or entry file — that is, the graph
@@ -281,7 +311,7 @@ graph (entry, project, paths, plugin), not to silence the output.
 ## 1.2 Run in production mode
 
 ```bash
-npx knip --production --no-exit-code --reporter json > knip-report.json.tmp && mv knip-report.json.tmp knip-report.json
+npx knip@6.32.0 --production --no-exit-code --reporter json > knip-report.json.tmp && mv knip-report.json.tmp knip-report.json
 ```
 
 Write to a temp file and move only on success. A plain `> knip-report.json`
@@ -306,54 +336,66 @@ Never exclude tests with `ignore` to get the same effect.
 
 ## 1.3 Delete in atomic commits, one per category
 
-Run all three without asking (GREEN level) or the first two (YELLOW). Each one
-is: delete → (deps only: install) → `git add -A` → gate → commit → regenerate
-the report. For the gate, use `scripts/gate.sh` (it detects the stack and the
-package manager and runs typecheck + tests in the right order); if it exits
-with code 3, find the stack's own check commands — the `package.json` scripts,
-the tox env, the Makefile target, whatever this repo uses — and run them by
-hand.
+**Default scope.** Run all three without asking (GREEN level) or the first two
+(YELLOW). Each one is: delete → (deps only: install / re-resolve) → stage
+pathspecs → gate → commit → regenerate the report. For the gate, use
+`scripts/gate.sh` (it detects the stack and the package manager and runs
+typecheck + tests in the right order); if it exits with code 3, find the
+stack's own check commands — the `package.json` scripts, the tox env, the
+Makefile target, whatever this repo uses — and run them by hand.
 
-Staging before the gate is what makes the rollback complete, and it is safe
-here precisely because Step 0 refused to start on a dirty tree: everything
-`git add -A` picks up was produced by this step, so the `-A` cannot swallow work
-of the user's.
+**Partial run by category.** If the user asked for only one (or some) of the
+three categories — e.g. "remove só as dependências não usadas" — run exactly
+those, in the order below, and **do not** run the others. Record every skipped
+category under `## Decisions` in `CLEANUP_PROGRESS.md` as out of scope for
+this run (`orphan files: out of scope — user asked deps only`), and repeat
+that list in the final report under "Failed / not done". A category the level
+already forbids (YELLOW × exports) is a level cap, not a user scope skip —
+say which.
 
-The one thing `-A` picks up that this step did not produce is knip's own
-output. Before the first category, put `knip-report.json` and
-`knip-report.json.tmp` in the repo's exclude file — repo-local, so the user's
-`.gitignore` stays untouched. Ask git where it is rather than typing the path:
-`git rev-parse --git-path info/exclude`, because in a linked worktree, a
-submodule or a `--separate-git-dir` checkout `.git` is a *file* and appending to
-`.git/info/exclude` fails with `Not a directory`. Otherwise every category
-commits the report the previous one was read from, and the user reverting
-`chore: remove unused deps` gets a tool artifact back along with the
-dependencies.
+**Staging — pathspecs only.** Staging before the gate is what makes the
+rollback complete. Stage only the paths this category produced or edited:
+
+```bash
+git add -- path/to/edited path/to/removed-file package.json package-lock.json
+# deletions of tracked files: `git add -- path` (or `git rm` already staged them)
+```
+
+Never `git add -A` or `git add .`. Step 0's dirty-tree stop is still the
+precondition that nothing of the user's was already pending; pathspecs are
+what keep a draft or local `.env` that appears mid-run out of the commit.
+
+**Artifact hygiene (exclude + close).** Before the first category, put
+`knip-report.json` and `knip-report.json.tmp` in the repo's exclude file —
+repo-local, so the user's `.gitignore` stays untouched. Ask git where it is
+rather than typing the path: `git rev-parse --git-path info/exclude`, because
+in a linked worktree, a submodule or a `--separate-git-dir` checkout `.git`
+is a *file* and appending to `.git/info/exclude` fails with `Not a directory`.
+Otherwise every category would be tempted to commit the report the previous
+one was read from, and the user reverting `chore: remove unused deps` would
+get a tool artifact back along with the dependencies.
 
 That exclude only reaches **untracked** paths. If a previous run of this skill
-already committed `knip-report.json`, git keeps staging it no matter what the
-exclude says, and the regeneration below puts a fresh diff in every category
-commit. Check with `git status --porcelain` after writing the exclude lines; if
-the report still shows up, find out whose it is first — `git log -1 --format=%s
--- knip-report.json`. A previous run of this skill left `chore:` there and the
+already committed `knip-report.json`, git keeps seeing it no matter what the
+exclude says, and the regeneration below puts a fresh diff on disk. Check with
+`git status --porcelain` after writing the exclude lines; if the report still
+shows up, find out whose it is first — `git log -1 --format=%s --
+knip-report.json`. A previous run of this skill left `chore:` there and the
 file is a tool artifact: untrack it in a commit of its own before the first
-category (`git rm --cached knip-report.json`, then `chore: untrack knip
-report`). Anything else means the user tracks it on purpose: leave it tracked,
-say so in the report, and expect the report's diff in each commit. Do not
-untrack it either way as part of another category — left staged, the next `git
-add -A` folds that deletion into the deps commit, and reverting the deps
-category hands the artifact back, which is the thing the exclude was for. On
-the way out, delete the report and drop from the exclude file only the lines
-you added — leave anything that was already there, it is the user's — because
-the exclude makes a leftover invisible to `git status` and nobody would find it
-later.
+category (`git rm --cached knip-report.json`, then stage that pathspec only —
+`chore: untrack knip report`). Anything else means the user tracks it on
+purpose: leave it tracked, say so in the report, and do **not** pathspec-add
+it into category commits. Do not fold that untrack into another category. On
+the way out (final report / close), delete the report files and drop from the
+exclude file only the lines you added — leave anything that was already there,
+it is the user's — because the exclude makes a leftover invisible to
+`git status` and nobody would find it later.
 
-One more thing `-A` can swallow, created by this step and not committed on
-purpose: `node_modules`, after the install below. Confirm the repo ignores it
-before the deps category — a global `.gitignore` does not travel with the repo
-— and add it to `.git/info/exclude` if it does not. Empty directories are not
-on this list: git tracks files, so `git add -A` never stages one. The leftovers
-`mkdir -p` creates in phase 3 are a working-tree problem and are swept there.
+Also confirm the repo ignores `node_modules` before the deps category — a
+global `.gitignore` does not travel with the repo — and add it to
+`info/exclude` if it does not. Empty directories are not staged by pathspec
+adds either: git tracks files. The leftovers `mkdir -p` creates in phase 3
+are a working-tree problem and are swept there.
 
 ```
 1. unused deps        → "chore: remove unused deps"
@@ -369,7 +411,9 @@ user needs to revert *one* commit — not a 400-file cleanup.
 never installs — the resolver still finds the package on disk, typecheck and
 tests pass, and the break only surfaces on CI or on the next machine that
 installs from the pruned manifest. So, after editing the manifest and before
-`git add -A`, run the package manager's plain install:
+staging pathspecs, run the package manager's plain install (non-JS/TS stacks:
+see the matching re-resolve / tidy / restore step in
+`references/other-stacks.md`):
 
 ```bash
 npm install                          # npm
@@ -404,12 +448,13 @@ the final report counts against.
 
 **If the gate fails:** `git restore --staged --worktree .`, record the category
 as failed in `CLEANUP_PROGRESS.md` along with the error, and **move on to the
-next category**.
-Do not stop the entire pipeline and do not try to fix it — if typecheck broke,
-knip was wrong about that category, and the useful information is which
-category, not a patch. On the deps category, that restore brings back
-`package.json` and the lockfile but not `node_modules`: run the install again
-before starting orphan files.
+next category**. If that restore is blocked by a hook, **abort** — see the
+operating principle; do not start the next category with a dirty tree. Do not
+try to fix a red gate — if typecheck broke, knip was wrong about that
+category, and the useful information is which category, not a patch. On the
+deps category, a successful restore brings back `package.json` and the
+lockfile but not `node_modules`: run the install again before starting orphan
+files.
 
 Do not run `knip --fix` until the config has settled for two or three rounds
 with no surprises.
@@ -440,9 +485,10 @@ two folders is a more obvious consolidation candidate than anything depth
 analysis surfaces alone.
 
 For JS/TS the ladder is: `similarity-ts` (AST comparison per function) if it
-is on PATH, else `npx fallow dupes` (no install needed); other stacks fall
-back to `jscpd`. Tools, flags, thresholds and the report format are in
-`references/duplication.md` — read it before running anything.
+is on PATH, else `npx fallow@3.14.0 dupes` (pin verified 2026-08-09; never
+bare `npx fallow`); other stacks fall back to `npx jscpd@5.0.14`. Tools,
+flags, thresholds and the report format are in `references/duplication.md` —
+read it before running anything.
 
 **The churn rule.** High similarity is not a verdict. Check whether the pair
 changes together in git history: pairs that co-change are real duplication
@@ -469,11 +515,12 @@ analysis vocabulary.
 
 ## The irreducible checkpoint
 
-This is the only point in the pipeline that requires the human, and it is worth
-explaining why: consolidating modules changes responsibility boundaries, and
-that is a decision about the *domain*, not about the code. Green tests do not
-prove the new boundary is the right one — they prove the behavior did not
-change, which is a different thing.
+Phase 2 is the irreducible *domain* checkpoint: consolidating modules changes
+responsibility boundaries, and that is a decision about the *domain*, not about
+the code. Green tests do not prove the new boundary is the right one — they
+prove the behavior did not change, which is a different thing. Phase 3 adds a
+second scheduled checkpoint (plan confirmation before any `git mv`); both are
+required on GREEN.
 
 Keep the cost of the checkpoint to a minimum:
 
@@ -501,12 +548,13 @@ with a simple interface is exactly what you *want*).
 ## Implementation
 
 After the choice, run on your own: one module at a time, one commit per
-consolidation, and `scripts/gate.sh` once — after `git add -A`, right before
-the commit. Do not gate between the intermediate steps: with the new interface
-in place and the callers not migrated yet, the build is red by construction,
-and a gate you expect to fail teaches nothing. The green that matters is the
-one at the end of the consolidation, which is exactly the state that gets
-committed. Same rollback protocol as phase 1.
+consolidation, and `scripts/gate.sh` once — after staging pathspecs of what
+this consolidation touched, right before the commit. Do not gate between the
+intermediate steps: with the new interface in place and the callers not
+migrated yet, the build is red by construction, and a gate you expect to fail
+teaches nothing. The green that matters is the one at the end of the
+consolidation, which is exactly the state that gets committed. Same rollback
+protocol as phase 1 (including abort if a hook blocks the restore).
 
 **One candidate per session.** Do not stack two — the second refactor inherits
 the dirty context of the first and the error rate goes up.
@@ -531,9 +579,22 @@ Produce a phased plan before moving anything: a map of the current structure,
 circular dependencies, god modules, leaking abstractions, and the target
 structure with a rationale. Only then execute.
 
-## Autonomous execution
+## Checkpoint, then autonomous execution
 
-GREEN level runs the whole plan without asking. One folder per commit:
+**YELLOW does not run phase 3** — stop after the phase 1 report (and after
+phase 2 only if the user later promotes the level). **RED** never reaches
+here.
+
+**GREEN: human checkpoint before any move.** Present the phased plan from the
+diagnosis (current map → target structure → ordered moves, at most a short
+list). Recommend one first move in a single sentence. Ask **one** question:
+whether to proceed with that plan (or which slice). Do not start `git mv`
+until the user answers. If they say "go" or equivalent, execute the agreed
+plan; if they narrow the scope, record the rest as out of scope in
+`CLEANUP_PROGRESS.md`.
+
+After the checkpoint, run the agreed plan without re-asking per folder. One
+folder per commit:
 
 ```bash
 mkdir -p src/features/billing
@@ -554,10 +615,12 @@ The move, the import or alias update and the `CLAUDE.md` update go in the
 **same commit**. Splitting them would put a commit that does not build in the
 history, and there is no gate that a half-done move can pass.
 
-`git add -A` and then `scripts/gate.sh` at the end of each folder — typecheck
-alone misses what a move actually breaks (config paths, dynamic imports; the
-"Do not forget" list in `references/phase-3-structure.md` has the rest).
-Failed: `git restore --staged --worktree .`, record it, next folder.
+Stage with pathspecs of what this folder move touched (`git add -- …`), never
+`git add -A`, and then `scripts/gate.sh` at the end of each folder —
+typecheck alone misses what a move actually breaks (config paths, dynamic
+imports; the "Do not forget" list in `references/phase-3-structure.md` has
+the rest). Failed: `git restore --staged --worktree .`, record it, next
+folder. If that restore is blocked by a hook, **abort** the pipeline.
 
 ---
 
@@ -583,6 +646,12 @@ branch. Merging is the user's decision, on their own schedule.
 
 ## Final report
 
+**Close hygiene first** (GREEN/YELLOW, when the run wrote artifacts): delete
+`knip-report.json` / `knip-report.json.tmp` if present; drop from
+`info/exclude` only the lines this run added; leave `CLEANUP_PROGRESS.md` and
+`TECH_DEBT_AUDIT.md` committed unless the user asked to remove them — they are
+the durable record, not tool noise. Say in the summary what was cleaned.
+
 When wrapping up (or when interrupted), deliver:
 
 ```markdown
@@ -601,6 +670,7 @@ Branch: `cleanup/YYYYMMDD` · Level: GREEN · N commits
 
 ### Failed / not done
 - dead exports: typecheck broke in `src/api/routes.ts` (dynamic import)
+- orphan files: out of scope — user asked deps only
 
 ### Pending your decision
 - (nothing)
@@ -610,8 +680,9 @@ The phase 1 line counts what each category actually removed, tallied per commit
 from the report that category ran on — not the numbers of the first report,
 which stopped describing the repo the moment the first commit landed. The last
 regeneration settles the rest: whatever it still lists is what survived, and it
-belongs under "Failed / not done", along with any category that was skipped.
+belongs under "Failed / not done", along with any category that was skipped
+(level cap or user scope).
 
 If the level was RED, the report is diagnosis only: list what you would do and
 what needs to exist or be fixed (tests, typecheck, a baseline that passes) to
-make it possible.
+make it possible. No `CLEANUP_PROGRESS.md` commit on RED.

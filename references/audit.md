@@ -44,7 +44,8 @@ linters — much of their output already exists from phase 1; reuse it instead
 of re-running. A tool missing from PATH becomes a note in the report, never
 an installation — the same rule as the rest of the skill.
 
-1. **Architectural decay** — circular deps (`npx madge --circular` on JS/TS,
+1. **Architectural decay** — circular deps (`npx madge@8.0.0 --circular` on
+   JS/TS — pin verified 2026-08-09; never bare `npx madge` —
    `pydeps --show-cycles` on Python; other stacks in
    `references/other-stacks.md`), layering violations, god files (>500 LOC)
    and god functions, abstractions that exist but nobody uses, duplicated
@@ -74,6 +75,13 @@ an installation — the same rule as the rest of the skill.
 8. **Security hygiene** — hardcoded secrets, string-concat SQL, missing
    input validation at trust boundaries, permissive auth or CORS, weak
    crypto. Hygiene only — this is not a pen test or threat model.
+   **Redaction (mandatory):** cite `file:line` only — never paste the secret
+   value, a key fragment, a token, or the contents of a `.env` / credentials
+   file into the report, the chat summary, or `CLEANUP_PROGRESS.md`. Write
+   something like `hardcoded credential at src/config.ts:42` and stop. A
+   secret finding is still listed in the committed `TECH_DEBT_AUDIT.md` with
+   that redacted citation; the literal never appears anywhere the pipeline
+   writes. Treat the audit file as sensitive if it names secret locations.
 9. **Documentation drift** — README claims that no longer match reality,
    comments contradicting adjacent code, public APIs without docs.
 
@@ -99,6 +107,10 @@ written into the repo — the same content goes into the final report instead.
 ## Rules
 
 - A finding without a citation is a vibe, and vibes do not get fixed.
+- **Never commit a secret literal.** Dimension 8 citations are `file:line`
+  without the value; if a tool dumps a secret into stdout, discard that
+  output and restate the finding redacted. The committed report must not
+  contain the secret.
 - No sycophancy and no filler. Never open with "overall the codebase is
   well-structured" — say what is broken.
 - Read code before judging it: a pattern that looks wrong in isolation may

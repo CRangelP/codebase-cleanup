@@ -134,8 +134,11 @@ case_run() { # case_run <name> <expected_exit> <dir> <PATH|-> <grep_pattern...>
   local name=$1 expected=$2 dir=$3 path=$4; shift 4
   local out rc p ok=1 start=$SECONDS
   # shellcheck disable=SC2086  # GATE_ENV is split on purpose
-  if [[ $path == - ]]; then out=$(env $GATE_ENV bash "$GATE" "$dir" 2>&1); rc=$?
-  else out=$(env PATH="$path" $GATE_ENV bash "$GATE" "$dir" 2>&1); rc=$?; fi
+  # Prefer $BASH (the suite's own interpreter) over a bare 'bash' from PATH:
+  # on the macOS CI job PATH can resolve to Homebrew bash, which defeats the
+  # whole reason that job runs under /bin/bash 3.2.
+  if [[ $path == - ]]; then out=$(env $GATE_ENV "${BASH:-bash}" "$GATE" "$dir" 2>&1); rc=$?
+  else out=$(env PATH="$path" $GATE_ENV "${BASH:-bash}" "$GATE" "$dir" 2>&1); rc=$?; fi
   LAST_ELAPSED=$((SECONDS-start))
   GATE_ENV=""
   [[ $rc -eq $expected ]] || ok=0
@@ -204,6 +207,53 @@ EOF
 mkdir -p "$TMP/js-alias-tsc"
 cat > "$TMP/js-alias-tsc/package.json" <<'EOF'
 {"name":"f","scripts":{"tsc":"node -e \"console.log('TSC_RAN')\"","test":"node -e 0"}}
+EOF
+
+# Exception: the value itself is a check with --noEmit as a real shell word.
+# The script name is still 'tsc', but the body is safe to run and must count
+# as typecheck. A real tsc binary is not required — node exits 0 and ignores
+# the extra argv after `--`.
+mkdir -p "$TMP/js-tsc-noemit"
+cat > "$TMP/js-tsc-noemit/package.json" <<'EOF'
+{"name":"f","scripts":{"tsc":"node -e 0 -- --noEmit","test":"node -e 0"}}
+EOF
+
+# Emitting form stays rejected even when the command looks like a real tsc.
+mkdir -p "$TMP/js-tsc-emit"
+cat > "$TMP/js-tsc-emit/package.json" <<'EOF'
+{"name":"f","scripts":{"tsc":"tsc -p .","test":"node -e 0"}}
+EOF
+
+# A comment mentioning --noEmit must NOT promote an emitting compile.
+mkdir -p "$TMP/js-tsc-comment-noemit"
+cat > "$TMP/js-tsc-comment-noemit/package.json" <<'EOF'
+{"name":"f","scripts":{"tsc":"tsc -p . # use --noEmit in CI","test":"node -e 0"}}
+EOF
+
+# npm init's placeholder test script exits 1 on purpose — that is YELLOW with a
+# named cap, not RED (a broken suite). The value is the literal npm writes.
+mkdir -p "$TMP/js-npm-placeholder"
+cat > "$TMP/js-npm-placeholder/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"echo \"Error: no test specified\" && exit 1"}}
+EOF
+
+# Runner reports an empty suite (vitest/jest shape) and exits 1: YELLOW cap,
+# not RED. Covers plain 'test' and a lone 'test:*' alias.
+mkdir -p "$TMP/js-empty-suite"
+cat > "$TMP/js-empty-suite/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.error('No test files found'); process.exit(1)\""}}
+EOF
+
+mkdir -p "$TMP/js-empty-suite-slice"
+cat > "$TMP/js-empty-suite-slice/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test:unit":"node -e \"console.error('No test files found'); process.exit(1)\""}}
+EOF
+
+# Failing suite whose log only mentions the empty-suite phrase mid-line must
+# stay RED — never flip to YELLOW/uncounted.
+mkdir -p "$TMP/js-empty-suite-incidental"
+cat > "$TMP/js-empty-suite-incidental/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.error('FAIL tests/foo.spec.js'); console.error('AssertionError: expected true'); console.error('hint: No tests found was unexpected'); process.exit(1)\""}}
 EOF
 
 mkdir -p "$TMP/js-alias-check-types"
@@ -325,6 +375,15 @@ mkdir -p "$TMP/js-yarn-alias"
 cp "$TMP/js-alias/package.json" "$TMP/js-yarn-alias/package.json"
 touch "$TMP/js-yarn-alias/yarn.lock"
 
+# Lockfile picks pnpm / bun the same way yarn.lock picks yarn.
+mkdir -p "$TMP/js-pnpm"
+cp "$TMP/js-green/package.json" "$TMP/js-pnpm/package.json"
+touch "$TMP/js-pnpm/pnpm-lock.yaml"
+
+mkdir -p "$TMP/js-bun"
+cp "$TMP/js-green/package.json" "$TMP/js-bun/package.json"
+touch "$TMP/js-bun/bun.lock"
+
 mkdir -p "$TMP/polyglot/tests"
 touch "$TMP/polyglot/pyproject.toml" "$TMP/polyglot/tests/test_x.py"
 printf 'module f\n\ngo 1.21\n' > "$TMP/polyglot/go.mod"
@@ -375,6 +434,15 @@ touch "$TMP/jvm-no-tests/pom.xml"
 mkdir -p "$TMP/jvm-module-tests/mod-a/src/test/java" "$TMP/jvm-module-tests/mod-b/src/main/java"
 touch "$TMP/jvm-module-tests/pom.xml"
 
+# Wrapper scripts win over a missing system mvn/gradle.
+mkdir -p "$TMP/jvm-mvnw/src/test/java"
+touch "$TMP/jvm-mvnw/pom.xml"
+stub "$TMP/jvm-mvnw" mvnw 0
+
+mkdir -p "$TMP/jvm-gradlew/src/test/java"
+touch "$TMP/jvm-gradlew/build.gradle"
+stub "$TMP/jvm-gradlew" gradlew 0
+
 # Polyglot: JS supplies typecheck+test, the .NET half has no test project in any
 # of its projects. Announcing GREEN off the JS suite would unlock dead-export
 # deletion over C# that nothing tested — the same hole js-poly-uncounted covers
@@ -411,6 +479,28 @@ cp "$TMP/py-reqs-no-source/package.json" "$TMP/rb-source-no-spec/package.json"
 printf "source 'https://rubygems.org'\n" > "$TMP/rb-source-no-spec/Gemfile"
 printf 'def f; end\n' > "$TMP/rb-source-no-spec/tool.rb"
 
+# Ruby with sorbet + rspec: both typecheck and test must run (the GREEN path
+# that used to have zero coverage).
+mkdir -p "$TMP/rb-sorbet-rspec/spec" "$TMP/rb-sorbet-rspec/sorbet"
+printf "source 'https://rubygems.org'\n" > "$TMP/rb-sorbet-rspec/Gemfile"
+touch "$TMP/rb-sorbet-rspec/sorbet/config"
+printf 'RSpec.describe "x" do; end\n' > "$TMP/rb-sorbet-rspec/spec/x_spec.rb"
+
+# Ruby with rake test only (no spec/).
+mkdir -p "$TMP/rb-rake/test"
+printf "source 'https://rubygems.org'\n" > "$TMP/rb-rake/Gemfile"
+touch "$TMP/rb-rake/Rakefile"
+printf 'class XTest; end\n' > "$TMP/rb-rake/test/x_test.rb"
+
+# Both runners present: neither alone is the whole suite → YELLOW, run neither.
+# sorbet is present so typecheck still runs and the cap is visible as YELLOW
+# (without it the gate would exit 3 with nothing runnable).
+mkdir -p "$TMP/rb-both-runners/spec" "$TMP/rb-both-runners/test" "$TMP/rb-both-runners/sorbet"
+printf "source 'https://rubygems.org'\n" > "$TMP/rb-both-runners/Gemfile"
+touch "$TMP/rb-both-runners/Rakefile" "$TMP/rb-both-runners/sorbet/config"
+printf 'RSpec.describe "x" do; end\n' > "$TMP/rb-both-runners/spec/x_spec.rb"
+printf 'class XTest; end\n' > "$TMP/rb-both-runners/test/x_test.rb"
+
 mkdir -p "$TMP/py-setupcfg/test"
 printf '[mypy]\n' > "$TMP/py-setupcfg/setup.cfg"
 touch "$TMP/py-setupcfg/test/test_x.py"
@@ -420,6 +510,24 @@ printf '[tool.mypy]\n' > "$TMP/py-venv/pyproject.toml"
 touch "$TMP/py-venv/tests/test_x.py"
 stub "$TMP/py-venv/.venv/bin" mypy 0
 stub "$TMP/py-venv/.venv/bin" pytest 0
+
+# Plain venv/bin (not .venv) and an active VIRTUAL_ENV are the other two
+# resolution prefixes py_cmd promises.
+mkdir -p "$TMP/py-venv-plain/tests" "$TMP/py-venv-plain/venv/bin"
+printf '[tool.mypy]\n' > "$TMP/py-venv-plain/pyproject.toml"
+touch "$TMP/py-venv-plain/tests/test_x.py"
+stub "$TMP/py-venv-plain/venv/bin" mypy 0
+stub "$TMP/py-venv-plain/venv/bin" pytest 0
+
+mkdir -p "$TMP/py-virtualenv/tests" "$TMP/py-virtualenv-prefix/bin"
+printf '[tool.mypy]\n' > "$TMP/py-virtualenv/pyproject.toml"
+touch "$TMP/py-virtualenv/tests/test_x.py"
+stub "$TMP/py-virtualenv-prefix/bin" mypy 0
+stub "$TMP/py-virtualenv-prefix/bin" pytest 0
+
+mkdir -p "$TMP/py-poetry/tests"
+printf '[tool.mypy]\n' > "$TMP/py-poetry/pyproject.toml"
+touch "$TMP/py-poetry/poetry.lock" "$TMP/py-poetry/tests/test_x.py"
 
 mkdir -p "$TMP/py-no-tools/tests"
 printf '[tool.mypy]\n' > "$TMP/py-no-tools/pyproject.toml"
@@ -492,6 +600,12 @@ GO="$TMP/stubs-go"; stub "$GO" go 0
 # make this the one JS case gated by perl.
 YARN="$TMP/stubs-yarn"
 stub "$YARN" yarn 0
+PNPM="$TMP/stubs-pnpm"
+stub "$PNPM" pnpm 0
+BUN="$TMP/stubs-bun"
+stub "$BUN" bun 0
+POETRY="$TMP/stubs-poetry"
+stub "$POETRY" poetry 0
 CARGO="$TMP/stubs-cargo"; stub "$CARGO" cargo 0
 # pytest's "no tests collected" code, with a passing mypy next to it.
 PY5="$TMP/stubs-py5"; stub "$PY5" pytest 5; stub "$PY5" mypy 0
@@ -573,6 +687,21 @@ case_run js-alias         0 "$TMP/js-alias"     -             "run type-check" "
 case_run js-alias-test-only 0 "$TMP/js-alias-test-only" -     "run test:unit" "checks=test" "YELLOW"
 case_run js-alias-tsc     0 "$TMP/js-alias-tsc" -             "checks=test" "YELLOW" \
          '!run tsc' '!TSC_RAN'
+case_run js-tsc-noemit    0 "$TMP/js-tsc-noemit" -            "run tsc" \
+         "checks=typecheck,test" "GREEN"
+case_run js-tsc-emit      0 "$TMP/js-tsc-emit" -              "checks=test" "YELLOW" \
+         '!run tsc'
+case_run js-tsc-comment-noemit 0 "$TMP/js-tsc-comment-noemit" - "checks=test" "YELLOW" \
+         '!run tsc'
+case_run js-npm-placeholder 0 "$TMP/js-npm-placeholder" -     "checks=typecheck$" "YELLOW" \
+         "npm init placeholder" "'test' not counted" '!RED' '!GREEN'
+case_run js-empty-suite   0 "$TMP/js-empty-suite" -           "checks=typecheck$" "YELLOW" \
+         "no test files found" "'test' not counted" '!RED' '!GREEN'
+case_run js-empty-suite-slice 0 "$TMP/js-empty-suite-slice" - "run test:unit" \
+         "checks=typecheck$" "YELLOW" "no test files found" "'test' not counted" \
+         '!RED' '!GREEN'
+case_run js-empty-suite-incidental 1 "$TMP/js-empty-suite-incidental" - "RED" \
+         '!YELLOW' "!'test' not counted"
 case_run js-alias-check-types 0 "$TMP/js-alias-check-types" - "run check-types" \
          "checks=typecheck,test" "GREEN"
 case_run js-test-and-unit 0 "$TMP/js-test-and-unit" -         "run test$" \
@@ -622,6 +751,10 @@ case_run js-alias-both    0 "$TMP/js-alias-both" -            "run typecheck$" \
 case_run js-alias-red     1 "$TMP/js-alias-red" -             "RED at 'npm run test:unit'"
 case_run js-yarn-alias    0 "$TMP/js-yarn-alias" "$YARN:$PATH" "yarn type-check" "yarn test:unit" \
          "checks=typecheck,test" "GREEN" '!yarn run'
+case_run js-pnpm          0 "$TMP/js-pnpm"       "$PNPM:$PATH" "pnpm run typecheck" "pnpm run test" \
+         "checks=typecheck,test" "GREEN"
+case_run js-bun           0 "$TMP/js-bun"        "$BUN:$PATH"  "bun run typecheck" "bun run test" \
+         "checks=typecheck,test" "GREEN"
 case_run polyglot-partial 3 "$TMP/polyglot"     "$OK:$NOTOOL" "checks=test" "some detected stack"
 case_run partial-none-ran 3 "$TMP/go-only"      "$NOTOOL"     "nothing ran"
 case_run dotnet-green     0 "$TMP/dotnet-root"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
@@ -637,6 +770,10 @@ case_run jvm-no-tests     0 "$TMP/jvm-no-tests" "$OK:$BASE"   "mvn -q test" \
          "no src/test directory found" "not counted" "no countable suite" '!GREEN'
 case_run jvm-module-tests 0 "$TMP/jvm-module-tests" "$OK:$BASE" "mvn -q test" "GREEN" \
          '!not counted'
+case_run jvm-mvnw         0 "$TMP/jvm-mvnw"     "$NOTOOL"     "./mvnw -q test" \
+         "checks=typecheck,test" "GREEN"
+case_run jvm-gradlew      0 "$TMP/jvm-gradlew"  "$NOTOOL"     "./gradlew test" \
+         "checks=typecheck,test" "GREEN"
 case_run dotnet-poly-uncounted 0 "$TMP/dotnet-poly-uncounted" "$OK:$PATH" \
          "checks=typecheck,test" "not counted" "no countable suite" '!GREEN'
 case_run py-reqs-no-source 0 "$TMP/py-reqs-no-source" -       "checks=typecheck,test" "GREEN" \
@@ -647,8 +784,22 @@ case_run rb-gemfile-only  0 "$TMP/rb-gemfile-only" "$OK:$PATH" "checks=typecheck
          '!not counted'
 case_run rb-source-no-spec 0 "$TMP/rb-source-no-spec" "$OK:$PATH" "checks=typecheck,test" \
          "no spec/ and no Rakefile" "no countable suite" '!GREEN'
+case_run rb-sorbet-rspec  0 "$TMP/rb-sorbet-rspec" "$OK:$BASE" \
+         "bundle exec srb tc" "bundle exec rspec" "checks=typecheck,test" "GREEN"
+case_run rb-rake          0 "$TMP/rb-rake"      "$OK:$BASE"   "bundle exec rake test" \
+         "checks=test" "YELLOW"
+case_run rb-both-runners  0 "$TMP/rb-both-runners" "$OK:$BASE" \
+         "bundle exec srb tc" "checks=typecheck$" "YELLOW" \
+         "both rspec" "rake test" "'test' not counted" "no countable suite" \
+         '!bundle exec rspec' '!bundle exec rake' '!GREEN'
 case_run py-setupcfg      0 "$TMP/py-setupcfg"  "$OK:$BASE"   "checks=typecheck,test" "GREEN"
 case_run py-venv          0 "$TMP/py-venv"      "$BASE"       ".venv/bin/mypy" ".venv/bin/pytest" "GREEN"
+case_run py-venv-plain    0 "$TMP/py-venv-plain" "$BASE"      "venv/bin/mypy" "venv/bin/pytest" "GREEN"
+GATE_ENV="VIRTUAL_ENV=$TMP/py-virtualenv-prefix"
+case_run py-virtualenv    0 "$TMP/py-virtualenv" "$BASE" \
+         "$TMP/py-virtualenv-prefix/bin/mypy" "$TMP/py-virtualenv-prefix/bin/pytest" "GREEN"
+case_run py-poetry        0 "$TMP/py-poetry"    "$POETRY:$BASE" "poetry run mypy" "poetry run pytest" \
+         "checks=typecheck,test" "GREEN"
 case_run py-no-tools      3 "$TMP/py-no-tools"  "$BASE"       "toolchain 'mypy' missing" "looked in"
 case_run py-uv            0 "$TMP/py-uv"        "$UV:$BASE"   "uv run pytest" "checks=test"
 case_run py-pyright       0 "$TMP/py-pyright"   "$OK:$BASE"   "checks=typecheck"

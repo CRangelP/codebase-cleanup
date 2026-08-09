@@ -268,9 +268,42 @@ if [[ -f package.json ]]; then
     # because run() classifies by kind and an unknown word there would run the
     # check and count nothing. The alias stays visible in the human
     # '[gate] <cmd>' line; checks= keeps its canonical vocabulary.
+    # The test path captures the runner's output: vitest/jest exit 1 with
+    # "No test files found" on an empty suite, which must be a YELLOW cap
+    # (uncounted), not RED. Typecheck still goes through run() unchanged.
     js_script() {
-      if [[ $PM == yarn ]]; then run "$1" yarn "$2"
-      else run "$1" "$PM" run "$2"; fi
+      local kind=$1 name=$2 out rc
+      if [[ $kind != test ]]; then
+        if [[ $PM == yarn ]]; then run "$kind" yarn "$name"
+        else run "$kind" "$PM" run "$name"; fi
+        return
+      fi
+      if [[ $PM == yarn ]]; then set -- yarn "$name"
+      else set -- "$PM" run "$name"; fi
+      echo "[gate] $*"
+      out=$(guard "$@" 2>&1)
+      rc=$?
+      printf '%s\n' "$out"
+      if [[ -n $WATCHDOG && $rc -eq 124 ]]; then
+        echo "[gate] TIMEOUT after ${GATE_TIMEOUT}s at '$*'" >&2
+        exit 4
+      fi
+      if [[ $rc -ne 0 ]]; then
+        # Empty-suite cap: only a runner empty-message *line* (vitest/jest
+        # shape), never a mid-line substring in a real failure. A failing suite
+        # whose log happens to contain "No tests found" in fixture names or
+        # assertion text must stay RED.
+        if printf '%s\n' "$out" | grep -qiE \
+            '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b' \
+          && ! printf '%s\n' "$out" | grep -qiE \
+            '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b'; then
+          uncounted_suite js "no test files found (exit $rc)"
+          return 0
+        fi
+        echo "[gate] RED at '$*'" >&2
+        exit 1
+      fi
+      ran_test=1
     }
 
     # js_typecheck_script — the first of the accepted spellings the project
@@ -279,18 +312,28 @@ if [[ -f package.json ]]; then
     # spelling made a fully covered repo look uncheckable. Exactly one script
     # runs: the first name the project defines wins, the rest are ignored, so
     # nothing runs or counts twice.
-    # 'tsc' is deliberately NOT an alias: as a script name it usually means an
-    # emitting compile ("tsc": "tsc -p ."), which would drop .js/.d.ts/.tsbuildinfo
-    # beside the sources of the tree being judged, right before phase 1.3 stages
-    # everything with 'git add -A' — and the documented rollback
-    # ('git restore --staged --worktree .') cannot remove untracked files.
+    # 'tsc' as a bare name usually means an emitting compile ("tsc": "tsc -p ."),
+    # which would drop .js/.d.ts/.tsbuildinfo beside the sources of the tree
+    # being judged, right before phase 1.3 stages pathspecs of that step
+    # — and the documented rollback ('git restore --staged --worktree .') cannot
+    # remove untracked files. It is therefore NOT an alias by name alone. The
+    # one exception is when the script value itself carries --noEmit as a real
+    # shell word (after stripping # / // comments): that is a check, not a
+    # build, and counts. A trailing comment like `# use --noEmit in CI` must
+    # NOT promote an emitting compile.
     # Echoes the script name, or nothing when the manifest declares none.
     js_typecheck_script() {
       node -e 'var s = require("./package.json").scripts || {};
 var names = ["typecheck", "type-check", "check-types"];
+var found = "";
 for (var i = 0; i < names.length; i++) {
-  if (s[names[i]]) { console.log(names[i]); break; }
-}' 2>/dev/null
+  if (s[names[i]]) { found = names[i]; break; }
+}
+if (!found && s.tsc) {
+  var body = String(s.tsc).replace(/#.*/g, "").replace(/\/\/.*/g, "");
+  if (/(?:^|[\s"'"'"'=])--noEmit(?:[\s"'"'"']|$)/.test(body)) found = "tsc";
+}
+if (found) console.log(found);' 2>/dev/null
     }
 
     # js_test_script — decides which script stands for the *whole* suite.
@@ -316,12 +359,17 @@ for (var i = 0; i < names.length; i++) {
     # this rule exists to deny. Slices are still listed in the report, so the
     # cap is explained instead of silent. Same reasoning as the 'tsc' exclusion
     # above: a name that means "not a check" is not promoted to one.
-    # Echoes 'run:<name>'; 'partial:<names>' when two or more slices split the
-    # suite; 'watch:<names>' when no slice can be run at all; nothing at all
-    # when the manifest declares no test script.
+    # The exact npm-init placeholder ('echo "Error: no test specified" && exit 1')
+    # is recognised by value and reported as 'placeholder:test': running it would
+    # only ever produce RED for a project that has never defined a suite.
+    # Echoes 'run:<name>'; 'placeholder:test'; 'partial:<names>' when two or
+    # more slices split the suite; 'watch:<names>' when no slice can be run at
+    # all; nothing at all when the manifest declares no test script.
     js_test_script() {
       node -e 'var s = require("./package.json").scripts || {};
-if (s.test) { console.log("run:test"); }
+var npmPlaceholder = "echo \u0022Error: no test specified\u0022 && exit 1";
+if (s.test === npmPlaceholder) { console.log("placeholder:test"); }
+else if (s.test) { console.log("run:test"); }
 else {
   var p = Object.keys(s).filter(function (k) { return k.indexOf("test:") === 0; });
   var slices = p.filter(function (k) { return !/(^|:)(watch|debug)(:|$)/.test(k); });
@@ -350,6 +398,9 @@ else {
       case $js_test in
         run:*)
           js_script test "${js_test#run:}" ;;
+        placeholder:*)
+          uncounted_suite js "npm init placeholder test script" \
+                   "replace scripts.test with a real suite" ;;
         partial:*)
           uncounted_suite js "no 'test' script; test:* slices found (${js_test#partial:})" \
                    "none of them stands for the whole suite; run them by hand" ;;
@@ -460,7 +511,13 @@ fi
 if [[ -f Gemfile ]]; then
   if command -v bundle >/dev/null; then
     [[ -f sorbet/config ]] && run typecheck bundle exec srb tc
-    if [[ -d spec ]]; then run test bundle exec rspec
+    # rspec and rake are two halves of a suite when both layouts exist — running
+    # only one would announce GREEN with the other half never measured. Cap and
+    # name both, same shape as JS test:* slices.
+    if [[ -d spec && -f Rakefile && -d test ]]; then
+      uncounted_suite ruby "both rspec (spec/) and rake test (Rakefile+test/) present" \
+               "neither stands for the whole suite alone; run them by hand"
+    elif [[ -d spec ]]; then run test bundle exec rspec
     elif [[ -f Rakefile && -d test ]]; then run test bundle exec rake test
     # Same evidence rule as Python: a Gemfile alone (fastlane, Jekyll, danger)
     # in a repo of another stack is not a Ruby stack without a suite, it is not

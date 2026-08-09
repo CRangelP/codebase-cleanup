@@ -45,9 +45,10 @@ Imagine deleting the module.
    purest form.
 1. **Map.** Import graph, module sizes, who calls whom. knip's `cycles`
    already covers a good part of it, but it is **not** in the default issue
-   set — ask for it explicitly with `npx knip --cycles` (shortcut for
-   `--include cycles`), or a plain `npx knip` will report nothing about
-   circular dependencies.
+   set — ask for it explicitly with `npx knip@6.32.0 --cycles` (shortcut for
+   `--include cycles`; pin verified 2026-08-09), or a plain
+   `npx knip@6.32.0` will report nothing about circular dependencies. Never
+   bare `npx knip`.
 2. **Cross with churn volume (file-level).** The intersection between
    "changed a lot" and "heavily coupled" is where consolidation pays the
    most. Rank the files by
@@ -91,7 +92,8 @@ One candidate per session. Per consolidation:
 1. Create the new interface
 2. Migrate callers
 3. Remove the old modules
-4. `git add -A`
+4. `git add -- <paths this consolidation touched>` — pathspecs only, never
+   `git add -A` / `git add .`
 5. `scripts/gate.sh` — once, here, not between the steps above
 6. Commit `refactor: consolidate X into Y`
 
@@ -102,9 +104,10 @@ anything — and it guards exactly what goes into the commit.
 
 Step 4 is not bookkeeping. `git restore --staged --worktree .` brings back a
 deleted file and drops a staged new one, but an unstaged new file survives the
-rollback and poisons the next step — so the new interface has to be staged
-before the gate runs. Staging everything is safe because the tree was clean
-when the pipeline started.
+rollback and poisons the next step — so every path this consolidation created
+or edited has to be staged before the gate runs. Pathspecs keep a draft or
+local `.env` that appeared mid-run out of the commit; the Step 0 dirty-tree
+stop is still the precondition that nothing of the user's was already pending.
 
 Gate failed → `git restore --staged --worktree .`, record it, do not try to
 fix it.
