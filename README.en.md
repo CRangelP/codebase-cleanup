@@ -91,6 +91,7 @@ codebase-cleanup/
 ├── README.md                         readme in Portuguese
 ├── README.en.md                      this file
 ├── LICENSE                           MIT
+├── CHANGELOG.md                      what changed in each version
 ├── .claude-plugin/
 │   ├── plugin.json                   plugin manifest (name, version, license)
 │   └── marketplace.json              catalogue, for /plugin install
@@ -153,7 +154,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 127/127 cases, 42/42 guard cases, 5/5 properties,
-# 238/238 invariants
+# 248/248 invariants
 ```
 
 The .NET heuristic was validated against the real SDK

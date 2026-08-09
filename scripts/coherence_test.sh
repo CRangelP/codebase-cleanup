@@ -377,7 +377,7 @@ for readme in README.md README.en.md; do
   for name in $docs; do
     [[ $name == *.md ]] || continue
     case $name in
-      SKILL.md|README.md|README.en.md)
+      SKILL.md|README.md|README.en.md|CHANGELOG.md)
         if [[ -f $name ]]; then
           pass "$name of the tree of $readme exists on disk"
         else
@@ -920,6 +920,18 @@ market_name=$(plugin_field .claude-plugin/marketplace.json name)
 check "plugin.json declares a name" \
       "$([[ -n $plugin_name ]] && echo 0 || echo 1)" \
       "the name is the namespace of every skill in the plugin"
+
+# The changelog's top entry and the manifest's version are one string. The
+# manifest alone would be a number nobody can read a meaning into, and a
+# changelog alone would be a story about a version that never shipped: the
+# release is the pair, so drift between them is caught here.
+changelog_version=$(sed -n 's|^## \[\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)\].*|\1|p' CHANGELOG.md 2>/dev/null | head -1)
+check "CHANGELOG.md opens with a semver entry" \
+      "$([[ -n $changelog_version ]] && echo 0 || echo 1)" \
+      "no '## [X.Y.Z]' heading found; the top entry is what a release note quotes"
+check "CHANGELOG.md and plugin.json agree on the version" \
+      "$([[ -n $changelog_version && $changelog_version == "$plugin_version" ]] && echo 0 || echo 1)" \
+      "CHANGELOG.md says '${changelog_version:-none}', plugin.json says '${plugin_version:-none}'"
 
 check "plugin.json declares an explicit version" \
       "$([[ $plugin_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && echo 0 || echo 1)" \

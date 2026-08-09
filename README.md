@@ -88,6 +88,7 @@ codebase-cleanup/
 ├── README.md                         este arquivo
 ├── README.en.md                      versão em inglês
 ├── LICENSE                           MIT
+├── CHANGELOG.md                      o que mudou em cada versão
 ├── .claude-plugin/
 │   ├── plugin.json                   manifesto do plugin (nome, versão, licença)
 │   └── marketplace.json              catálogo, para instalar por /plugin install
@@ -149,7 +150,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 127/127 casos, 42/42 casos do guarda, 5/5 propriedades,
-# 238/238 invariantes
+# 248/248 invariantes
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
