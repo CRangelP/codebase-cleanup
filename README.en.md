@@ -164,7 +164,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 127/127 cases, 42/42 guard cases, 5/5 properties,
-# 35/35 metrics cases, 288/288 invariants
+# 35/35 metrics cases, 291/291 invariants
 ```
 
 The .NET heuristic was validated against the real SDK

@@ -37,7 +37,7 @@ consumia. Agora consome.
 - **Dois subagentes** (`cleanup-phase-4-survey`, `cleanup-phase-4-impl`). O
   survey não escreve: ele lê cobertura por alvo, e um survey que escreve fica a
   um passo de "consertar" o alvo que estava medindo.
-- **`scripts/metrics.sh` + `metrics_test.sh`** (28 casos). Delta de qualidade
+- **`scripts/metrics.sh` + `metrics_test.sh`** (35 casos). Delta de qualidade
   antes/depois no relatório final. O cabeçalho declara que tudo ali é
   heurística textual, não parser, e que são evidência e não meta — picar função
   para baixar média é o dano que esta skill existe para evitar.
@@ -52,8 +52,12 @@ consumia. Agora consome.
 - A fase 3 passa a fechar com `/clear`, como a fase 1 já fazia. Deixou de ser
   a última.
 - `scripts/test.sh` encadeia cinco suítes. `coherence_test.sh` cobre os dois
-  agentes novos e exige o `disallowedTools` do survey da fase 4: 288
-  invariantes.
+  agentes novos e exige o `disallowedTools` do survey da fase 4. E os onze ids
+  de operação deixam de ser onze strings copiadas à mão em quatro lugares: a
+  seção 14 compara a tabela do catálogo, as seções do catálogo e as duas listas
+  do `SKILL.md`, porque um id que existe num e não nos outros é ou uma operação
+  que ninguém consegue rodar ou uma mensagem de commit que ninguém rastreia, e
+  as duas falham caladas. 291 invariantes.
 
 ## [0.1.0] — 2026-08-09
 
