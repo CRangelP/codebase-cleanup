@@ -297,6 +297,30 @@ cat > "$TMP/js-empty-jest-real/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No tests found, exiting with code 1'); console.log('Run with --passWithNoTests to exit with code 0'); console.log('In ' + process.cwd()); console.log('  2 files checked.'); console.log('  testMatch: **/__tests__/**/*.[jt]s?(x) - 0 matches'); console.log('  testPathIgnorePatterns: /node_modules/ - 2 matches'); process.exit(1)\""}}
 EOF
 
+# The chained failure the guard could not see, and the half of it that is
+# decidable. `runner; failing-command` where the second command prints nothing:
+# there is no tail to judge, so every tail-based test is blind by construction.
+# But the runner named its own exit code and the process exited with a
+# different one, and nothing between those two facts is ambiguous — something
+# after the runner set the status. That mismatch is positive evidence of a
+# chained failure without needing a single line of output to inspect.
+mkdir -p "$TMP/js-empty-inline-mismatch"
+cat > "$TMP/js-empty-inline-mismatch/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 0')\"; false"}}
+EOF
+
+# The other half, and it is NOT decidable — this fixture exists to say so. Same
+# silent chained failure, but the runner announced code 1 and the process exited
+# 1, so the bytes are identical to a legitimately empty vitest suite that exited
+# on its own. Capping here is not the guard being lax, it is the guard refusing
+# to guess: the only thing that separates the two is knowledge the gate does not
+# have. It stays YELLOW on purpose, and the cap still sets uncounted, so the run
+# can never reach GREEN on it.
+mkdir -p "$TMP/js-empty-inline-match-chained"
+cat > "$TMP/js-empty-inline-match-chained/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No test files found, exiting with code 1')\"; false"}}
+EOF
+
 # The inline code accounts for the process's exit, not for whatever else ran.
 # A build that failed after the empty suite prints an error and still has to
 # sink the run to RED — otherwise the tail-is-diagnosis rule would be a way of
@@ -997,6 +1021,10 @@ case_run js-empty-suite-chained 1 "$TMP/js-empty-suite-chained" - "RED" \
          '!YELLOW' "!'test' not counted"
 case_run js-empty-suite-chained-exit1 1 "$TMP/js-empty-suite-chained-exit1" - "RED" \
          '!YELLOW' "!'test' not counted"
+case_run js-empty-inline-mismatch 1 "$TMP/js-empty-inline-mismatch" - "RED" \
+         '!YELLOW' "!'test' not counted"
+case_run js-empty-inline-match-chained 0 "$TMP/js-empty-inline-match-chained" - \
+         "no test files found" "'test' not counted" '!RED'
 case_run js-empty-suite-chained-lower 1 "$TMP/js-empty-suite-chained-lower" - "RED" \
          '!YELLOW' "!'test' not counted"
 case_run js-empty-vitest-real 0 "$TMP/js-empty-vitest-real" - "checks=typecheck$" \
