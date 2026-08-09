@@ -41,6 +41,28 @@ metade dela corrigindo o código e metade corrigindo o que o código prometia.
   dois. Ambos os casos viraram fixture, para que o limite seja documentação
   executável e ninguém o "conserte" no chute.
 
+  E o limite é uma **escolha sobre qual evidência é segura**, não ausência de
+  evidência: o gate lê o `package.json`, e em `A; B` o status é o de `B` por
+  definição, então o texto de `scripts.test` prova que houve comando encadeado.
+  Ele é deliberadamente não lido, porque isso exigiria parsear shell — ponto e
+  vírgula dentro de aspas, dentro de substituição de comando, atrás de
+  operador condicional — e errar isso cobra RED de um repo apenas vazio.
+
+### Evitado
+
+- **Dois falsos RED que a própria correção poderia introduzir.** Um repo
+  vazio levando RED bloqueia pipeline, e é o erro mais caro que este código
+  comete.
+
+  Comparar os códigos como **string** faria `exiting with code 01` discordar de
+  um exit `1`; deixar o shell comparar sozinho leria `010` como **octal 8**. A
+  normalização é numérica e decimal, feita no `awk` com `s + 0`.
+
+  E parar no **primeiro** código anunciado quebraria monorepo: um pacote por
+  linha de suíte vazia, e a linha que explica o exit pode ser a última. Agora
+  qualquer código anunciado que bata com o exit encerra a questão — a detecção
+  sobrevive quando **nenhum** deles bate.
+
 ## [0.2.1] — 2026-08-09
 
 Correção de um defeito que fazia o gate mentir sobre a suíte — nas duas direções.
