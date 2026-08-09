@@ -1,18 +1,20 @@
 ---
 name: codebase-cleanup
-description: Full three-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules and reorganizes the folder structure, running autonomously with atomic commits and rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, messy folders, confusing structure or a bloated codebase; mentions duplicated code, duplicate functions, copy-paste code, "código duplicado" or "função repetida"; asks to "give the codebase a deep clean", to "reorganiza essas pastas", or for an audit or health check; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the three phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
+description: Full four-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules, reorganizes the folder structure and reshapes the functions that survived, running autonomously with atomic commits and rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, god functions, messy folders or a bloated codebase; mentions duplicated code, copy-paste code, "código duplicado" or "função repetida"; asks to "give the codebase a deep clean", to "reorganiza essas pastas", or for an audit or health check; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the four phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
 ---
 
 # Codebase Cleanup
 
-Codebase cleanup in three sequential phases. The order is not negotiable:
+Codebase cleanup in four sequential phases. The order is not negotiable:
 
-**Clear out the dead → decide the boundaries → move the files.**
+**Clear out the dead → decide the boundaries → move the files → reshape what is left.**
 
 In reverse order you reorganize garbage into pretty folders and then find out
 half of it should not exist. Each phase removes the noise that would get in the
 next one's way: the module graph is only trustworthy once the dead code is
-gone, and folders only make sense once module boundaries have stabilized.
+gone, folders only make sense once module boundaries have stabilized, and
+reshaping the inside of a function that phase 2 was about to consolidate away
+is work done twice.
 
 ## Operating principle
 
@@ -69,8 +71,10 @@ and pathspec staging included.
 
 There are **two scheduled checkpoints** in the pipeline (phase 2, choosing the
 consolidation candidate; phase 3 on GREEN, confirming the folder plan before
-any `git mv`) and **one conditional stop** at Step 0, when the working tree is
-dirty before anything starts. Everything else runs on its own.
+any `git mv`), **one conditional checkpoint** in phase 4 that exists only when
+the queue has a tier B operation in it, and **one conditional stop** at Step 0,
+when the working tree is dirty before anything starts. Everything else runs on
+its own — phase 4 included, as long as it stays in tier A.
 
 ---
 
@@ -150,10 +154,24 @@ as a plain failure would report a hung check as a broken one.
 
 | Signal | Level | Behavior |
 |---|---|---|
-| Typecheck **and** tests pass | **GREEN** | Runs phase 1 in full without asking. Phase 2 and phase 3 each stop at their human checkpoint before mutating. |
-| A partial net, or no test file in the stack | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Does **not** run phase 2 or phase 3; reports and stops. |
+| Typecheck **and** tests pass | **GREEN** | Runs phase 1 in full without asking. Phase 2 and phase 3 each stop at their human checkpoint before mutating. Phase 4 runs tier A per covered target and stops at a checkpoint for tier B. |
+| A partial net, or no test file in the stack | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Does **not** run phase 2, phase 3 or phase 4; reports and stops. |
 | A check fails, or no tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. May create the cleanup branch; does **not** commit `CLEANUP_PROGRESS.md`. Delivers a report. |
 | No git repository | **RED** | Diagnoses only, regardless of the gate result — there is no HEAD to roll back to. |
+
+**Take the quality baseline in the same breath**, at every level including RED —
+the measurer is read-only, and this is the only chance to see the repo before
+the run changes it:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-.}/scripts/metrics.sh" . > /tmp/metrics-before.txt
+```
+
+Copy the `[metrics]` lines into `CLEANUP_PROGRESS.md` as well, so the baseline
+survives a `/clear` and a swept temp directory. Exit 2 means the path was wrong
+and 3 that no source was recognized; neither is a gate result and neither
+changes the level — note it and move on. Without this file the final report has
+no delta to show.
 
 **Stack caps in `references/other-stacks.md` override the GREEN column.**
 Python always confirms before deleting; JVM and Ruby are diagnosis / YELLOW by
@@ -276,10 +294,14 @@ name instead of composing them each time:
 | `codebase-cleanup:cleanup-phase-2-impl` | the consolidation the user chose |
 | `codebase-cleanup:cleanup-phase-3-survey` | the structure plan, read-only |
 | `codebase-cleanup:cleanup-phase-3-impl` | the approved moves |
+| `codebase-cleanup:cleanup-phase-4-survey` | the reshaping queue, read-only |
+| `codebase-cleanup:cleanup-phase-4-impl` | tier A, plus the approved tier B |
 
 The split into survey and implementation is where the checkpoint lives: the
 survey agents cannot write at all, so the question reaches the user before
 anything changed, and the implementation agents only start after the answer.
+Phase 4 keeps the split for the same reason on a narrower question — tier B
+changes a name in the domain, and no test can vouch for that choice.
 
 Without plugin agents the same contract is composed by hand, and it is the
 same four points:
@@ -294,9 +316,10 @@ same four points:
 - returning a summary of what it did, with `CLEANUP_PROGRESS.md` updated as the
   canonical state.
 
-Step 0 (calibrating the level, creating the branch), the phase 2 checkpoint
-and the phase 3 checkpoint stay with the orchestrator — a subagent does not
-talk to the user. Level and branch reach the subagents ready-made, through
+Step 0 (calibrating the level, creating the branch), the phase 2 checkpoint,
+the phase 3 checkpoint and the phase 4 tier B checkpoint stay with the
+orchestrator — a subagent does not talk to the user. Level and branch reach
+the subagents ready-made, through
 `CLEANUP_PROGRESS.md`.
 
 ---
@@ -402,6 +425,8 @@ what keep a draft or local `.env` that appears mid-run out of the commit.
 
 **Artifact hygiene (exclude + close).** Before the first category, put
 `knip-report.json` and `knip-report.json.tmp` in the repo's exclude file —
+and, before the first coverage run in phase 4, the coverage artifacts of the
+stack's tool (`coverage/`, `.coverage`, `lcov.info`) alongside them —
 repo-local, so the user's `.gitignore` stays untouched. Ask git where it is
 rather than typing the path: `git rev-parse --git-path info/exclude`, because
 in a linked worktree, a submodule or a `--separate-git-dir` checkout `.git`
@@ -661,6 +686,67 @@ imports; the "Do not forget" list in `references/phase-3-structure.md` has
 the rest). Failed: `git restore --staged --worktree .`, record it, next
 folder. If that restore is blocked by a hook, **abort** the pipeline.
 
+Phase 3 closes the same way phase 1 does: **tell the user to run `/clear`
+before phase 4.** The folder plan is the largest context the pipeline carries,
+and none of it helps decide whether a function is worth reshaping.
+
+---
+
+# PHASE 4 — Local reshaping
+
+Goal: the inside of the functions that survived the first three phases.
+
+It comes last for the reason that orders everything else: reshaping a function
+inside a module phase 2 consolidates away, or inside a file phase 3 moves, is
+work done twice. What reaches phase 4 is code that is alive, whose boundary is
+settled and whose path is final.
+
+Read `references/phase-4-refactor.md` for the protocol and
+`references/refactoring-catalog.md` for the operations themselves — eleven, in
+two tiers, with a worked before/after for each.
+
+**Targets are inherited, never invented.** They come from the 1.4 audit
+(`TECH_DEBT_AUDIT.md`, dimensions 1 and 3) and from the 1.5 pairs phase 2 did
+not take, filtered by the churn ranking: only what is hot gets in the queue. A
+file that is big, ugly and cold belongs in "looks bad but is fine", with the
+numbers next to it.
+
+**The safety net is measured per target, not per repository.** GREEN says the
+suite that exists passes; it says nothing about which lines it executes. To
+rewrite the inside of a function, what matters is whether *that function* is
+exercised — a repo at GREEN with 4% coverage authorizes nothing, because the
+green gate after the change proves only that the code still compiles, which is
+what a broken refactor proves too. Uncovered target: skip it and record it, or
+write a characterization test as its own commit first. There is no third exit.
+
+**Tier A runs on its own** (`extract-function`, `guard-clauses`,
+`named-constant`, `dead-branch`, `rename-local`): mechanical, local, and the
+gate is real evidence for it. **Tier B stops at a checkpoint** (`extract-class`,
+`domain-type`, `polymorphism`, `parameter-object`, `delegation`,
+`type-boundary`): it picks an abstraction or a domain name, and a green test
+proves the behavior did not change — not that the choice was right. Same
+argument as phase 2, one altitude down. `type-boundary` is the typing and
+nothing else: adding schema validation at the boundary rejects input that used
+to pass, which is a behavior change and therefore not a refactor here — it
+leaves as a recommendation in the report, never as a `refactor()` commit.
+
+One operation per commit, `refactor(<operation-id>): <what>`. Stage with
+pathspecs of what the operation touched (`git add -- src/billing/invoice.ts`),
+then `"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"`, then commit. Unlike phase 2
+there is no intermediate red state here: each operation is atomic, so a red
+gate means the operation was wrong, not that it was unfinished. Failed:
+`git restore --staged --worktree .`, record it, next target. If that restore is
+blocked by a hook, **abort** the pipeline.
+
+**Cap per session: 5 tier A operations, 1 tier B.** A review limit, not a
+performance one: whoever merges this branch reads the diff. Hitting the cap is a
+normal ending — record what is still in the queue and let the next session take
+it. Update `CLEANUP_PROGRESS.md` after every operation, with the skipped targets
+and the reason they were skipped.
+
+**YELLOW does not run phase 4** — it reports the queue and stops. **RED** never
+reaches here. Phase 4 closes the pipeline: go to the final report.
+
 ---
 
 ## Rules that apply to the whole pipeline
@@ -686,7 +772,9 @@ branch. Merging is the user's decision, on their own schedule.
 ## Final report
 
 **Close hygiene first** (GREEN/YELLOW, when the run wrote artifacts): delete
-`knip-report.json.tmp` if present, and delete `knip-report.json` only when it
+`knip-report.json.tmp` if present, delete the coverage artifacts this run
+produced (`coverage/`, `.coverage`, `lcov.info` — phase 4 only, and only when
+the run created them), and delete `knip-report.json` only when it
 is an untracked tool artifact from this run (see Artifact hygiene above) — if
 the user tracks it on purpose, leave the tracked file alone; drop from
 `info/exclude` only the lines this run added; leave `CLEANUP_PROGRESS.md` and
@@ -705,6 +793,22 @@ Branch: `cleanup/YYYYMMDD` · Level: GREEN · N commits
 | 1.5 — duplicate functions | 6 pairs found, 2 real (churn), 4 left alone |
 | 2 — consolidation | 3 modules → 1 (`src/billing/`) |
 | 3 — structure | 4 folders reorganized, 2 cycles broken |
+| 4 — local reshaping | 5 tier A operations, 1 tier B; 2 targets skipped (uncovered) |
+
+### Quality delta
+Run the measurer again and diff it against the Step 0 baseline:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-.}/scripts/metrics.sh" . > /tmp/metrics-after.txt
+diff /tmp/metrics-before.txt /tmp/metrics-after.txt
+```
+
+`[metrics] maxfn 214 → 61 · fn_over_50 9 → 4 · maxnest 7 → 4 (approx) · loose_types 31 → 31`
+Evidence, not a target: nothing here is optimized for its own sake. Report the
+lines that moved and say which phase moved them; a line that did not move is
+not worth a row. No baseline (the run started before it was taken, or the file
+is gone) means no delta section — an unanchored "after" is a number pretending
+to be a comparison.
 
 ### Revert anything
 `git revert <sha>` — commits are atomic per category.
@@ -726,4 +830,8 @@ belongs under "Failed / not done", along with any category that was skipped
 
 If the level was RED, the report is diagnosis only: list what you would do and
 what needs to exist or be fixed (tests, typecheck, a baseline that passes) to
-make it possible. No `CLEANUP_PROGRESS.md` commit on RED.
+make it possible. Where the gap is the suite itself, name the critical path and
+**propose** the minimal characterization test that would pin it down — the one
+piece of work that turns this repo into one the pipeline can act on. Proposing
+it is not promoting the level: the user decides, and the next run measures
+again. No `CLEANUP_PROGRESS.md` commit on RED.

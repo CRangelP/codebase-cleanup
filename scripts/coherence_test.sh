@@ -858,7 +858,8 @@ agent_frontmatter() { # agent_frontmatter <file> — the YAML block, or empty
 }
 
 for a in cleanup-phase-1 cleanup-phase-2-survey cleanup-phase-2-impl \
-         cleanup-phase-3-survey cleanup-phase-3-impl; do
+         cleanup-phase-3-survey cleanup-phase-3-impl \
+         cleanup-phase-4-survey cleanup-phase-4-impl; do
   f="agents/$a.md"
   check "agents/$a.md exists" \
         "$([[ -f $f ]] && echo 0 || echo 1)" \
@@ -888,10 +889,12 @@ filename is a delegation nobody can call"
         "an agent nobody delegates to is an agent that rots"
 done
 
-# The two surveys are the checkpoint. They run before the user has answered, so
+# The surveys are the checkpoint. They run before the user has answered, so
 # the guarantee has to be mechanical: no Write, no Edit, no way to change the
-# repository while deciding what to propose.
-for a in cleanup-phase-2-survey cleanup-phase-3-survey; do
+# repository while deciding what to propose. Phase 4's survey earns the same
+# ban for a narrower reason: it reads coverage per target, and a survey that
+# can write is one keystroke away from "fixing" the target it was measuring.
+for a in cleanup-phase-2-survey cleanup-phase-3-survey cleanup-phase-4-survey; do
   f="agents/$a.md"
   [[ -f $f ]] || continue
   line=$(agent_frontmatter "$f" | grep -E '^disallowedTools:')
@@ -902,6 +905,51 @@ for a in cleanup-phase-2-survey cleanup-phase-3-survey; do
   check "$a cannot write" "$ok" \
         "a survey runs before the user answered; got '${line:-no disallowedTools}'"
 done
+
+# 14. The catalog's operation ids are one list, in every file that names them. -
+# The eleven ids are the vocabulary phase 4 runs on: they are the commit message
+# (`refactor(<id>): …`), the tier that decides whether a checkpoint is needed,
+# and what the impl agent is allowed to do at all ("an operation that is in
+# neither tier is out of scope"). They live in four places written by hand — the
+# catalog's table, the catalog's own section headings, and the two tier lists in
+# SKILL.md — and nothing until now compared them. An id that exists in one and
+# not the others is either an operation nobody can run or a commit message
+# nobody can trace back, and both fail silently.
+catalog_table_ids() { # ids from the tier table of the catalog
+  grep -oE '^\|[[:space:]]*[AB][[:space:]]*\|[[:space:]]*`[a-z-]+`' \
+    references/refactoring-catalog.md 2>/dev/null |
+    grep -oE '`[a-z-]+`' | tr -d '`' | sort -u
+}
+catalog_heading_ids() { # ids from the per-operation headings of the catalog
+  grep -oE '^## `[a-z-]+`' references/refactoring-catalog.md 2>/dev/null |
+    grep -oE '`[a-z-]+`' | tr -d '`' | sort -u
+}
+skill_ids() { # ids named in SKILL.md's two tier lists
+  ids=$(catalog_table_ids | tr '\n' '|' | sed 's/|$//')
+  [[ -n $ids ]] || return 0
+  grep -oE "\`($ids)\`" SKILL.md 2>/dev/null | tr -d '`' | sort -u
+}
+
+table=$(catalog_table_ids)
+headings=$(catalog_heading_ids)
+n_table=$(printf '%s\n' "$table" | grep -c .)
+
+# Floor: eleven is the number the phase was designed around. A derivation that
+# comes back empty (a table that changed shape) would make every diff below
+# compare nothing against nothing and pass.
+check "the catalog table lists 11 operation ids" \
+      "$([[ $n_table -eq 11 ]] && echo 0 || echo 1)" \
+      "found $n_table: $(printf '%s' "$table" | tr '\n' ' ')"
+
+check "every catalog id has its own section" \
+      "$([[ "$table" == "$headings" ]] && echo 0 || echo 1)" \
+      "table: $(printf '%s' "$table" | tr '\n' ' ')
+headings: $(printf '%s' "$headings" | tr '\n' ' ')"
+
+check "SKILL.md names every catalog id" \
+      "$([[ "$(skill_ids)" == "$table" ]] && echo 0 || echo 1)" \
+      "in SKILL.md: $(skill_ids | tr '\n' ' ')
+in the catalog: $(printf '%s' "$table" | tr '\n' ' ')"
 
 # 13. The plugin manifests agree with each other and with the docs. ----------
 # The version in plugin.json is the cache key that decides whether an install

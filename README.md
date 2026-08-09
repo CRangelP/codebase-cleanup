@@ -2,19 +2,23 @@
 
 # codebase-cleanup
 
-Skill de limpeza de codebase para Claude Code. Trabalha em três fases, nessa
-ordem: remove código morto, consolida módulos rasos e reorganiza a estrutura
-de pastas. Entre a primeira e a segunda entra a fase 1.5, que procura arquivos
-e funções duplicados — a mesma ideia implementada duas vezes com nomes
-diferentes — e entrega os pares como candidatos à consolidação. A ordem
-importa — organizar pastas antes de apagar o que está morto é arrumar lixo em
-gaveta bonita.
+Skill de limpeza de codebase para Claude Code. Trabalha em quatro fases, nessa
+ordem: remove código morto, consolida módulos rasos, reorganiza a estrutura de
+pastas e remodela o interior das funções que sobraram. Entre a primeira e a
+segunda entra a fase 1.5, que procura arquivos e funções duplicados — a mesma
+ideia implementada duas vezes com nomes diferentes — e entrega os pares como
+candidatos à consolidação. A ordem importa — organizar pastas antes de apagar o
+que está morto é arrumar lixo em gaveta bonita, e remodelar função dentro de
+módulo que a fase 2 vai consolidar é trabalho feito duas vezes.
 
 A skill executa sozinha o que dá para executar com segurança. Ela para e
-pergunta em dois casos: na escolha do candidato de consolidação da fase 2,
-porque fronteira de módulo é decisão de domínio, não de código; e logo no
-começo, se a árvore de trabalho estiver suja — aí você decide entre `git stash`,
-commitar o que está pendente ou abortar, e nada acontece antes da sua resposta.
+pergunta em quatro casos: na escolha do candidato de consolidação da fase 2,
+porque fronteira de módulo é decisão de domínio, não de código; na confirmação
+do plano de pastas da fase 3, antes de qualquer `git mv`; na fase 4, se a fila
+tiver operação de tier B, que escolhe uma abstração ou um nome de domínio; e
+logo no começo, se a árvore de trabalho estiver suja — aí você decide entre
+`git stash`, commitar o que está pendente ou abortar, e nada acontece antes da
+sua resposta.
 
 ## Requisitos
 
@@ -97,7 +101,9 @@ codebase-cleanup/
 │   ├── cleanup-phase-2-survey.md     candidatos de consolidação (só leitura)
 │   ├── cleanup-phase-2-impl.md       implementa o candidato escolhido
 │   ├── cleanup-phase-3-survey.md     plano de estrutura (só leitura)
-│   └── cleanup-phase-3-impl.md       executa os movimentos aprovados
+│   ├── cleanup-phase-3-impl.md       executa os movimentos aprovados
+│   ├── cleanup-phase-4-survey.md     fila de remodelagem (só leitura)
+│   └── cleanup-phase-4-impl.md       aplica tier A e o tier B aprovado
 ├── hooks/
 │   └── hooks.json                    registra o guarda no evento PreToolUse
 ├── references/
@@ -106,14 +112,18 @@ codebase-cleanup/
 │   ├── duplication.md                funções duplicadas e a regra do churn
 │   ├── phase-2-consolidation.md      protocolo de consolidação de módulos
 │   ├── phase-3-structure.md          padrões de organização de pastas
+│   ├── phase-4-refactor.md           protocolo da fase 4 e a rede por alvo
+│   ├── refactoring-catalog.md        as 11 operações, em dois tiers
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
     ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/2/3/4
     ├── guard.sh                      bloqueia os cinco comandos que o protocolo proíbe
-    ├── test.sh                       roda as quatro suítes em sequência
+    ├── test.sh                       roda as cinco suítes em sequência
+    ├── metrics.sh                    métricas de qualidade, exit 0/2/3
     ├── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
     ├── guard_test.sh                 o que o guarda bloqueia e o que ele deixa passar
     ├── rollback_test.sh              prova executável do protocolo de rollback
+    ├── metrics_test.sh               casos do medidor, em repos sintéticos
     └── coherence_test.sh             invariantes de coerência entre doc e código
 ```
 
@@ -150,7 +160,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 127/127 casos, 42/42 casos do guarda, 5/5 propriedades,
-# 248/248 invariantes
+# 35/35 casos de métrica, 291/291 invariantes
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`

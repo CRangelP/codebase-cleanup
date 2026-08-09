@@ -2,18 +2,22 @@
 
 # codebase-cleanup
 
-Codebase cleanup skill for Claude Code. It works in three phases, in this
+Codebase cleanup skill for Claude Code. It works in four phases, in this
 order: remove dead code, consolidate shallow modules, reorganize the folder
-structure. Between the first and the second sits phase 1.5, which looks for
-duplicate files and functions — the same idea implemented twice under
-different names — and hands the pairs over as consolidation candidates. The
-order matters — reorganizing folders before deleting what is dead is tidying
-garbage into a nice drawer.
+structure, reshape the inside of the functions that survived. Between the
+first and the second sits phase 1.5, which looks for duplicate files and
+functions — the same idea implemented twice under different names — and hands
+the pairs over as consolidation candidates. The order matters — reorganizing
+folders before deleting what is dead is tidying garbage into a nice drawer,
+and reshaping a function inside a module phase 2 consolidates away is work
+done twice.
 
 The skill runs everything it can safely run on its own. It stops and asks in
-two situations: the choice of consolidation candidate in phase 2, because a
-module boundary is a domain decision, not a code decision; and right at the
-start, if the working tree is dirty — then you pick between `git stash`,
+four situations: the choice of consolidation candidate in phase 2, because a
+module boundary is a domain decision, not a code decision; the confirmation of
+the folder plan in phase 3, before any `git mv`; phase 4, when the queue has a
+tier B operation in it, which picks an abstraction or a domain name; and right
+at the start, if the working tree is dirty — then you pick between `git stash`,
 committing the pending work or aborting, and nothing happens before your
 answer.
 
@@ -100,7 +104,9 @@ codebase-cleanup/
 │   ├── cleanup-phase-2-survey.md     consolidation candidates (read-only)
 │   ├── cleanup-phase-2-impl.md       implements the chosen candidate
 │   ├── cleanup-phase-3-survey.md     structure plan (read-only)
-│   └── cleanup-phase-3-impl.md       executes the approved moves
+│   ├── cleanup-phase-3-impl.md       executes the approved moves
+│   ├── cleanup-phase-4-survey.md     reshaping queue (read-only)
+│   └── cleanup-phase-4-impl.md       applies tier A and the approved tier B
 ├── hooks/
 │   └── hooks.json                    registers the guard on the PreToolUse event
 ├── references/
@@ -109,14 +115,18 @@ codebase-cleanup/
 │   ├── duplication.md                duplicate functions and the churn rule
 │   ├── phase-2-consolidation.md      module consolidation protocol
 │   ├── phase-3-structure.md          folder organization patterns
+│   ├── phase-4-refactor.md           phase 4 protocol and the per-target net
+│   ├── refactoring-catalog.md        the 11 operations, in two tiers
 │   └── other-stacks.md               Python, Go, Rust, JVM, Ruby, .NET
 └── scripts/
     ├── gate.sh                       multi-stack typecheck + tests, exit 0/1/2/3/4
     ├── guard.sh                      blocks the five commands the protocol forbids
-    ├── test.sh                       runs the four suites in sequence
+    ├── test.sh                       runs the five suites in sequence
+    ├── metrics.sh                    quality metrics, exit 0/2/3
     ├── gate_test.sh                  gate contract tests (toolchain stubs)
     ├── guard_test.sh                 what the guard blocks and what it lets through
     ├── rollback_test.sh              executable proof of the rollback protocol
+    ├── metrics_test.sh               measurer cases, on synthetic repos
     └── coherence_test.sh             coherence invariants between docs and code
 ```
 
@@ -154,7 +164,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 127/127 cases, 42/42 guard cases, 5/5 properties,
-# 248/248 invariants
+# 35/35 metrics cases, 291/291 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
