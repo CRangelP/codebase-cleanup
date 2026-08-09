@@ -35,8 +35,11 @@ Targets come from phase 1.4's `TECH_DEBT_AUDIT.md` — dimension 1 (god
 functions, god files, duplicated logic spread across sites) and dimension 3
 (`any`, `# type: ignore`, untyped boundaries) — and from the phase 1.5 pairs
 that phase 2 did not consume. A pair promoted to phase 2 candidate and never
-chosen is still duplicated intent; when both copies live in the same file, it
-was never phase 2's to fix.
+chosen is still duplicated intent. A pair whose two copies live in the same
+file is phase 2's deletion test to judge first, exactly as
+`references/duplication.md` says, and it reaches this phase only when that test
+left it standing — there is no module boundary to move then, only a function to
+extract, which is this phase's unit.
 
 A target that is written down nowhere is a target picked by taste, and this
 project does not do that. If you find something the audit missed while reading
@@ -119,20 +122,13 @@ that "fixes" the observed behavior is a behavior change wearing a test as a
 disguise — it goes green against code nobody has refactored yet, and every
 refactor after it is measured against an expectation that never held.
 
-This is also the one honest exit from RED that the skill can offer. RED does
-not become GREEN by decree and the skill never promotes its own level, but at
-RED it can **propose** the minimal characterization test of the critical path,
-naming the path and what the test would pin down, and leave the decision to the
-user. Writing that test is work the user asks for; it is not a level the
-pipeline granted itself.
-
 ## Levels
 
 | Level | Phase 4 |
 |---|---|
 | GREEN | tier A on its own, per covered target; tier B only after the checkpoint |
 | YELLOW | does not run — reports the target queue and stops |
-| RED | never reaches here |
+| RED | never reaches here — the characterization test the report proposes at RED belongs to `SKILL.md`'s final report |
 
 YELLOW does not run phase 4, and not out of caution for its own sake: at
 YELLOW something is missing from the net, and both halves matter here. If the
@@ -156,10 +152,13 @@ behavior did not change; they do not prove the abstraction is right — the same
 argument as the phase 2 checkpoint, one altitude down, which is why it is
 answered by the same person and not by the gate.
 
-Keep it cheap, in the shape phases 2 and 3 already use: **at most 5
-candidates**, one recommended explicitly, **one** question. No multi-round
-interview — a checkpoint that costs five messages is a checkpoint the user
-learns to skip.
+Keep it cheap, in the shape phases 2 and 3 already use: **at most 5 tier B
+candidates**, one recommended explicitly, **one** question, and the answer
+picks a single one of them or none. That five is a different number from the
+session cap below: the tier A queue is capped at five operations per session,
+and the checkpoint adds at most one operation to that session, never five. No
+multi-round interview — a checkpoint that costs five messages is a checkpoint
+the user learns to skip.
 
 ```markdown
 ### R1 — `domain-type` · `src/billing/invoice.ts:44 applyDiscount()`
@@ -187,9 +186,8 @@ One operation, one commit:
 3. `"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"`
 4. Commit on green: `refactor(<id>): <what>`, with the id in kebab-case from
    the catalog — `refactor(guard-clauses): flatten the retry ladder in fetchInvoice`.
-   The id is what makes the history readable at revert time: six months from
-   now nobody remembers what "clean up invoice.ts" did, and `guard-clauses`
-   says it in one word.
+   Why the id and not a prose summary is in `references/refactoring-catalog.md`,
+   under "Why the operation is named in the commit".
 
 Unlike phase 2, **there is no red-by-construction intermediate state here**. A
 consolidation is red between "the new interface exists" and "the callers point
@@ -201,11 +199,12 @@ prediction coming true.
 Gate red (exit 1), or timed out (exit 4, which is inconclusive and never a
 green): `git restore --staged --worktree .`, record the target and the failure
 in `CLEANUP_PROGRESS.md`, move to the next target. Do not try to fix it. A red
-gate right after a transformation means the transformation changed behavior,
-and the useful information is which operation on which function — not a patch
-stacked on top of a change nobody has reviewed. If a hook blocks that restore,
-**abort**, exactly as in phases 2 and 3: the failed operation is still in the
-tree, and the next commit would fold it in and destroy the atomic revert.
+gate right after a transformation means the transformation was wrong — the
+tests disagree with it, or it stopped compiling — and the useful information is
+which operation on which function, not a patch stacked on top of a change
+nobody has reviewed. If a hook blocks that restore, **abort**, exactly as in
+phases 2 and 3: the failed operation is still in the tree, and the next commit
+would fold it in and destroy the atomic revert.
 
 **Cap per session: 5 tier A operations, 1 tier B.** A review limit, not a
 performance one. Whoever merges this branch reads the diff, and a refactor
@@ -225,15 +224,16 @@ what is still in the queue and let the next session take it, after `/clear`.
   deliverable is the finding and the operations it would take. Diagnosing is
   the job.
 
-`type-boundary` needs saying out loud: adding schema validation at a trust
-boundary **changes behavior** — input that used to pass now gets rejected — and
-under this project's definition that is not a refactor, whatever the suite
-says. Green tests after it prove only that no test sent the input that would
-now be refused. So it never runs as an autonomous operation: it goes into the
-final report as a recommendation, or through an explicit checkpoint where the
-user is told in one sentence which inputs stop being accepted. Replacing an
-`any` with a type the compiler checks, and nothing else at runtime, is a
-different operation and stays in tier B.
+`type-boundary` needs saying out loud, because the tempting version of it is
+not this operation. Adding schema validation at a trust boundary **changes
+behavior** — input that used to pass starts being rejected — and green tests
+after it prove only that no test sent the input that would now be refused.
+Under this project's definition that is not a refactor, so it never runs here,
+checkpoint or not: it leaves the pipeline as a recommendation in the final
+report, and if the user wants it, it is their commit with their name on it, not
+a `refactor(type-boundary)`. What phase 4 runs under this id is the typing the
+catalog describes and nothing that executes at runtime — and, like every tier B
+operation, it waits for the checkpoint.
 
 ## Record
 
@@ -249,7 +249,7 @@ it (`git add -- CLEANUP_PROGRESS.md`):
   same file.
 
 The final report gets its own row —
-`| 4 — local reshaping | 5 operations (3 extract-function, 2 guard-clauses), 1 characterization test |`
+`| 4 — local reshaping | 5 tier A operations, 1 tier B; 2 targets skipped (uncovered) |`
 — with skipped targets under "Failed / not done" and the tier B candidates the
 user did not choose under "Pending your decision". The cold ones do not go
 there: they belong to the audit's "looks bad but is fine" section, considered

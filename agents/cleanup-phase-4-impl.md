@@ -19,10 +19,12 @@ that is in neither tier is out of scope.
 Per target, in order: confirm the coverage evidence the survey recorded is
 still true, apply exactly one operation, stage the pathspecs that operation
 touched, run the gate, commit on green as `refactor(<id>): <what>`. Nothing
-here is red by construction — the file compiles before and after — so a red or
-timed-out gate means the transformation changed behavior: roll back with the
-canonical restore, record the target and the failure, and move to the next one.
-Never repair. If the restore itself is blocked by a hook, abort the phase.
+here is red by construction — the file compiles before and after — so a red
+gate means the operation was wrong, not that it was unfinished. A timed-out
+gate (exit 4) is inconclusive and gets the same treatment, recorded as a
+timeout and never as a green. Either way: roll back with the canonical restore,
+record the target and the failure, and move to the next one. Never repair. If
+the restore itself is blocked by a hook, abort the phase.
 
 An uncovered target has two exits and only two: skip it and record it as
 pending, or land a characterization test as its own commit first — pinning the
