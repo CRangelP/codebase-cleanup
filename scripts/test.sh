@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Runs the five suites in order and stops at the first red — a broken gate
+# Runs the six suites in order and stops at the first red — a broken gate
 # contract makes the rest of the run noise. Each one still works on its own.
-# Usage: test.sh   (exit 0 = all five passed)
+# Usage: test.sh   (exit 0 = all six passed)
+# mutation_test.sh runs last on purpose: it copies the repo and re-runs
+# coherence_test.sh five times, so it is the slowest, and its answer only means
+# something once the suite it mutates is known to be green.
 set -u
 
 cd "$(dirname "$0")" || exit 2
@@ -9,7 +12,7 @@ cd "$(dirname "$0")" || exit 2
 # second full matrix under scripts/test.sh). Standalone coherence still runs
 # the suite itself.
 GATE_TEST_CASE_COUNT=""
-for suite in gate_test.sh guard_test.sh rollback_test.sh metrics_test.sh coherence_test.sh; do
+for suite in gate_test.sh guard_test.sh rollback_test.sh metrics_test.sh coherence_test.sh mutation_test.sh; do
   echo "=== $suite"
   if [[ $suite == gate_test.sh ]]; then
     gate_log=$(mktemp)
@@ -23,4 +26,4 @@ for suite in gate_test.sh guard_test.sh rollback_test.sh metrics_test.sh coheren
     "${BASH:-bash}" "$suite" || { echo "=== $suite FAILED — stopping here"; exit 1; }
   fi
 done
-echo "=== gate_test.sh, guard_test.sh, rollback_test.sh, metrics_test.sh and coherence_test.sh: all green"
+echo "=== gate_test.sh, guard_test.sh, rollback_test.sh, metrics_test.sh, coherence_test.sh and mutation_test.sh: all green"
