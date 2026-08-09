@@ -12,7 +12,7 @@
       "name": "codebase-cleanup",
       "source": ".",
       "category": "code-quality",
-      "description": "Three-phase codebase cleanup with a green gate before every commit.",
+      "description": "Four-phase codebase cleanup with a green gate before every commit.",
       "keywords": [
         "cleanup",
         "dead-code",

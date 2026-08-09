@@ -1,6 +1,6 @@
 ---
 name: codebase-cleanup
-description: Full three-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules and reorganizes the folder structure, running autonomously with atomic commits and rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, messy folders, confusing structure or a bloated codebase; mentions duplicated code, duplicate functions, copy-paste code, "código duplicado" or "função repetida"; asks to "give the codebase a deep clean", to "reorganiza essas pastas", or for an audit or health check; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the three phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
+description: Full four-phase codebase cleanup — removes dead code (knip/vulture/cargo-udeps), consolidates shallow modules, reorganizes the folder structure and reshapes the functions that survived, running autonomously with atomic commits and rollback. Use WHENEVER the user mentions cleaning up, organizing, tidying or refactoring the project, or says "dar uma faxina" or "dá uma limpada"; talks about dead code, orphan files, unused dependencies, tech debt, god functions, messy folders or a bloated codebase; mentions duplicated code, copy-paste code, "código duplicado" or "função repetida"; asks to "give the codebase a deep clean", to "reorganiza essas pastas", or for an audit or health check; or says the repo "grew too big", "is hard to navigate", "cresceu demais" or "tem coisa que ninguém usa". Also use when the user wants only one of the four phases on its own. Do NOT use for formatting or lint, vulnerable dependency updates, bundle size optimization, database cleanup or git history rewriting.
 ---
 
 # Codebase Cleanup
@@ -302,9 +302,9 @@ same four points:
 - returning a summary of what it did, with `CLEANUP_PROGRESS.md` updated as the
   canonical state.
 
-Step 0 (calibrating the level, creating the branch), the phase 2 checkpoint
-and the phase 3 checkpoint stay with the orchestrator — a subagent does not
-talk to the user. Level and branch reach the subagents ready-made, through
+Step 0 (calibrating the level, creating the branch), the phase 2 checkpoint,
+the phase 3 checkpoint and the phase 4 tier B checkpoint stay with the
+orchestrator — a subagent does not talk to the user. Level and branch reach the subagents ready-made, through
 `CLEANUP_PROGRESS.md`.
 
 ---
@@ -410,6 +410,8 @@ what keep a draft or local `.env` that appears mid-run out of the commit.
 
 **Artifact hygiene (exclude + close).** Before the first category, put
 `knip-report.json` and `knip-report.json.tmp` in the repo's exclude file —
+and, before the first coverage run in phase 4, the coverage artifacts of the
+stack's tool (`coverage/`, `.coverage`, `lcov.info`) alongside them —
 repo-local, so the user's `.gitignore` stays untouched. Ask git where it is
 rather than typing the path: `git rev-parse --git-path info/exclude`, because
 in a linked worktree, a submodule or a `--separate-git-dir` checkout `.git`
@@ -718,8 +720,14 @@ gate means the operation was wrong, not that it was unfinished. Failed:
 `git restore --staged --worktree .`, record it, next target. If that restore is
 blocked by a hook, **abort** the pipeline.
 
+**Cap per session: 5 tier A operations, 1 tier B.** A review limit, not a
+performance one: whoever merges this branch reads the diff. Hitting the cap is a
+normal ending — record what is still in the queue and let the next session take
+it. Update `CLEANUP_PROGRESS.md` after every operation, with the skipped targets
+and the reason they were skipped.
+
 **YELLOW does not run phase 4** — it reports the queue and stops. **RED** never
-reaches here.
+reaches here. Phase 4 closes the pipeline: go to the final report.
 
 ---
 
@@ -746,7 +754,9 @@ branch. Merging is the user's decision, on their own schedule.
 ## Final report
 
 **Close hygiene first** (GREEN/YELLOW, when the run wrote artifacts): delete
-`knip-report.json.tmp` if present, and delete `knip-report.json` only when it
+`knip-report.json.tmp` if present, delete the coverage artifacts this run
+produced (`coverage/`, `.coverage`, `lcov.info` — phase 4 only, and only when
+the run created them), and delete `knip-report.json` only when it
 is an untracked tool artifact from this run (see Artifact hygiene above) — if
 the user tracks it on purpose, leave the tracked file alone; drop from
 `info/exclude` only the lines this run added; leave `CLEANUP_PROGRESS.md` and
@@ -768,7 +778,7 @@ Branch: `cleanup/YYYYMMDD` · Level: GREEN · N commits
 | 4 — local reshaping | 5 tier A operations, 1 tier B; 2 targets skipped (uncovered) |
 
 ### Quality delta
-`[metrics] maxfn 214 → 61 · fn_over_50 9 → 4 · maxnest 7 → 4 · loose_types 31 → 31`
+`[metrics] maxfn 214 → 61 · fn_over_50 9 → 4 · maxnest 7 → 4 (approx) · loose_types 31 → 31`
 Evidence, not a target: nothing here is optimized for its own sake.
 
 ### Revert anything

@@ -2,18 +2,22 @@
 
 # codebase-cleanup
 
-Codebase cleanup skill for Claude Code. It works in three phases, in this
+Codebase cleanup skill for Claude Code. It works in four phases, in this
 order: remove dead code, consolidate shallow modules, reorganize the folder
-structure. Between the first and the second sits phase 1.5, which looks for
-duplicate files and functions — the same idea implemented twice under
-different names — and hands the pairs over as consolidation candidates. The
-order matters — reorganizing folders before deleting what is dead is tidying
-garbage into a nice drawer.
+structure, reshape the inside of the functions that survived. Between the
+first and the second sits phase 1.5, which looks for duplicate files and
+functions — the same idea implemented twice under different names — and hands
+the pairs over as consolidation candidates. The order matters — reorganizing
+folders before deleting what is dead is tidying garbage into a nice drawer,
+and reshaping a function inside a module phase 2 consolidates away is work
+done twice.
 
 The skill runs everything it can safely run on its own. It stops and asks in
-two situations: the choice of consolidation candidate in phase 2, because a
-module boundary is a domain decision, not a code decision; and right at the
-start, if the working tree is dirty — then you pick between `git stash`,
+four situations: the choice of consolidation candidate in phase 2, because a
+module boundary is a domain decision, not a code decision; the confirmation of
+the folder plan in phase 3, before any `git mv`; phase 4, when the queue has a
+tier B operation in it, which picks an abstraction or a domain name; and right
+at the start, if the working tree is dirty — then you pick between `git stash`,
 committing the pending work or aborting, and nothing happens before your
 answer.
 
@@ -160,7 +164,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 127/127 cases, 42/42 guard cases, 5/5 properties,
-# 28/28 metrics cases, 288/288 invariants
+# 35/35 metrics cases, 288/288 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
