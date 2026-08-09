@@ -149,8 +149,15 @@ unlock dead-export deletion on code the other half covers — and a slice
 declared with an empty command still counts as one of them. A watch-mode slice
 never runs at all, because it does not exit: `watch`, `ui` and `debug` are
 matched as whole segments of the name, so `test:watch:all` is caught and
-`test:watchdog` is not. All of these print the `'test' not counted` line naming
-the slices, and so does a manifest that declares no test script at all. A split
+`test:watchdog` is not. Not running one and not counting one are separate
+questions. `watch` and `debug` name a mode of the suite — the same tests,
+started so they never stop — so a `test:watch` beside a lone `test:unit` does
+not split anything and the real slice is still the suite. `ui` is not a mode
+word: `vitest --ui` does not exit either, but `test:ui` is just as often a scope
+of its own, so it is never run *and* never leaves the count — `test:unit` next
+to `test:ui` is two slices, not one. All of these print the `'test' not counted`
+line naming the slices, and so does a manifest that declares no test script at
+all. A split
 suite is **not** promotable by hand: it is in the manifest, only divided, so
 run every slice before deciding.
 
@@ -314,22 +321,32 @@ of the user's.
 
 The one thing `-A` picks up that this step did not produce is knip's own
 output. Before the first category, put `knip-report.json` and
-`knip-report.json.tmp` in `.git/info/exclude` — repo-local, so the user's
-`.gitignore` stays untouched. Otherwise every category commits the report the
-previous one was read from, and the user reverting `chore: remove unused deps`
-gets a tool artifact back along with the dependencies.
+`knip-report.json.tmp` in the repo's exclude file — repo-local, so the user's
+`.gitignore` stays untouched. Ask git where it is rather than typing the path:
+`git rev-parse --git-path info/exclude`, because in a linked worktree, a
+submodule or a `--separate-git-dir` checkout `.git` is a *file* and appending to
+`.git/info/exclude` fails with `Not a directory`. Otherwise every category
+commits the report the previous one was read from, and the user reverting
+`chore: remove unused deps` gets a tool artifact back along with the
+dependencies.
 
 That exclude only reaches **untracked** paths. If a previous run of this skill
 already committed `knip-report.json`, git keeps staging it no matter what the
 exclude says, and the regeneration below puts a fresh diff in every category
 commit. Check with `git status --porcelain` after writing the exclude lines; if
-the report still shows up, untrack it in a commit of its own before the first
-category — `git rm --cached knip-report.json`, then `chore: untrack knip
-report`. Left staged, the next `git add -A` folds that deletion into the deps
-commit, and reverting the deps category hands the artifact back, which is the
-thing the exclude was for. On the way out, delete the report and drop the lines
-you added from `.git/info/exclude`: none of them is the user's, and the exclude
-makes the leftover invisible to `git status`, so nobody would find it later.
+the report still shows up, find out whose it is first — `git log -1 --format=%s
+-- knip-report.json`. A previous run of this skill left `chore:` there and the
+file is a tool artifact: untrack it in a commit of its own before the first
+category (`git rm --cached knip-report.json`, then `chore: untrack knip
+report`). Anything else means the user tracks it on purpose: leave it tracked,
+say so in the report, and expect the report's diff in each commit. Do not
+untrack it either way as part of another category — left staged, the next `git
+add -A` folds that deletion into the deps commit, and reverting the deps
+category hands the artifact back, which is the thing the exclude was for. On
+the way out, delete the report and drop from the exclude file only the lines
+you added — leave anything that was already there, it is the user's — because
+the exclude makes a leftover invisible to `git status` and nobody would find it
+later.
 
 One more thing `-A` can swallow, created by this step and not committed on
 purpose: `node_modules`, after the install below. Confirm the repo ignores it
@@ -364,10 +381,11 @@ bun install                          # bun
 Plain, never the frozen form. `--frozen-lockfile`, `--immutable` and the CI
 defaults that turn them on refuse a lockfile that no longer matches the
 manifest — which is exactly the state a correct prune produces, so a good
-deletion would come back as a red gate for the wrong reason. `npm ci` accepts
-the removal but never writes the lockfile, leaving a stale one in the commit.
-The updated lockfile goes in this category's commit: it is what carries the
-prune to every other machine.
+deletion would come back as a red gate for the wrong reason. `npm ci` is the
+same refusal under another name: it aborts with `EUSAGE` when `package.json`
+and `package-lock.json` are out of sync, and it never writes the lockfile, so
+it cannot get the prune out of this state either. The updated lockfile goes in
+this category's commit: it is what carries the prune to every other machine.
 
 **Regenerate the report between categories.** After each category's commit, run
 the 1.2 command again — same hardened form, same file — and read the next

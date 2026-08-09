@@ -108,7 +108,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validado em 08/2026: 75/75 casos, 5/5 propriedades, 77/77 invariantes
+# validado em 08/2026: 86/86 casos, 5/5 propriedades, 77/77 invariantes
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -161,11 +161,15 @@ baseline quebrado não dá para separar o que a limpeza quebrou do que já estav
 quebrado, e como todo commit exige gate verde, nenhum deles aconteceria. A
 skill diz qual check falhou e para por aí.
 
-Stack sem nenhum arquivo de teste não conta como testado: o gate não roda a
-suíte vazia e o nível fica em YELLOW. Vale para Go e .NET sem arquivo de
-teste, para crate Rust sem `tests/*.rs` nem `#[test]`, e para pytest que sai
-5 sem coletar nada. Se a sua suíte mora fora do lugar padrão, a promoção é
-sua — o gate não se promove sozinho.
+Stack sem nenhum arquivo de teste não conta como testado: o gate não conta
+suíte vazia, seja porque não a rodou, seja porque rodou e não voltou nada, e o
+nível fica em YELLOW. Vale para Go e .NET sem arquivo de
+teste, para crate Rust sem `tests/*.rs` nem `#[test]`, para build Maven ou
+Gradle sem nenhum `src/test`, e para pytest que sai 5 sem coletar nada.
+Manifesto que está ali só por ferramenta — um `requirements.txt` do build da
+documentação, um `Gemfile` do fastlane — não é stack sem suíte: sem código
+daquela linguagem no repositório, o gate não fala dele. Se a sua suíte mora
+fora do lugar padrão, a promoção é sua — o gate não se promove sozinho.
 
 Em JS/TS o mesmo cap pega a suíte fatiada: sem script `test`, com `test:unit`
 e `test:e2e` no manifesto, nenhuma fatia responde pela suíte inteira e o gate
@@ -173,7 +177,11 @@ não conta nenhuma delas. Promover à mão aqui é o caminho errado, porque a
 suíte não está fora do lugar, está dividida; rode as fatias todas. Uma fatia
 sozinha vale como a suíte, com uma exceção: modo watch nunca termina, então o
 gate não o executa. `watch`, `ui` e `debug` são lidos como segmentos inteiros
-do nome, o que pega `test:watch:all` e deixa `test:watchdog` em paz.
+do nome, o que pega `test:watch:all` e deixa `test:watchdog` em paz. Só que não
+executar e não contar são coisas diferentes: `watch` e `debug` são um modo da
+suíte, então `test:watch` ao lado de um `test:unit` sozinho deixa essa fatia
+valendo como a suíte; `test:ui` pode muito bem ser uma suíte à parte, então ele
+não roda e mesmo assim conta, e aí `test:unit` ao lado dele já é uma divisão.
 
 Em repositório poliglota o cap sobrevive aos outros stacks. Go com testes ao
 lado de uma metade JS que ninguém contou ainda imprime `checks=typecheck,test`,
@@ -250,8 +258,9 @@ rollback joga fora foi ela mesma que criou.
 - A categoria de deps roda o install simples do gerenciador depois de podar o
   manifesto, então o lockfile é reescrito e o `node_modules` é resolvido de
   novo. Essa parte fica fora do rollback: o `git restore` traz de volta o
-  `package.json` e o lockfile, nunca a árvore instalada. Se uma categoria
-  falhar, rode o install outra vez.
+  `package.json` e o lockfile, nunca a árvore instalada. Se for essa categoria
+  que falhar, rode o install outra vez; as outras duas não mexem no manifesto e
+  não precisam.
 
 ## Créditos
 

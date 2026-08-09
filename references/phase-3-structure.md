@@ -70,9 +70,12 @@ move. Do not fall back to `mv` plus `git rm`/`git add`: that is `rm` +
 Create exactly the directory the move lands in, and no others. Git tracks
 files, not directories, so a folder created for a move that never happened, or
 for a commit whose gate failed, is left behind as an empty untracked directory:
-`git restore --staged --worktree .` cannot remove it. Sweep the leftovers when
-a folder's commit does not land — `find src -type d -empty -delete`, or `rmdir`
-the path you just created.
+`git restore --staged --worktree .` cannot remove it. Sweep the leftover when a
+folder's commit does not land, by name: `rmdir` the path you just created (and
+`rmdir -p` if the move created parents, which stops at the first one that is not
+empty). Never a blanket `find ... -type d -empty -delete`: it also takes empty
+directories that were already there and are not yours to remove, and nothing in
+this pipeline can put them back.
 
 `git mv` preserves history. `rm` + `create` destroys that file's `git blame` —
 exactly the information someone will want six months from now when asking "why

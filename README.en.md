@@ -111,7 +111,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validated 2026-08: 75/75 cases, 5/5 properties, 77/77 invariants
+# validated 2026-08: 86/86 cases, 5/5 properties, 77/77 invariants
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -165,10 +165,15 @@ already broken, and since every commit demands a green gate, none of them would
 happen. The skill names the failing check and stops there.
 
 A stack with no test file at all does not count as tested: the gate does not
-run the empty suite and the level stays at YELLOW. That covers Go and .NET
-with no test file, a Rust crate with no `tests/*.rs` and no `#[test]`, and a
-pytest run that exits 5 having collected nothing. If your suite lives outside
-the usual place, promoting it is your call — the gate never promotes itself.
+count an empty suite, whether it declined to run it or ran it and got nothing
+back, and the level stays at YELLOW. That covers Go and .NET
+with no test file, a Rust crate with no `tests/*.rs` and no `#[test]`, a Maven
+or Gradle build with no `src/test` anywhere, and a pytest run that exits 5
+having collected nothing. A manifest carried for tooling and nothing else — a
+`requirements.txt` for the docs build, a `Gemfile` for fastlane — is not a stack
+without a suite: with no source of that language in the repo, the gate says
+nothing about it. If your suite lives outside the usual place, promoting it is
+your call — the gate never promotes itself.
 
 In JS/TS the same cap covers a sliced suite: with no `test` script and both
 `test:unit` and `test:e2e` in the manifest, no slice answers for the whole
@@ -176,7 +181,11 @@ suite and the gate counts none of them. Promoting by hand is the wrong move
 here, because the suite is not somewhere else, it is split; run every slice. A
 lone slice does count as the suite, with one exception: watch mode never exits,
 so the gate skips it. `watch`, `ui` and `debug` are read as whole segments of
-the name, which catches `test:watch:all` and leaves `test:watchdog` alone.
+the name, which catches `test:watch:all` and leaves `test:watchdog` alone. Being
+skipped and being uncounted are not the same, though: `watch` and `debug` are a
+mode of the suite, so `test:watch` next to a lone `test:unit` leaves that slice
+as the suite; `test:ui` may well be a suite of its own, so it is skipped and
+still counted, and `test:unit` next to it is a split.
 
 In a polyglot repo the cap survives the other stacks. Go with tests next to a
 JS half that was never counted still prints `checks=typecheck,test`, because
@@ -256,7 +265,8 @@ rollback discards is what the skill itself created.
   pruning the manifest, so the lockfile is rewritten and `node_modules`
   re-resolved. That part is outside the rollback: `git restore` brings back
   `package.json` and the lockfile, never the installed tree. Run the install
-  again if a category fails.
+  again if that category is the one that fails; the other two never touch the
+  manifest and do not need it.
 
 ## Credits
 
