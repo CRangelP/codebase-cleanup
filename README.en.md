@@ -214,7 +214,7 @@ into one of three levels:
 | Level | Condition | What it does |
 |---|---|---|
 | GREEN | typecheck and tests pass | runs phase 1 without asking; phase 2 and phase 3 stop at the human checkpoint |
-| YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports; does not run phase 2 or phase 3 |
+| YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports; does not run phase 2, phase 3 or phase 4 |
 | RED | no tests and no typecheck, or a baseline already failing | diagnoses only; nothing is deleted; no `CLEANUP_PROGRESS` commit |
 
 Stack caps in `references/other-stacks.md` override the GREEN column (Python

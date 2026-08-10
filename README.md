@@ -210,7 +210,7 @@ e se classifica em um de três níveis:
 | Nível | Condição | O que ela faz |
 |---|---|---|
 | GREEN | typecheck e testes passam | executa a fase 1 sem perguntar; fase 2 e fase 3 param no checkpoint humano |
-| YELLOW | rede parcial, ou nenhum arquivo de teste no stack | só deps e arquivos órfãos, sem mexer em exports; não roda fase 2 nem fase 3 |
+| YELLOW | rede parcial, ou nenhum arquivo de teste no stack | só deps e arquivos órfãos, sem mexer em exports; não roda fase 2, fase 3 nem fase 4 |
 | RED | sem testes e sem typecheck, ou baseline já vermelho | só diagnostica; nada é deletado; não commit de `CLEANUP_PROGRESS` |
 
 Os caps por stack em `references/other-stacks.md` sobrescrevem a coluna GREEN

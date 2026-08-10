@@ -31,6 +31,7 @@ apply() {
     M3) perl -0pi -e 's/the skill \*\*aborts\*\* the pipeline when a command of the protocol is blocked/the skill retries the command when it is blocked/' README.en.md ;;
     M4) perl -0pi -e 's/(`git add -- <paths this step produced or edited>`)/$1, or `git add -A` when that is quicker,/' SKILL.md ;;
     M5) perl -0pi -e 's/npx knip\@6\.32\.0 --cycles/npx knip --cycles/' references/phase-2-consolidation.md ;;
+    M6) perl -0pi -e 's/\| A partial net, or no test file in the stack \| \*\*YELLOW\*\* \| [^|]*\|/| A partial net, or no test file in the stack | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Does **not** run phase 2 by default, but runs phase 3 and phase 4 and commits what it changes. |/' SKILL.md ;;
   esac
 }
 
@@ -41,6 +42,7 @@ desc() {
     M3) echo "a rollback blocked by a hook retries instead of aborting" ;;
     M4) echo "a live 'git add -A' offered beside the correct form" ;;
     M5) echo "npx without a pinned version" ;;
+    M6) echo "YELLOW keeps both refusal phrases and grants phases 3 and 4 anyway" ;;
   esac
 }
 
@@ -50,11 +52,12 @@ desc() {
 # string is the name coherence_test.sh prints when the mutation is applied.
 expect() {
   case $1 in
-    M1) echo "YELLOW does not authorize deleting exports" ;;
+    M1) echo "the YELLOW cell of SKILL.md has [exports] denied" ;;
     M2) echo "the stack-cap override is stated in every file carrying the level table" ;;
     M3) echo "a blocked rollback still has an abort branch" ;;
     M4) echo "no live 'git add -A' or 'git add .' anywhere in the docs" ;;
     M5) echo "every npx in the docs pins a version" ;;
+    M6) echo "the YELLOW cell of SKILL.md has [phase 3] denied" ;;
   esac
 }
 
@@ -64,7 +67,7 @@ copy_repo() {
   rm -rf "$1/.git"
 }
 
-MUTATIONS="M1 M2 M3 M4 M5"
+MUTATIONS="M1 M2 M3 M4 M5 M6"
 total=0
 for m in $MUTATIONS; do total=$((total + 1)); done
 
