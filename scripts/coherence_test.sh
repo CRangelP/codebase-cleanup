@@ -52,7 +52,12 @@ paragraph_with() {
     # buf is cleared before exit: END runs after exit too, and would print the
     # same paragraph a second time.
     /^[[:space:]]*$/ { if (index(buf, needle)) { print buf; buf = ""; exit } buf = ""; next }
-    { buf = buf $0 " " }
+    # Leading indentation is dropped before joining: these files are wrapped by
+    # hand and a continuation line carries the indent of its list marker, so a
+    # phrase split across two lines would come back with a run of spaces in the
+    # middle, and no literal search would ever find it. (No apostrophes in here:
+    # this awk program is a single-quoted shell string.)
+    { line = $0; sub(/^[[:space:]]+/, "", line); buf = buf line " " }
     END { if (index(buf, needle)) print buf }
   ' "$1"
 }
@@ -868,6 +873,27 @@ A stack named there without its evidence, or evidence without its stack, is a
 rule the reader cannot apply — and the same string somewhere else in the file
 is not that rule."
   done
+done
+
+# The buffering notice, in the paragraph that describes the gate. gate_test.sh
+# already asserts the line the gate prints (js-buffer-notice); this is the other
+# half — the READMEs are where someone decides whether a quiet gate is a hung
+# gate, and the notice only helps if it is also written down where they look.
+# Anchored on GATE_TIMEOUT, the token that paragraph exists to introduce.
+for pair in \
+  'README.md|só aparece quando o comando termina' \
+  'README.en.md|only appears once the command finishes'
+do
+  f=${pair%%|*}
+  phrase=${pair#*|}
+  gate_para=$(paragraph_with "$f" 'GATE_TIMEOUT')
+  check "$f has a paragraph describing the gate" \
+        "$([[ -n ${gate_para// /} ]] && echo 0 || echo 1)" \
+        "no paragraph carries [GATE_TIMEOUT]; the check below needs it"
+  check "$f says the JS test output is buffered until the command ends" \
+        "$(printf '%s' "$gate_para" | grep -q -F -- "$phrase" && echo 0 || echo 1)" \
+        "missing [$phrase] — on a long suite the gate goes quiet for minutes and
+the watchdog default is 900s, so silence reads as a hang to whoever is watching"
 done
 
 # Bash ${#var} counts characters under a UTF-8 locale; awk's length() counts

@@ -336,6 +336,12 @@ if [[ -f package.json ]]; then
       if [[ $PM == yarn ]]; then set -- yarn "$name"
       else set -- "$PM" run "$name"; fi
       echo "[gate] $*"
+      # Said before the command runs, because that is the only moment it helps.
+      # This path buffers (see below) and reprints when the runner exits, so a
+      # long suite looks frozen — and the watchdog defaults to 900s, which is
+      # long enough for someone to conclude the gate hung and kill it. The gate
+      # going quiet is the expected shape here, not a symptom.
+      echo "[gate] output appears when this command finishes, not while it runs"
       # A file, not `out=$(...)`. Command substitution reads a pipe and only
       # returns once every writer closes it — a test script that leaves a
       # detached grandchild holding the inherited stdout keeps that pipe open

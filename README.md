@@ -37,7 +37,12 @@ sua resposta.
   `$VIRTUAL_ENV/bin`, `.venv/bin`, `venv/bin` ou os runners `uv run` e
   `poetry run` (nessa ordem). Cada check roda sob um watchdog (`GATE_TIMEOUT`, 900s por
   padrão, `0` desliga): estourou o tempo, o gate sai 4 e vale como não
-  conclusivo. É script bash (o 3.2 do macOS serve); no Windows, use WSL.
+  conclusivo. Em JS/TS a saída da suíte é bufferizada e só aparece quando o
+  comando termina — um teste que deixa um neto de processo segurando o pipe
+  travaria o gate até esse neto morrer, e aí o watchdog não teria como agir. O
+  gate avisa antes de começar; numa suíte longa ele fica mudo, e ficar mudo é o
+  esperado, não sintoma de travamento. É script bash (o 3.2 do macOS serve); no
+  Windows, use WSL.
 
 ## Instalação
 
@@ -162,7 +167,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validado em 08/2026: 140/140 casos, 42/42 casos do guarda, 5/5 propriedades,
+# validado em 08/2026: 142/142 casos, 42/42 casos do guarda, 5/5 propriedades,
 # 35/35 casos de métrica, 374/374 invariantes, 9/9 mutações pegas
 ```
 

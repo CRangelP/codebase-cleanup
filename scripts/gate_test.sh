@@ -1021,6 +1021,17 @@ make_escapee "$ESCAPE_NOLS" "$TMP/escapee-nols.pid"
 case_run bad-path         2 "$TMP/nope"         -             "bad path"
 case_run empty            3 "$TMP/empty"        -             "no runnable checks"
 case_run js-green         0 "$TMP/js-green"     -             "checks=typecheck,test" "GREEN"
+# The buffering notice, asserted where the buffering happens. It is the only
+# thing the user gets between the command line and the output on a suite that
+# takes minutes, and the watchdog's 900s default is long enough for someone to
+# conclude the gate hung. A notice nothing asserts is a notice that disappears
+# in the next refactor of this path — and it is not decoration: the silence it
+# explains is a design decision, not a symptom.
+case_run js-buffer-notice 0 "$TMP/js-green"     -             "output appears when this command finishes"
+# ...and only on the path that actually buffers. Typecheck goes through run(),
+# which streams, so the same promise there would be a lie.
+case_run js-no-buffer-notice-on-typecheck-only 0 "$TMP/js-typecheck-only" - \
+         "!output appears when this command finishes"
 case_run js-test-only     0 "$TMP/js-test-only" -             "checks=test" "YELLOW"
 case_run js-red           1 "$TMP/js-red"       -             "RED"
 case_run js-no-node       3 "$TMP/js-green"     "$NOTOOL"     "toolchain 'node' missing"
