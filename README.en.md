@@ -190,7 +190,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 142/142 cases, 47/47 guard cases, 5/5 properties,
-# 35/35 metrics cases, 418/418 invariants, 11/11 mutations caught
+# 35/35 metrics cases, 420/420 invariants, 11/11 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -367,6 +367,15 @@ a false positive kills a legitimate run. What it blocks and what it lets
 through lives in `scripts/guard_test.sh`, including
 `git restore --staged --worktree .`, `git revert`, `git mv`,
 `git stash push -u` and pathspec `git add --`.
+
+There is one thing those 47 cases do not reach, and it is worth naming: they
+build the hook JSON by hand and call the script, so they prove the guard's
+**behaviour** — not its delivery. That the `matcher` in `hooks.json` actually
+routes the call, and that exit 2 reaches the model with its stderr attached, was
+checked by hand with the plugin installed, not by a suite. It is the only leg of
+the contract no suite covers, and the distinction matters: a guard that blocks
+without delivering the reason becomes an opaque error, and a model that cannot
+read the reason rephrases the command until it slips through.
 
 ## Known limits
 

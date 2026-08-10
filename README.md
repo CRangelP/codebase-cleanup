@@ -187,7 +187,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 142/142 casos, 47/47 casos do guarda, 5/5 propriedades,
-# 35/35 casos de métrica, 418/418 invariantes, 11/11 mutações pegas
+# 35/35 casos de métrica, 420/420 invariantes, 11/11 mutações pegas
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -360,6 +360,14 @@ pipeline quando um comando do protocolo é barrado — um falso positivo derruba
 uma run legítima. O que ele bloqueia e o que ele deixa passar está em
 `scripts/guard_test.sh`, incluindo `git restore --staged --worktree .`,
 `git revert`, `git mv`, `git stash push -u` e o `git add --` por pathspec.
+
+Uma coisa esses 47 casos não alcançam, e vale saber qual: eles montam o JSON do
+hook à mão e chamam o script, então provam o **comportamento do guarda** — não a
+entrega. Que o `matcher` do `hooks.json` realmente encaminhe a chamada, e que o
+exit 2 chegue ao modelo com o stderr junto, foi conferido à mão com o plugin
+instalado, e não por suíte. É a única perna do contrato que nenhuma delas cobre,
+e a distinção importa: um guarda que bloqueia sem entregar a razão vira um erro
+opaco, e um modelo que não lê a razão reformula o comando até passar.
 
 ## Limites conhecidos
 

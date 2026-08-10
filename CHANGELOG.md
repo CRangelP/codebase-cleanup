@@ -49,7 +49,18 @@ encontrar.
   continuar é a migração silenciosa, e agora os dois READMEs mandam apagar a cópia, com o comando
   e a razão. Seção 19 do coherence.
 
-418 invariantes, 11 mutações, 47 casos do guarda.
+### Adicionado
+
+- **Os dois READMEs passam a dizer qual metade do contrato do guarda a suíte não cobre.** Os 47
+  casos montam o JSON do hook à mão e chamam o script: provam o **comportamento**, não a
+  **entrega**. Que o `matcher` do `hooks.json` encaminhe a chamada, e que o exit 2 chegue ao
+  modelo com o stderr junto, foi conferido à mão com o plugin instalado (#34) e não tem suíte.
+
+  Publicar 47 verdes sem nomear a pergunta que eles respondem convida o leitor a supor que a
+  outra também está coberta — o mesmo defeito que a #40 consertou no resumo da suíte do gate.
+  Seção 20 do coherence.
+
+420 invariantes, 11 mutações, 47 casos do guarda.
 
 ## [0.3.5] — 2026-08-10
 
