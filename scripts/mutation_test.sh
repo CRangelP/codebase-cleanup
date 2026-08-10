@@ -34,6 +34,8 @@ apply() {
     M6) perl -0pi -e 's/\| A partial net, or no test file in the stack \| \*\*YELLOW\*\* \| [^|]*\|/| A partial net, or no test file in the stack | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Does **not** run phase 2 by default, but runs phase 3 and phase 4 and commits what it changes. |/' SKILL.md ;;
     M7) perl -ni -e 'print unless /sobrescrevem a coluna GREEN/' README.md ;;
     M8) perl -0pi -e 's/a skill \*\*aborta\*\* o\npipeline quando um comando do protocolo é barrado/a skill tenta o comando de novo quando ele é barrado/' README.md ;;
+    M9) perl -0pi -e 's/crate Rust sem\n`tests\/\*\.rs` nem `#\[test\]`, //' README.md
+        perl -0pi -e 's/a Rust\ncrate with no `tests\/\*\.rs` and no `#\[test\]`, //' README.en.md ;;
   esac
 }
 
@@ -47,6 +49,7 @@ desc() {
     M6) echo "YELLOW keeps both refusal phrases and grants phases 3 and 4 anyway" ;;
     M7) echo "the stack-cap override disappears from the Portuguese README" ;;
     M8) echo "the Portuguese README retries a rollback a hook blocked" ;;
+    M9) echo "the empty-suite rule for Rust drops out of both READMEs" ;;
   esac
 }
 
@@ -64,6 +67,7 @@ expect() {
     M6) echo "the YELLOW cell of SKILL.md has [phase 3] denied" ;;
     M7) echo "README.md states that stack caps override the GREEN column" ;;
     M8) echo "README.md keeps the abort branch of a rollback blocked by a hook" ;;
+    M9) echo "the empty-suite paragraph of README.md names [Rust]" ;;
   esac
 }
 
@@ -73,7 +77,7 @@ copy_repo() {
   rm -rf "$1/.git"
 }
 
-MUTATIONS="M1 M2 M3 M4 M5 M6 M7 M8"
+MUTATIONS="M1 M2 M3 M4 M5 M6 M7 M8 M9"
 # Every file any mutation edits. The STALE guard below compares this set before
 # and after: a file missing from it makes its own mutations report "changed
 # nothing" forever, which is the stale-by-construction case the guard exists for.

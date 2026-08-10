@@ -9,6 +9,35 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.3.1] — 2026-08-10
+
+Fecha a [#38](https://github.com/CRangelP/codebase-cleanup/issues/38).
+
+### Corrigido
+
+- **Doze dos marcadores normativos da seção 10 não podiam falhar.** `Go`, `.NET`, `Rust`,
+  `Maven`, `Gradle` e `pytest` eram `grep -F` de palavra solta num README de 400 linhas — e
+  `Go` casava qualquer substring, "Google" inclusive. Inflavam a contagem sem reprovar
+  regressão nenhuma.
+
+  O que esses nomes fazem no README é nomear **a evidência que cada stack tem de mostrar**
+  antes de o gate considerar a suíte não-vazia. A asserção passou a ser co-ocorrência
+  **dentro do parágrafo do cap**: o stack e a sua evidência no mesmo parágrafo, não os dois
+  em algum lugar do arquivo. Medido: apagar a cláusula inteira do Rust dos dois READMEs
+  deixava a suíte antiga em **361/361 verde**, porque `tests/*.rs` e `#[test]` também
+  aparecem na seção de limites conhecidos mais abaixo. Agora reprova em seis checks, e a
+  mutação M9 cobre o caso.
+
+  O parágrafo é ancorado em `passWithNoTests` e não numa frase de prosa: é o único token
+  daquele parágrafo que o **gate** lê, então a âncora só se move se a regra se mover. Palavra
+  solta passou a casar com fronteira alfabética, que é o que faltava para `Go` não passar em
+  "Google" — e isso também é um check, com fixture.
+
+- **`Ruby`, `_test.rb` e `test_*.rb` entraram na conta.** Estavam na prosa normativa sem
+  invariante nenhum, ao lado de `_spec.rb` que já tinha.
+
+374 invariantes, 9 mutações.
+
 ## [0.3.0] — 2026-08-09
 
 Fecha as [#37](https://github.com/CRangelP/codebase-cleanup/issues/37) e
