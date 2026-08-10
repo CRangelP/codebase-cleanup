@@ -162,8 +162,12 @@ inside a `mktemp -d`, with `HOME` redirected and the commit identity passed via
 `-c` — your git config is never read nor written —, and the coherence suite
 only reads files.
 
-CI runs the four suites on every push and PR: ubuntu (real GNU `timeout`,
-procps) and macOS with the stock `/bin/bash` 3.2.
+CI runs the six suites on every push and PR: ubuntu (real GNU `timeout`,
+procps) and macOS with the stock `/bin/bash` 3.2. Both legs are required, not
+redundant: on macOS the two `timeout -k` cases are skipped and counted, so the
+total does not move and a regression in the watchdog's 137 branch passes green
+there with the same `NN/NN`. That is why the `gate_test.sh` summary names what
+the machine did not run — a complete validation takes both platforms.
 
 The suites also run outside macOS. In a Linux container the hang case
 exercises the real GNU `timeout` instead of the perl backend:
@@ -172,7 +176,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 142/142 cases, 42/42 guard cases, 5/5 properties,
-# 35/35 metrics cases, 374/374 invariants, 9/9 mutations caught
+# 35/35 metrics cases, 382/382 invariants, 9/9 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK

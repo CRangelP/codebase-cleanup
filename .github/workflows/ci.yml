@@ -1,4 +1,4 @@
-# The four suites on both target platforms. Linux exercises the GNU timeout
+# The six suites on both target platforms. Linux exercises the GNU timeout
 # backend (with -k) and procps; macOS proves bash 3.2 compatibility with the
 # stock /bin/bash — never the Homebrew bash the runner also ships. The guard
 # suite runs alongside them: it builds its own throwaway repositories, so it

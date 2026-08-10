@@ -875,6 +875,30 @@ is not that rule."
   done
 done
 
+# The two-platform premise of the validated run. gate_test.sh counts the two
+# -k cases as skips so the total stays the same on both platforms, which keeps
+# section 9 honest — and costs exactly this: on macOS, removing the 137 branch
+# from wd_timed_out leaves the suite green with the same NN/NN. Measured. The
+# Linux leg covers it, so the number is not wrong; what would be wrong is a
+# reader concluding from a local green that the matrix ran. The summary says so
+# at runtime, and the READMEs have to say so where the validated run is
+# published, which is where that conclusion gets drawn.
+for pair in \
+  'README.md|As duas pernas são necessárias' \
+  'README.en.md|Both legs are required'
+do
+  f=${pair%%|*}
+  phrase=${pair#*|}
+  ci_para=$(paragraph_with "$f" 'procps')
+  check "$f has a paragraph describing the CI matrix" \
+        "$([[ -n ${ci_para// /} ]] && echo 0 || echo 1)" \
+        "no paragraph carries [procps]; the check below needs it"
+  check "$f states that one platform is not a complete validation" \
+        "$(printf '%s' "$ci_para" | grep -q -F -- "$phrase" && echo 0 || echo 1)" \
+        "missing [$phrase] — a green run on one platform skips cases the other
+counts, and nothing in the number says so"
+done
+
 # The buffering notice, in the paragraph that describes the gate. gate_test.sh
 # already asserts the line the gate prints (js-buffer-notice); this is the other
 # half — the READMEs are where someone decides whether a quiet gate is a hung
