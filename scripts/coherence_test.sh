@@ -386,10 +386,16 @@ for readme in README.md README.en.md; do
       fail "$required of the tree of $readme exists on disk" "listed but missing on disk"
     fi
   done
-  # references/ and agents/ get the same treatment: both ship inside the
-  # plugin, both are read by name at runtime, and a file missing from the tree
-  # is a file the reader does not know is there.
-  for path in references/*.md agents/*.md; do
+  # references/, agents/ and docs/ get the same treatment: all three ship inside
+  # the plugin and a file missing from the tree is a file the reader does not
+  # know is there. They are not the same kind of file, though, and the tree is
+  # where that shows: references/ is opened by name during a run and competes for
+  # the model's reading budget, agents/ is loaded when a phase is delegated, and
+  # docs/ is working material the skill never opens. Keeping research out of
+  # references/ is the whole point of having docs/ — a 55 KB study of the plugin
+  # spec sitting next to the phase protocols would be one more thing to walk past
+  # on every run.
+  for path in references/*.md agents/*.md docs/*.md; do
     [[ -f $path ]] || continue
     name=${path##*/}
     dir=${path%%/*}
@@ -412,16 +418,18 @@ for readme in README.md README.en.md; do
         fi
         ;;
       *)
-        # A doc in the tree lives in references/ or in agents/. Naming the two
-        # directories beats accepting either silently: a file that is in
-        # neither is listed and shipped by nobody.
+        # A doc in the tree lives in references/, in agents/ or in docs/. Naming
+        # the three directories beats accepting any of them silently: a file that
+        # is in none is listed and shipped by nobody.
         if [[ -f references/$name ]]; then
           pass "references/$name of the tree of $readme exists on disk"
         elif [[ -f agents/$name ]]; then
           pass "agents/$name of the tree of $readme exists on disk"
+        elif [[ -f docs/$name ]]; then
+          pass "docs/$name of the tree of $readme exists on disk"
         else
           fail "$name of the tree of $readme exists on disk" \
-               "listed but there is no references/$name nor agents/$name"
+               "listed but there is no references/$name, agents/$name nor docs/$name"
         fi
         ;;
     esac
@@ -1527,6 +1535,75 @@ check "every npx in the docs pins a version" \
       "$([[ -z ${bare_npx// /} ]] && echo 0 || echo 1)" \
       "unpinned: ${bare_npx:-none} — an unpinned tool changes what counts as dead
 code without any file in this repo changing"
+
+# 17. What decides destructive authority survives a compaction. -------------
+# Section 16 proved these rules cannot be deleted in silence. This one answers a
+# question that no amount of invariants about the TEXT can: is the text still in
+# the model's context when the rule is needed?
+#
+#   "When the conversation is summarized to free context, Claude Code re-attaches
+#    the most recent invocation of each skill after the summary, keeping the
+#    first 5,000 tokens of each. Re-attached skills share a combined budget of
+#    25,000 tokens."
+#    — code.claude.com/docs/en/skills#skill-content-lifecycle, consultado 2026-08-10
+#
+# A codebase cleanup is a long session by nature, so auto-compaction is the
+# expected case and not the exception. Measured before this section existed, on
+# a 44.801-byte SKILL.md: the level table survived, and the block holding "a red
+# gate means rollback, not repair" and "never force push, never commit on main"
+# sat at byte 40.732 — past any plausible reading of the cut. The level went on
+# being announced; what disappeared was what the level obliges.
+#
+# The budget is in BYTES because this suite has no tokenizer, and the conversion
+# is a choice of evidence, not a measurement: 3 bytes per token is the pessimistic
+# end for prose carrying markdown and code, so the error falls on the safe side.
+# A rule that fits here fits under any tokenizer; one that does not may still fit
+# under a kinder one, and the check would be early rather than wrong.
+SURVIVAL_BUDGET=15000   # 5.000 tokens x 3 bytes/token, the pessimistic conversion
+
+byte_offset() { # byte_offset <file> <literal> — bytes before the first match
+  LC_ALL=C grep -abo -F -- "$2" "$1" 2>/dev/null | head -1 | cut -d: -f1
+}
+
+# Proven on a fixture first: an offset finder that returns empty for everything
+# would make every rule below read as missing, and one that returns 0 would make
+# them all pass. Both failure modes are silent on the real file.
+printf 'aaaa\nbbbb\n' > "$SELFTMP/off.md"
+check "byte offset finder reports the real position" \
+      "$([[ $(byte_offset "$SELFTMP/off.md" 'bbbb') == 5 ]] && echo 0 || echo 1)" \
+      "read [$(byte_offset "$SELFTMP/off.md" 'bbbb')], expected 5"
+check "byte offset finder is empty for a string that is not there" \
+      "$([[ -z $(byte_offset "$SELFTMP/off.md" 'cccc') ]] && echo 0 || echo 1)" \
+      "an absent string must return nothing, so the floor below can catch it"
+
+# One entry per rule that decides what the skill may destroy. Every one of them
+# is already asserted somewhere else in this file as TEXT; here the claim is
+# about POSITION, and the two together are what make the rule reliable.
+while IFS='|' read -r label needle; do
+  [[ -n $label ]] || continue
+  off=$(byte_offset SKILL.md "$needle")
+  # Floor: an anchor that no longer matches would report an empty offset, and
+  # `[[ "" -lt 15000 ]]` is true in bash. The rule would pass by disappearing.
+  check "SKILL.md still carries the rule [$label]" \
+        "$([[ -n $off ]] && echo 0 || echo 1)" \
+        "anchor not found: [$needle] — section 16 asserts this rule exists; if it
+was reworded, this anchor has to be rewritten with it"
+  check "[$label] is inside the budget that survives a compaction" \
+        "$([[ -n $off && $off -lt $SURVIVAL_BUDGET ]] && echo 0 || echo 1)" \
+        "at byte ${off:-?} of SKILL.md, past the ${SURVIVAL_BUDGET}-byte survival
+budget. After an auto-compaction Claude Code re-attaches only the first 5.000
+tokens of the skill, so this rule would be absent from the context of a long
+run — which is the only kind of run this skill has."
+done <<'AUTHORITY_RULES'
+rollback|git restore --staged --worktree .
+staging by pathspec|git add -- <paths this step produced or edited>
+the level table|A partial net, or no test file in the stack
+stack caps override GREEN|Stack caps in
+a red gate rolls back|A red gate means rollback, not repair
+never force push, never commit on main|Never force push, never commit on main
+never merge two steps|Never merge two steps
+the scheduled checkpoints|two scheduled checkpoints
+AUTHORITY_RULES
 
 echo "----"
 echo "$((total-failures))/$total invariants held"

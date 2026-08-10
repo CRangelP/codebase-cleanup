@@ -78,6 +78,26 @@ its own — phase 4 included, as long as it stays in tier A.
 
 ---
 
+## Rules that apply to the whole pipeline
+
+**`/clear` between phases.** Not optional. Accumulated context from the
+previous phase degrades the judgment of the next one, and
+`CLEANUP_PROGRESS.md` exists so that this costs nothing.
+
+**Never merge two steps.** "Configure knip and delete whatever it finds" is how
+you delete a route handler registered by convention that knip did not know
+about. The separation between configuring, verifying and deleting is what
+prevents that.
+
+**A red gate means rollback, not repair.** If typecheck or tests fail, the
+previous commit was already correct. Revert, record, move on. Trying to fix it
+turns a cleanup into an unsolicited debugging session. A gate that times out
+(exit 4) follows the same path: it is inconclusive, so it rolls back like a red
+one and is recorded as a timeout — never as a green.
+
+**Never force push, never commit on main.** All the work lives on the cleanup
+branch. Merging is the user's decision, on their own schedule.
+
 ## Step 0 — Calibrate autonomy
 
 Before anything else, measure the safety net. The autonomy level is a function
@@ -748,26 +768,6 @@ and the reason they were skipped.
 reaches here. Phase 4 closes the pipeline: go to the final report.
 
 ---
-
-## Rules that apply to the whole pipeline
-
-**`/clear` between phases.** Not optional. Accumulated context from the
-previous phase degrades the judgment of the next one, and
-`CLEANUP_PROGRESS.md` exists so that this costs nothing.
-
-**Never merge two steps.** "Configure knip and delete whatever it finds" is how
-you delete a route handler registered by convention that knip did not know
-about. The separation between configuring, verifying and deleting is what
-prevents that.
-
-**A red gate means rollback, not repair.** If typecheck or tests fail, the
-previous commit was already correct. Revert, record, move on. Trying to fix it
-turns a cleanup into an unsolicited debugging session. A gate that times out
-(exit 4) follows the same path: it is inconclusive, so it rolls back like a red
-one and is recorded as a timeout — never as a green.
-
-**Never force push, never commit on main.** All the work lives on the cleanup
-branch. Merging is the user's decision, on their own schedule.
 
 ## Final report
 

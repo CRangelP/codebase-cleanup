@@ -9,6 +9,69 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.3.4] — 2026-08-10
+
+Primeira parte da [#44](https://github.com/CRangelP/codebase-cleanup/issues/44): a pesquisa em
+fonte primária, e as três coisas que ela corrigiu. A extração de conteúdo do `SKILL.md` vem
+depois — este ciclo fecha o que a pesquisa mostrou estar **errado**, não o que está grande.
+
+### Adicionado
+
+- **`docs/plugin-spec-research.md`** — 82 achados sobre `SKILL.md`, `plugin.json`, marketplace,
+  agentes e hooks, cada um com citação literal, URL e data (2026-08-10), classificados em três
+  colunas que a issue pedia para separar: **48 limites duros do host, 27 recomendações oficiais,
+  7 convenções da comunidade**. Mais 10 contradições entre páginas oficiais, registradas com os
+  dois lados e sem escolher nenhum, e 7 itens NÃO ENCONTRADOS.
+
+  Fica em `docs/` e não em `references/` de propósito: `references/` é aberto por nome durante
+  uma run e disputa o orçamento de leitura do modelo. Um estudo de 55 KB ao lado dos protocolos
+  de fase seria mais uma coisa para contornar a cada execução — e o orçamento de leitura é o
+  assunto da própria #44.
+
+- **Seção 17 do `coherence_test.sh`**: toda regra que decide autoridade destrutiva tem de caber
+  no orçamento que sobrevive a uma compactação.
+
+### Corrigido
+
+- **As regras do pipeline inteiro morriam na primeira auto-compactação.** O Claude Code
+  re-anexa apenas os primeiros 5.000 tokens de cada skill depois de resumir a conversa
+  ([fonte](https://code.claude.com/docs/en/skills#skill-content-lifecycle)). Medido neste
+  arquivo: a tabela de níveis sobrevivia (byte 9.680) e o bloco com **"a red gate means
+  rollback, not repair"**, **"never force push, never commit on main"**, **"never merge two
+  steps"** e o `/clear` entre fases ficava no byte **40.732** — fora de qualquer leitura
+  plausível do corte.
+
+  Uma limpeza é uma sessão longa por natureza: a compactação é o caso esperado, não a exceção.
+  O nível continuava sendo anunciado; o que sumia era o que o nível obriga. O bloco subiu para
+  logo depois do princípio operacional (byte 5.208) — mudança de **ordem**, não de conteúdo — e
+  a seção 17 mede a posição de oito regras, com a mutação M10 devolvendo o bloco ao fim do
+  arquivo para provar que o check morde.
+
+- **A razão do invariante de campos proibidos em agente de plugin estava invertida.** O
+  comentário dizia que o host "refuses the agent outright"; a doc oficial diz, em duas páginas
+  independentes, que os campos são **ignorados em silêncio**. A diferença é o valor inteiro do
+  check: se o host recusasse, o erro apareceria na primeira carga; como ele ignora, o plugin
+  carrega, o `claude plugin validate --strict` não reclama, e o autor publica achando que tem
+  uma guarda que não existe.
+
+### Notas de projeto
+
+- **O corpo do `SKILL.md` não viola limite duro nenhum.** A spec diz "There are no format
+  restrictions"; as 500 linhas são recomendação, confirmada em quatro fontes oficiais — e o
+  próprio `skill-creator` da Anthropic diz "you can feel free to go longer if needed". O
+  argumento para encurtar é o corte de 5.000 tokens, que é de ordem, e o custo recorrente por
+  invocação. Não é o número de linhas.
+- **Não existe recomendação oficial de tamanho ou estrutura de README de plugin.** Nove páginas
+  e o `llms.txt` varridos; a única menção normativa é "Include a README.md with installation and
+  usage instructions". Qualquer corte nos READMEs será decisão nossa, não aderência — e a issue
+  #44 propunha o contrário.
+- **A `description` está em 997 de 1024 caracteres**, com 27 de margem. O cap de 1000 que a
+  seção 10 defende estava certo; o número foi confirmado em três fontes. O Claude Code trunca em
+  1536 (`description` + `when_to_use` somados), que é um número diferente, de um host diferente,
+  e nenhuma página explica a interação entre os dois.
+
+410 invariantes, 10 mutações.
+
 ## [0.3.3] — 2026-08-10
 
 ### Corrigido

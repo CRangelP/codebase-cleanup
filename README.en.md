@@ -112,6 +112,8 @@ codebase-cleanup/
 │   ├── cleanup-phase-3-impl.md       executes the approved moves
 │   ├── cleanup-phase-4-survey.md     reshaping queue (read-only)
 │   └── cleanup-phase-4-impl.md       applies tier A and the approved tier B
+├── docs/
+│   └── plugin-spec-research.md       host limits, official advice and mere habit
 ├── hooks/
 │   └── hooks.json                    registers the guard on the PreToolUse event
 ├── references/
@@ -176,7 +178,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 142/142 cases, 42/42 guard cases, 5/5 properties,
-# 35/35 metrics cases, 388/388 invariants, 9/9 mutations caught
+# 35/35 metrics cases, 410/410 invariants, 10/10 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK

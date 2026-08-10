@@ -109,6 +109,8 @@ codebase-cleanup/
 │   ├── cleanup-phase-3-impl.md       executa os movimentos aprovados
 │   ├── cleanup-phase-4-survey.md     fila de remodelagem (só leitura)
 │   └── cleanup-phase-4-impl.md       aplica tier A e o tier B aprovado
+├── docs/
+│   └── plugin-spec-research.md       o que é limite do host, conselho e hábito
 ├── hooks/
 │   └── hooks.json                    registra o guarda no evento PreToolUse
 ├── references/
@@ -173,7 +175,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 142/142 casos, 42/42 casos do guarda, 5/5 propriedades,
-# 35/35 casos de métrica, 388/388 invariantes, 9/9 mutações pegas
+# 35/35 casos de métrica, 410/410 invariantes, 10/10 mutações pegas
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
