@@ -25,8 +25,9 @@ answer.
 
 - Claude Code with skill support.
 - `git` — all work happens on a `cleanup/YYYYMMDD` branch, never on main. With
-  no git repository the skill only diagnoses: its rollback depends on having a
-  good commit to go back to.
+  no git repository — or in one whose first commit was never made — the skill
+  only diagnoses: its rollback depends on having a good commit to go back to,
+  and `git init` alone gives none.
 - For JS/TS projects: Node with `npx` (knip runs via `npx knip@6.32.0`,
   pinned — never bare `npx knip`).
 - Other stacks use the tools of each ecosystem (vulture, deadcode,
@@ -90,6 +91,17 @@ destination:
 
 ```bash
 unzip codebase-cleanup.skill -d ~/.claude/skills/
+```
+
+**If you are migrating from the copy to the plugin, delete the copy.** Both forms
+load at once and both carry "give this project a cleanup" in the `description`.
+Explicit invocation disambiguates through the namespace
+(`/codebase-cleanup:codebase-cleanup` is always the plugin), but the automatic
+trigger sits on the fence and may land on the copy — the version you installed
+that day, without the phases and fixes that came after:
+
+```bash
+rm -rf ~/.claude/skills/codebase-cleanup
 ```
 
 The installed structure:
@@ -177,8 +189,8 @@ exercises the real GNU `timeout` instead of the perl backend:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validated 2026-08: 142/142 cases, 42/42 guard cases, 5/5 properties,
-# 35/35 metrics cases, 410/410 invariants, 10/10 mutations caught
+# validated 2026-08: 142/142 cases, 47/47 guard cases, 5/5 properties,
+# 35/35 metrics cases, 418/418 invariants, 11/11 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK

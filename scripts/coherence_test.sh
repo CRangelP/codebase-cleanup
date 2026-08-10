@@ -1616,6 +1616,83 @@ never merge two steps|Never merge two steps
 the scheduled checkpoints|two scheduled checkpoints
 AUTHORITY_RULES
 
+# 18. The unborn HEAD, in the two places that missed it. ---------------------
+# Measured on a `git init` with nothing else: --is-inside-work-tree says true,
+# `git status --porcelain` prints nothing, and the pipeline's own rollback says
+# `fatal: could not resolve 'HEAD'`. Every measurement Step 0 took said go, and
+# the rollback the whole safety argument rests on did not exist. The guard failed
+# in the same condition and for the same reason — `rev-parse --abbrev-ref HEAD`
+# exits 128 on an unborn HEAD, so `|| return 1` read "no repo" and it slept on a
+# cleanup/ branch. Two mechanisms, one blind spot, no complaint from either.
+#
+# What is asserted here is the shape of the fix, in both files at once: nobody
+# reads a branch name through --abbrev-ref again. guard_test.sh proves the guard
+# behaves; this proves the wrong call site does not come back somewhere new.
+# Banning the string outright is not available, for the reason section 16 already
+# had to solve: the comment that explains why the call is wrong has to quote it.
+# So each file is read with the tool that separates instruction from prose —
+# bash_body for the script, which drops comments and quoted text, and the
+# proximity helper for the docs, where a mention covered by a negation right
+# before it is the prohibition itself.
+abbrev_in_code=$(bash_body < scripts/guard.sh | grep -c -F -- 'rev-parse --abbrev-ref')
+check "guard.sh reads no branch name through rev-parse --abbrev-ref" \
+      "$([[ $abbrev_in_code -eq 0 ]] && echo 0 || echo 1)" \
+      "$abbrev_in_code live call(s) — on an unborn HEAD that exits 128 while
+printing the literal 'HEAD', which is also what a detached HEAD prints, so the
+caller cannot tell the two apart and \`|| return 1\` reads it as 'no repo'"
+
+abbrev_in_docs=$(uncovered 'rev-parse --abbrev-ref')
+check "no doc offers rev-parse --abbrev-ref as the way to read the branch" \
+      "$([[ -z ${abbrev_in_docs// /} ]] && echo 0 || echo 1)" \
+      "uncovered occurrence in: ${abbrev_in_docs:-none} — the docs may quote the
+call to explain why it is wrong; offering it as the instruction is what puts the
+unborn-HEAD blind spot back"
+
+# Step 0 has to ask the question its own reason states. The rule says "without
+# commits there is no rollback"; for a while it tested whether a repository
+# existed, which is a different question with a different answer.
+check "Step 0 asks whether a commit exists, not only whether a repo does" \
+      "$(grep -q -F -- 'git rev-parse --verify HEAD' SKILL.md && echo 0 || echo 1)" \
+      "Step 0 must run \`git rev-parse --verify HEAD\`: --is-inside-work-tree answers
+true inside a repository whose first commit was never made, and the rollback
+this pipeline is built on cannot run there"
+
+# And the level table has to carry the same condition, or an agent dispatching
+# on the table alone runs at a level the prose already refused.
+# Any row, not the first RED one: SKILL.md carries two RED rows, and the one that
+# owns this condition is the second. level_row stops at the first match by
+# design, so the question here is asked of the table as a whole.
+check "the level table has a row for a repository with no commit" \
+      "$(level_rows SKILL.md | grep -qi 'no commit' && echo 0 || echo 1)" \
+      "no row mentions a repository without commits — Step 0 refuses an unborn
+HEAD, and a table that only says 'no repository' sends that case into phase 1"
+
+# 19. Migrating from the copy to the plugin. --------------------------------
+# Both installation routes are legitimate and both stay: the copy is there for
+# whoever does not use plugins, and `${CLAUDE_PLUGIN_ROOT:-.}` exists across the
+# protocol to keep it working. What is not legitimate is the silent overlap.
+# Measured on a machine that followed this README twice, one era each: two skills
+# register, both carrying the same trigger phrase in their description, and the
+# automatic trigger can land on the copy — an older version, in that case one
+# without phase 4, the per-target safety net or the destructive-authority
+# invariants. Explicit invocation is namespaced and safe; the trigger is not, and
+# the trigger is the route these READMEs advertise first.
+for pair in \
+  'README.md|apague a cópia' \
+  'README.en.md|delete the copy'
+do
+  f=${pair%%|*}
+  phrase=${pair#*|}
+  copy_para=$(paragraph_with "$f" 'codebase-cleanup.skill')
+  check "$f has the copy-install paragraph" \
+        "$([[ -n ${copy_para// /} ]] && echo 0 || echo 1)" \
+        "no paragraph carries [codebase-cleanup.skill]; the check below needs it"
+  check "$f tells the reader to remove the copy when moving to the plugin" \
+        "$(reflow "$f" | grep -q -F -- "$phrase" && echo 0 || echo 1)" \
+        "missing [$phrase] — whoever installs both ends up with two skills sharing
+one trigger phrase, and the automatic route can pick the older one"
+done
+
 echo "----"
 echo "$((total-failures))/$total invariants held"
 [[ $failures -eq 0 ]]

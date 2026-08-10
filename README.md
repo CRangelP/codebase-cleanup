@@ -24,8 +24,9 @@ sua resposta.
 
 - Claude Code com suporte a skills.
 - `git` — todo o trabalho acontece numa branch `cleanup/YYYYMMDD`, nunca na
-  main. Sem repositório git a skill só diagnostica: o rollback dela depende de
-  ter um commit bom para onde voltar.
+  main. Sem repositório git — ou num repositório onde o primeiro commit ainda não
+  foi feito — a skill só diagnostica: o rollback dela depende de ter um commit
+  bom para onde voltar, e `git init` sozinho não dá nenhum.
 - Para projetos JS/TS: Node com `npx` (o knip roda via `npx knip@6.32.0`,
   versão pinada — nunca `npx knip` sem versão).
 - Outros stacks usam as ferramentas de cada ecossistema (vulture, deadcode,
@@ -87,6 +88,17 @@ junto — o que muda é só de onde vem a atualização. Se você tem o pacote
 
 ```bash
 unzip codebase-cleanup.skill -d ~/.claude/skills/
+```
+
+**Se você está migrando da cópia para o plugin, apague a cópia.** As duas formas
+carregam ao mesmo tempo e as duas trazem "dá uma faxina" na `description`. A
+invocação explícita desambigua pelo namespace
+(`/codebase-cleanup:codebase-cleanup` é sempre o plugin), mas o gatilho
+automático fica em cima do muro e pode cair na cópia — que é a versão que você
+instalou naquele dia, sem as fases e as correções que vieram depois:
+
+```bash
+rm -rf ~/.claude/skills/codebase-cleanup
 ```
 
 A estrutura instalada:
@@ -174,8 +186,8 @@ exercita o GNU `timeout` real em vez do backend perl:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validado em 08/2026: 142/142 casos, 42/42 casos do guarda, 5/5 propriedades,
-# 35/35 casos de métrica, 410/410 invariantes, 10/10 mutações pegas
+# validado em 08/2026: 142/142 casos, 47/47 casos do guarda, 5/5 propriedades,
+# 35/35 casos de métrica, 418/418 invariantes, 11/11 mutações pegas
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
