@@ -1089,6 +1089,284 @@ check "guard.sh only exits 0 or 2" \
       "$([[ $(printf '%s' "$guard_codes" | tr -d ' ') == "02" ]] && echo 0 || echo 1)" \
       "exit codes found: ${guard_codes:-none} (1 would not block)"
 
+# 16. The rules that decide destructive authority, as invariants that bite. ---
+# Four rules closed as prose in earlier PRs and one whose positive form let the
+# forbidden form live beside it. They are grouped because they share a single
+# acceptance test: a named mutation that the suite used to swallow has to fail
+# here. An invariant that cannot fail is worse than no invariant, because it
+# buys confidence without giving a guarantee — so each check below was written
+# against a mutation first, and none of them was allowed to pass by construction.
+
+# 16.1 The behavior column of the level table, not only the condition column.
+# Section 7 asserts which levels exist and what each row's *condition* is. What
+# the level actually AUTHORIZES lived only in prose, so rewriting YELLOW's cell
+# to run phase 2 and delete exports left the suite green — and that cell is the
+# whole difference between a level that reports and a level that mutates a repo
+# whose tests never ran.
+#
+# The first version of this block grepped the phrasing in use (`**not** exports`,
+# `does **not** run phase 2`). That measures wording, not authority, and it was
+# wrong in both directions. Measured, on this table:
+#   - a WEAKER cell stayed green: keeping both phrases and adding "but runs
+#     phase 3 and phase 4 and commits everything without a checkpoint" passed
+#     309/309 — the level that means "the safety net has holes" had just been
+#     handed the mutating phases and nothing said so;
+#   - a STRICTER cell went red: "does **not** delete exports" is a tighter
+#     promise than "**not** exports" and failed, so the check fought the very
+#     rewrite it should reward.
+#
+# So the cell is read as a contract instead: split into clauses, and for each
+# capability ask whether that clause GRANTS it or DENIES it. A clause ends at a
+# sentence, at a semicolon, or at an adversative — "does **not** run phase 2,
+# BUT runs phase 3" grants phase 3, and any window measured in characters says
+# the opposite (40 characters from the negation to the token, inside any window
+# wide enough to cover the legitimate "does **not** run phase 2, phase 3 or
+# phase 4", which spans 35). Only a clause boundary tells the two apart.
+#
+# Inside a clause the negation covers the whole clause, before or after the
+# token, so "exports are never touched" reads as a denial. Across clauses a
+# single grant outweighs any number of denials: a cell that refuses something
+# twice and allows it once allows it.
+#
+# This makes the vocabulary of negation a closed list, and a rewrite outside it
+# fails. That is the trade taken on purpose: this cell is a contract an agent
+# dispatches on, and a loud false alarm costs one commit while a silent false
+# green costs a repo.
+BEHAVIOR_TOKEN_ABSENT='absent'
+
+# The negation vocabulary is per language and cannot be shared: `no` is a
+# negation in English and a preposition in Portuguese, so one merged list would
+# read README.md's "param **no** checkpoint humano" as a denial of the very
+# checkpoint that line exists to promise — the check would fail loudest on the
+# sentence it protects.
+NEG_EN='(^|[^a-z])(not|never|no|nor|none|nothing|neither|refuses|refuse|excludes|exclude|excluded)([^a-z]|$)'
+NEG_PT='(^|[^a-z])(não|nunca|nem|nada|sem|nenhum|nenhuma|recusa)([^a-z]|$)'
+
+neg_vocab() { # neg_vocab <file> — the negations that file writes its cells in
+  case $1 in
+    README.md) printf '%s' "$NEG_PT" ;;
+    *)         printf '%s' "$NEG_EN" ;;
+  esac
+}
+
+# behavior_cell <file> <level> — the "what it does" cell of that level's row.
+# Column 4 under `-F'|'` in both layouts in use: the READMEs put the level
+# first and SKILL.md puts it second, and the behavior column follows the other
+# two either way. It reuses level_row, so a row that merely names a level in its
+# prose still cannot steal that level's assertion.
+behavior_cell() {
+  level_row "$1" "$2" | awk -F'|' '{ print $4 }'
+}
+
+# authority <cell> <token-regex> <negations> — granted, denied or absent.
+# LC_ALL=C for the reason gate.sh's strip_ansi carries it: BSD awk aborts on the
+# first invalid byte under a UTF-8 locale, and an aborted scan prints nothing,
+# which reads exactly like a clean one.
+authority() {
+  printf '%s' "$1" | env LC_ALL=C awk -v tok="$2" -v neg="$3" '
+    {
+      s = tolower($0)
+      # markdown emphasis is not a word boundary: `**not**` has to read as not
+      gsub(/[*`]/, " ", s)
+      # ". " and not ".": a sentence ends at a period followed by a space, while
+      # the period inside `CLEANUP_PROGRESS.md` is part of the token itself, and
+      # splitting there would hand the second half a clause with no negation.
+      gsub(/\. /, "\n", s)
+      gsub(/; /, "\n", s)
+      gsub(/ (but|however|except|mas|porém|exceto|todavia) /, "\n", s)
+      n = split(s, clause, "\n")
+      verdict = "absent"
+      for (i = 1; i <= n; i++) {
+        if (clause[i] !~ tok) continue
+        if (clause[i] ~ neg) { if (verdict == "absent") verdict = "denied" }
+        else verdict = "granted"
+      }
+      print verdict
+    }'
+}
+
+# The parser is proven on fixtures before it is trusted on the real table, for
+# the same reason section 7 proves its extractor: a reader that comes back
+# "denied" for everything would make every assertion below pass by construction.
+# Each fixture is one of the two failure modes the phrasing greps had.
+probe_neg=$NEG_EN
+for probe in \
+  'runs phase 1, does **not** run phase 2, phase 3 or phase 4|phase 3|denied' \
+  'does **not** run phase 2 by default, but runs phase 3 and commits|phase 3|granted' \
+  'runs phase 1 (deps only); exports are never touched|exports|denied' \
+  'phase 2 and phase 3 stop at the human checkpoint|checkpoint|granted' \
+  'no further checkpoint is needed|checkpoint|denied' \
+  'diagnoses only. does **not** commit `CLEANUP_PROGRESS.md`|cleanup_progress|denied' \
+  'runs phase 1 in full without asking|phase 4|absent'
+do
+  cell=${probe%%|*}
+  rest=${probe#*|}
+  tok=${rest%%|*}
+  want=${rest#*|}
+  got=$(authority "$cell" "$tok" "$probe_neg")
+  check "authority reader says $want for [$tok] in a clause that $want it" \
+        "$([[ $got == "$want" ]] && echo 0 || echo 1)" \
+        "read [$got] for token [$tok] in: $cell"
+done
+
+# The contract itself, per file and per level. `absent` fails like a grant does:
+# a cell that simply stops mentioning phase 4 leaves a reader concluding it runs,
+# which is how the READMEs drifted behind SKILL.md when phase 4 shipped.
+for rule in \
+  'SKILL.md|GREEN|phase 1|granted' \
+  'SKILL.md|GREEN|checkpoint|granted' \
+  'SKILL.md|YELLOW|exports|denied' \
+  'SKILL.md|YELLOW|phase 2|denied' \
+  'SKILL.md|YELLOW|phase 3|denied' \
+  'SKILL.md|YELLOW|phase 4|denied' \
+  'SKILL.md|RED|delete|denied' \
+  'SKILL.md|RED|commit|denied' \
+  'SKILL.md|RED|cleanup_progress|denied' \
+  'README.en.md|GREEN|checkpoint|granted' \
+  'README.en.md|YELLOW|exports|denied' \
+  'README.en.md|YELLOW|phase 2|denied' \
+  'README.en.md|YELLOW|phase 3|denied' \
+  'README.en.md|YELLOW|phase 4|denied' \
+  'README.en.md|RED|delet|denied' \
+  'README.en.md|RED|cleanup_progress|denied' \
+  'README.md|GREEN|checkpoint|granted' \
+  'README.md|YELLOW|exports|denied' \
+  'README.md|YELLOW|fase 2|denied' \
+  'README.md|YELLOW|fase 3|denied' \
+  'README.md|YELLOW|fase 4|denied' \
+  'README.md|RED|deletado|denied' \
+  'README.md|RED|cleanup_progress|denied'
+do
+  f=${rule%%|*}
+  rest=${rule#*|}
+  lvl=${rest%%|*}
+  rest=${rest#*|}
+  tok=${rest%%|*}
+  want=${rest#*|}
+  cell=$(behavior_cell "$f" "$lvl")
+  # Floor, same reason as sections 4 and 15: an extractor that comes back empty
+  # would compare nothing against nothing, and every rule below it would pass
+  # over a table nobody is guarding.
+  check "$f has an extractable behavior cell for $lvl" \
+        "$([[ -n ${cell// /} ]] && echo 0 || echo 1)" \
+        "no behavior column for $lvl in $f — section 7 checks the conditions,
+this one checks what each level is allowed to do"
+  got=$(authority "$cell" "$tok" "$(neg_vocab "$f")")
+  check "the $lvl cell of $f has [$tok] $want" \
+        "$([[ $got == "$want" ]] && echo 0 || echo 1)" \
+        "the cell $got it, the contract says $want — cell reads:${cell}"
+done
+
+# 16.2 Stack caps override the GREEN column, in every file that can be read
+# alone. The tables in SKILL.md and the READMEs decide behavior by gate level;
+# references/other-stacks.md then lowers that ceiling per stack. An agent that
+# reads only SKILL.md and never opens the reference would run at the table's
+# level, so the pointer has to exist in each file that carries the table.
+#
+# One phrase per file, not one phrase for all of them: README.md is in
+# Portuguese, and an English-only invariant leaves the Portuguese half of the
+# repo with no net at all. Measured before this list existed — deleting the cap
+# line from README.md, and turning its abort branch into a retry below, both
+# left the suite at 309/309 green. Same shape as section 9, which already pairs
+# each README with the word it uses.
+#
+# reflow, not a line-anchored grep: both READMEs are hard-wrapped by hand at
+# ~80 columns, so a sentence spans two lines the moment a word is added before
+# it. A grep that reads line by line asserts where the wrap falls, and would go
+# red on a rewrap that changed no meaning at all — the Portuguese abort branch
+# is split between "a skill **aborta** o" and "pipeline quando um comando".
+reflow() { tr '\n' ' ' < "$1" | tr -s ' '; }
+
+for pair in \
+  'SKILL.md|override the GREEN column' \
+  'README.en.md|override the GREEN column' \
+  'references/other-stacks.md|override the GREEN column' \
+  'README.md|sobrescrevem a coluna GREEN'
+do
+  f=${pair%%|*}
+  phrase=${pair#*|}
+  check "$f states that stack caps override the GREEN column" \
+        "$(reflow "$f" | grep -qF -- "$phrase" && echo 0 || echo 1)" \
+        "missing [$phrase] — without it a .NET or JVM repo reads GREEN from the
+table and runs with an authority its stack section refuses"
+done
+
+# 16.3 The abort branch of a blocked rollback. When a hook refuses the restore,
+# the only safe move is to stop: working around the hook is the failure mode the
+# guard exists to prevent, and 'retry' or 'continue' would be exactly that. The
+# rule shipped as prose, so deleting the branch left the suite green — in either
+# language, which is why this list has two rows and not one.
+for pair in \
+  'README.en.md|the skill **aborts** the pipeline when a command of the protocol is blocked' \
+  'README.md|a skill **aborta** o pipeline quando um comando do protocolo é barrado'
+do
+  f=${pair%%|*}
+  phrase=${pair#*|}
+  check "$f keeps the abort branch of a rollback blocked by a hook" \
+        "$(reflow "$f" | grep -qF -- "$phrase" && echo 0 || echo 1)" \
+        "missing [$phrase] — a protocol command blocked by a hook has to stop the
+run; working around the hook is what the guard exists to prevent"
+done
+
+# 16.4 A live 'git add -A' beside the correct form. Section 4 asserts the
+# positive form (`git add -- <pathspec>`) is present, which a document can
+# satisfy while also offering the forbidden form as a shortcut two words later.
+# Banning the string outright is not available either: the prose that forbids it
+# has to quote it. So the rule is proximity — every occurrence must be covered
+# by a negation right before it, or be the left cell of the table of forbidden
+# forms. The window is 48 characters against a measured worst case of 20.
+# LC_ALL=C for the same reason gate.sh's strip_ansi carries it: BSD awk aborts
+# on the first invalid byte under a UTF-8 locale, and an aborted scan reports
+# nothing, which reads exactly like a clean scan.
+# uncovered <extended-regex> — every .md occurrence of a form the docs forbid
+# that no negation right before it covers. Two rules need this and neither can
+# use a plain ban: the prose that forbids a form has to quote it, so the string
+# is in the corpus by design. Proximity is what separates an instruction from a
+# prohibition — the window is 48 characters against a measured worst case of 20
+# for staging and 10 for npx, and the left cell of a table of forbidden forms is
+# exempt because such a row is a list of what not to do.
+# LC_ALL=C for the same reason gate.sh's strip_ansi carries it: BSD awk aborts on
+# the first invalid byte under a UTF-8 locale, and an aborted scan prints
+# nothing, which reads exactly like a clean one.
+uncovered() {
+  find . -name '*.md' -not -path './.git/*' -not -path './node_modules/*' -print0 \
+  | xargs -0 -n1 env LC_ALL=C awk -v pat="$1" '
+      { all = all $0 " " }
+      END {
+        s = all; done = ""
+        while (match(s, pat)) {
+          pre = done substr(s, 1, RSTART - 1)
+          start = length(pre) - 47; if (start < 1) start = 1
+          win = tolower(substr(pre, start))
+          if (win !~ /never|nunca|n.o|instead|em vez|rather than|forbidden|proibid/ \
+              && win !~ /\|[[:space:]]*.?$/)
+            print FILENAME
+          done = pre substr(s, RSTART, RLENGTH)
+          s = substr(s, RSTART + RLENGTH)
+        }
+      }' 2>/dev/null | sort -u | tr '\n' ' '
+}
+
+# Bracket expression, not a backslash escape: awk's -v strips one level before
+# the regex compiles, so '\.' would arrive as a bare '.' and the pattern would
+# match the correct 'git add -- <pathspec>' too — the check would fail loudest
+# on exactly the form it exists to protect.
+stage_hits=$(uncovered 'git add (-A|[.])')
+check "no live 'git add -A' or 'git add .' anywhere in the docs" \
+      "$([[ -z ${stage_hits// /} ]] && echo 0 || echo 1)" \
+      "uncovered occurrence in: ${stage_hits:-none} — whole-tree staging swallows
+what the step did not touch and breaks the per-commit revert the skill promises"
+
+# 16.5 Pinned npx. An unpinned 'npx <pkg>' resolves to whatever latest is on the
+# day it runs, so the tool that decides which exports are dead can change under
+# the protocol without a single file changing. Everything is pinned today and
+# nothing stopped it from coming back.
+bare_npx=$(uncovered 'npx [a-z][a-zA-Z0-9-]*([^a-zA-Z0-9@-]|$)')
+check "every npx in the docs pins a version" \
+      "$([[ -z ${bare_npx// /} ]] && echo 0 || echo 1)" \
+      "unpinned: ${bare_npx:-none} — an unpinned tool changes what counts as dead
+code without any file in this repo changing"
+
 echo "----"
 echo "$((total-failures))/$total invariants held"
 [[ $failures -eq 0 ]]

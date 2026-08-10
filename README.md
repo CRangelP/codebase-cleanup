@@ -118,13 +118,14 @@ codebase-cleanup/
 └── scripts/
     ├── gate.sh                       typecheck + testes multi-stack, exit 0/1/2/3/4
     ├── guard.sh                      bloqueia os cinco comandos que o protocolo proíbe
-    ├── test.sh                       roda as cinco suítes em sequência
+    ├── test.sh                       roda as seis suítes em sequência
     ├── metrics.sh                    métricas de qualidade, exit 0/2/3
     ├── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
     ├── guard_test.sh                 o que o guarda bloqueia e o que ele deixa passar
     ├── rollback_test.sh              prova executável do protocolo de rollback
     ├── metrics_test.sh               casos do medidor, em repos sintéticos
-    └── coherence_test.sh             invariantes de coerência entre doc e código
+    ├── coherence_test.sh             invariantes de coerência entre doc e código
+    └── mutation_test.sh              muta regras de autoridade destrutiva; cada uma tem de reprovar
 ```
 
 Para conferir a instalação, abra uma sessão nova (ou rode `/reload-skills`) e
@@ -132,19 +133,21 @@ veja se `codebase-cleanup` aparece na lista de skills disponíveis.
 
 ### Testes
 
-Quatro suítes, sem dependência além de `bash` e `git`:
+Seis suítes, sem dependência além de `bash` e `git`:
 
 ```bash
-bash scripts/test.sh            # roda as quatro, para na primeira que falhar
+bash scripts/test.sh            # roda as seis, para na primeira que falhar
 
 bash scripts/gate_test.sh       # contrato do gate: exit codes, linha checks=, PARTIAL
 bash scripts/guard_test.sh      # o que o guarda bloqueia, e o que ele deixa passar
 bash scripts/rollback_test.sh   # o que `git restore` recupera e o que ele destrói
+bash scripts/metrics_test.sh    # o medidor de qualidade, em repos sintéticos
 bash scripts/coherence_test.sh  # doc e código dizendo a mesma coisa
+bash scripts/mutation_test.sh   # a suíte acima reprovaria se a regra sumisse?
 ```
 
 Cada uma sai 0 quando tudo passou e imprime o caso que falhou quando não; o
-`test.sh` só encadeia as quatro e para na primeira vermelha.
+`test.sh` só encadeia as seis e para na primeira vermelha.
 Nenhuma das quatro toca o repositório em que você a rodou: o gate usa stubs de
 toolchain, o guarda e o rollback criam repositórios descartáveis dentro de um
 `mktemp -d`, com `HOME` redirecionado e identidade de commit passada por `-c`
@@ -160,7 +163,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 140/140 casos, 42/42 casos do guarda, 5/5 propriedades,
-# 35/35 casos de métrica, 296/296 invariantes
+# 35/35 casos de métrica, 361/361 invariantes, 8/8 mutações pegas
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -207,7 +210,7 @@ e se classifica em um de três níveis:
 | Nível | Condição | O que ela faz |
 |---|---|---|
 | GREEN | typecheck e testes passam | executa a fase 1 sem perguntar; fase 2 e fase 3 param no checkpoint humano |
-| YELLOW | rede parcial, ou nenhum arquivo de teste no stack | só deps e arquivos órfãos, sem mexer em exports; não roda fase 2 nem fase 3 |
+| YELLOW | rede parcial, ou nenhum arquivo de teste no stack | só deps e arquivos órfãos, sem mexer em exports; não roda fase 2, fase 3 nem fase 4 |
 | RED | sem testes e sem typecheck, ou baseline já vermelho | só diagnostica; nada é deletado; não commit de `CLEANUP_PROGRESS` |
 
 Os caps por stack em `references/other-stacks.md` sobrescrevem a coluna GREEN

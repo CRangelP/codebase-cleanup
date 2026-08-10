@@ -121,13 +121,14 @@ codebase-cleanup/
 └── scripts/
     ├── gate.sh                       multi-stack typecheck + tests, exit 0/1/2/3/4
     ├── guard.sh                      blocks the five commands the protocol forbids
-    ├── test.sh                       runs the five suites in sequence
+    ├── test.sh                       runs the six suites in sequence
     ├── metrics.sh                    quality metrics, exit 0/2/3
     ├── gate_test.sh                  gate contract tests (toolchain stubs)
     ├── guard_test.sh                 what the guard blocks and what it lets through
     ├── rollback_test.sh              executable proof of the rollback protocol
     ├── metrics_test.sh               measurer cases, on synthetic repos
-    └── coherence_test.sh             coherence invariants between docs and code
+    ├── coherence_test.sh             coherence invariants between docs and code
+    └── mutation_test.sh              mutates destructive-authority rules; each must fail
 ```
 
 To check the installation, open a new session (or run `/reload-skills`) and
@@ -135,19 +136,21 @@ see whether `codebase-cleanup` shows up in the list of available skills.
 
 ### Tests
 
-Four suites, with nothing to install beyond `bash` and `git`:
+Six suites, with nothing to install beyond `bash` and `git`:
 
 ```bash
-bash scripts/test.sh            # runs all four, stopping at the first failure
+bash scripts/test.sh            # runs all six, stopping at the first failure
 
 bash scripts/gate_test.sh       # gate contract: exit codes, the checks= line, PARTIAL
 bash scripts/guard_test.sh      # what the guard blocks, and what it lets through
 bash scripts/rollback_test.sh   # what `git restore` brings back and what it destroys
+bash scripts/metrics_test.sh    # the quality measurer, on synthetic repos
 bash scripts/coherence_test.sh  # docs and code saying the same thing
+bash scripts/mutation_test.sh   # would the suite above fail if the rule vanished?
 ```
 
 Each exits 0 when everything passed and prints the failing case when it does
-not; `test.sh` only chains the four and stops at the first red. None of them
+not; `test.sh` only chains the six and stops at the first red. None of them
 touches the repository you run it from: the gate suite uses
 toolchain stubs, the guard and rollback suites build throwaway repositories
 inside a `mktemp -d`, with `HOME` redirected and the commit identity passed via
@@ -164,7 +167,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 140/140 cases, 42/42 guard cases, 5/5 properties,
-# 35/35 metrics cases, 296/296 invariants
+# 35/35 metrics cases, 361/361 invariants, 8/8 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -211,7 +214,7 @@ into one of three levels:
 | Level | Condition | What it does |
 |---|---|---|
 | GREEN | typecheck and tests pass | runs phase 1 without asking; phase 2 and phase 3 stop at the human checkpoint |
-| YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports; does not run phase 2 or phase 3 |
+| YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports; does not run phase 2, phase 3 or phase 4 |
 | RED | no tests and no typecheck, or a baseline already failing | diagnoses only; nothing is deleted; no `CLEANUP_PROGRESS` commit |
 
 Stack caps in `references/other-stacks.md` override the GREEN column (Python
