@@ -1361,6 +1361,7 @@ done
 # which is how the READMEs drifted behind SKILL.md when phase 4 shipped.
 for rule in \
   'SKILL.md|GREEN|phase 1|granted' \
+  'SKILL.md|GREEN|phase 4|granted' \
   'SKILL.md|GREEN|checkpoint|granted' \
   'SKILL.md|YELLOW|exports|denied' \
   'SKILL.md|YELLOW|phase 2|denied' \
@@ -1369,6 +1370,7 @@ for rule in \
   'SKILL.md|RED|delete|denied' \
   'SKILL.md|RED|commit|denied' \
   'SKILL.md|RED|cleanup_progress|denied' \
+  'README.en.md|GREEN|phase 4|granted' \
   'README.en.md|GREEN|checkpoint|granted' \
   'README.en.md|YELLOW|exports|denied' \
   'README.en.md|YELLOW|phase 2|denied' \
@@ -1376,6 +1378,7 @@ for rule in \
   'README.en.md|YELLOW|phase 4|denied' \
   'README.en.md|RED|delet|denied' \
   'README.en.md|RED|cleanup_progress|denied' \
+  'README.md|GREEN|fase 4|granted' \
   'README.md|GREEN|checkpoint|granted' \
   'README.md|YELLOW|exports|denied' \
   'README.md|YELLOW|fase 2|denied' \

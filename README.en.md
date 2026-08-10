@@ -176,7 +176,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 142/142 cases, 42/42 guard cases, 5/5 properties,
-# 35/35 metrics cases, 382/382 invariants, 9/9 mutations caught
+# 35/35 metrics cases, 388/388 invariants, 9/9 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -222,7 +222,7 @@ into one of three levels:
 
 | Level | Condition | What it does |
 |---|---|---|
-| GREEN | typecheck and tests pass | runs phase 1 without asking; phase 2 and phase 3 stop at the human checkpoint |
+| GREEN | typecheck and tests pass | runs phase 1 without asking; phase 2 and phase 3 stop at the human checkpoint; phase 4 applies tier A per covered target and stops at the tier B checkpoint |
 | YELLOW | partial net, or no test file in the stack | only deps and orphan files, no touching exports; does not run phase 2, phase 3 or phase 4 |
 | RED | no tests and no typecheck, or a baseline already failing | diagnoses only; nothing is deleted; no `CLEANUP_PROGRESS` commit |
 

@@ -9,6 +9,19 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.3.3] — 2026-08-10
+
+### Corrigido
+
+- **A linha GREEN dos dois READMEs calava sobre a fase 4.** Prometia a fase 1 sem perguntar e o
+  checkpoint das fases 2 e 3, e parava aí — atrás do `SKILL.md` desde que a fase 4 existe. O
+  silêncio aqui é conservador e não perigoso (ninguém conclui autoridade a mais), mas é a mesma
+  lacuna que a linha YELLOW tinha: a tabela é o que se lê para saber o que o nível faz, e o que
+  ela não diz não é decidível. As duas células agora dizem o que a fase 4 faz em GREEN — tier A
+  por alvo coberto, checkpoint para o tier B — e o invariante cobre os três arquivos.
+
+388 invariantes.
+
 ## [0.3.2] — 2026-08-10
 
 Fecha a [#40](https://github.com/CRangelP/codebase-cleanup/issues/40) e a
