@@ -20,9 +20,8 @@ Fecha as [#37](https://github.com/CRangelP/codebase-cleanup/issues/37) e
 - **`scripts/mutation_test.sh`** — a sexta suíte, e a única que responde a uma pergunta que
   as outras cinco não conseguem fazer: *a suíte reprovaria se a regra sumisse?*
 
-  Cinco mutações nomeadas, cada uma uma edição que um autor faria de boa-fé e que amplia em
-  silêncio o que a skill pode destruir. **Todas as cinco passavam verdes** quando este arquivo
-  foi escrito.
+  Oito mutações nomeadas, cada uma uma edição que um autor faria de boa-fé e que amplia em
+  silêncio o que a skill pode destruir. **Todas as oito passavam verdes** quando foram escritas.
 
   | | mutação |
   |---|---|
@@ -31,14 +30,25 @@ Fecha as [#37](https://github.com/CRangelP/codebase-cleanup/issues/37) e
   | M3 | um rollback bloqueado por hook passa a **repetir** em vez de abortar |
   | M4 | a forma proibida `git add -A` oferecida viva ao lado da correta |
   | M5 | `npx` sem versão pinada |
+  | M6 | YELLOW mantém as duas frases de recusa e concede as fases 3 e 4 numa oração adversativa |
+  | M7 | some do README **português** a regra dos caps por stack |
+  | M8 | o README **português** repete um comando que o hook barrou, em vez de abortar |
 
-- **Seção 16 do `coherence_test.sh`** (309 invariantes), com os invariantes que fazem as cinco
+  Um vermelho só é evidência quando a causa é atribuída: a suíte exige uma **cópia não mutada
+  verde** antes de contar qualquer resultado, e cada mutação declara **qual check** ela tem de
+  derrubar. Sem as duas coisas ela anunciava `5/5 mutations caught` com a versão do
+  `plugin.json` quebrada e nenhuma mutação aplicada.
+
+- **Seção 16 do `coherence_test.sh`** (361 invariantes), com os invariantes que fazem as oito
   reprovarem:
 
   - a **coluna de comportamento** da tabela de níveis, não só a de condição — a seção 7 já dizia
     quais níveis existem e qual a condição de cada um, mas o que cada nível *autoriza* vivia só
     em prosa. É a diferença entre um nível que relata e um nível que muta um repo cujos testes
-    nunca rodaram;
+    nunca rodaram. A célula é lida **cláusula a cláusula**, não por frase: grep de redação
+    aprovava uma célula mais permissiva ("does **not** run phase 2, *but* runs phase 3 and
+    phase 4") e reprovava uma mais estrita ("does **not** delete exports"), porque media
+    palavra e não autoridade;
   - o ponteiro de caps por stack presente em **todo arquivo que carrega a tabela** — um agente
     que lê só o `SKILL.md` e nunca abre a reference rodaria no nível da tabela;
   - o **ramo de abortar** de um rollback bloqueado por hook, porque contornar o hook é
@@ -48,6 +58,14 @@ Fecha as [#37](https://github.com/CRangelP/codebase-cleanup/issues/37) e
 
 ### Corrigido
 
+- **Os dois READMEs calavam sobre a fase 4 na linha YELLOW.** A célula prometia recusar as
+  fases 2 e 3 e não dizia nada da 4, atrás do `SKILL.md` desde que a fase 4 existe — e um
+  silêncio nessa coluna lê-se como permissão. A seção 16 trata `absent` como concessão, e foi
+  ela que encontrou as duas células.
+- **A rede de invariantes só cobria o lado inglês.** Apagar do `README.md` a linha dos caps por
+  stack, ou trocar o ramo de abortar por uma repetição, deixava a suíte verde. Cada arquivo tem
+  agora a sua própria frase, e a comparação é feita sobre o texto **rejuntado**: os dois READMEs
+  são quebrados à mão em ~80 colunas, e um grep linha a linha afirma onde a quebra cai.
 - **Os dois READMEs diziam "quatro suítes" quando já eram cinco** — o `metrics_test.sh` nunca
   entrou na contagem nem na lista de comandos. Agora são seis, listadas.
 
