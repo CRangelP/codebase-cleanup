@@ -35,6 +35,28 @@ protocol_files() {
   grep -l -F -- 'scripts/gate.sh' SKILL.md references/*.md 2>/dev/null | sort
 }
 
+# reflow <file> — the file as one line, so a phrase that a hard wrap split in
+# two still reads as a phrase. Both READMEs are wrapped by hand at ~80 columns,
+# so an invariant that greps a sentence line by line is really asserting where
+# the wrap happens to fall, and would go red on a rewrap that changed nothing.
+reflow() { tr '\n' ' ' < "$1" | tr -s ' '; }
+
+# paragraph_with <file> <needle> — the blank-line-delimited paragraph holding
+# <needle>, as one line; nothing when there is none. Asserting a token inside
+# the paragraph that states a rule is a different claim from asserting it
+# somewhere in the file: the second is satisfied by any other mention, and the
+# READMEs repeat these tokens in their known-limits sections. The needle is a
+# literal (index, not match), so a token with regex punctuation still works.
+paragraph_with() {
+  awk -v needle="$2" '
+    # buf is cleared before exit: END runs after exit too, and would print the
+    # same paragraph a second time.
+    /^[[:space:]]*$/ { if (index(buf, needle)) { print buf; buf = ""; exit } buf = ""; next }
+    { buf = buf $0 " " }
+    END { if (index(buf, needle)) print buf }
+  ' "$1"
+}
+
 pass() { total=$((total+1)); echo "ok: $1"; }
 
 fail() { # fail <name> <detail>
@@ -747,29 +769,104 @@ done
 # which is the only line that can eject the skill from auto-dispatch when it
 # grows past the host's limit. Fail closed above 1000 characters so there is
 # margin under the usual 1024 cap before a new trigger phrase breaks discovery.
+#
+# The exit contract and the JS/TS vocabulary are checked against the whole file:
+# each of these is a string the gate prints or reads, and it has no business
+# appearing anywhere else.
 for marker in \
   'exit 0/1/2/3/4' \
   'Exit 124' \
-  'tests/*.rs' \
-  '#[test]' \
-  'src/test' \
+  'Exit 137' \
   'test:unit' \
   'test:e2e' \
-  'checks=typecheck,test' \
-  'Go' \
-  '.NET' \
-  'Rust' \
-  'Maven' \
-  'Gradle' \
-  'pytest' \
-  'Exit 137' \
-  'passWithNoTests' \
-  '_spec.rb'
+  'checks=typecheck,test'
 do
   for f in README.md README.en.md; do
     check "$f carries normative marker [$marker]" \
           "$(grep -q -F -- "$marker" "$f" 2>/dev/null && echo 0 || echo 1)" \
           "missing [$marker]"
+  done
+done
+
+# The per-stack rules are a different problem, and the file-wide grep was the
+# wrong tool for it. `Go`, `.NET`, `Rust`, `Maven`, `Gradle` and `pytest` as
+# bare words are practically impossible to violate in a README that long — and
+# `Go` matched any substring, "Google" included. Twelve checks that could not
+# fail inflate the count and buy nothing.
+#
+# What each of those names is doing in the README is naming the evidence that
+# stack has to show before the gate will call its suite non-empty. So the
+# assertion is co-occurrence *inside the empty-suite paragraph*: the stack and
+# its evidence in the same paragraph, not both somewhere in a 400-line file.
+# That is what makes them falsifiable — `tests/*.rs` and `#[test]` also live in
+# the known-limits section further down, so dropping the whole Rust clause from
+# the cap paragraph left the old markers green.
+#
+# Anchored on `passWithNoTests` rather than on a phrase of prose: it is the one
+# token in that paragraph the gate itself reads, so the anchor moves only if the
+# rule does.
+CAP_ANCHOR='passWithNoTests'
+
+# in_paragraph <paragraph> <token> — a token with punctuation is matched
+# literally; a bare word is matched with alphabetic boundaries, which is what
+# keeps `Go` from passing on "Google" the way the file-wide grep did.
+in_paragraph() {
+  case $2 in
+    *[!A-Za-z]*) printf '%s' "$1" | grep -q -F -- "$2" ;;
+    *)           printf '%s' "$1" | grep -q -E -- "(^|[^A-Za-z])$2([^A-Za-z]|$)" ;;
+  esac
+}
+
+# The extractor is proven on a fixture first, and so is the word boundary: an
+# extractor that returns the whole file would put every token back in scope and
+# quietly restore the check this block exists to replace.
+printf '%s\n' 'first paragraph, with Rust in it' '' \
+              'second, the anchor ANCHOR lives here with Go' '' \
+              'third, with Google and src/test' > "$SELFTMP/paras.md"
+probe_para=$(paragraph_with "$SELFTMP/paras.md" 'ANCHOR')
+check "paragraph extractor returns only the paragraph holding the anchor" \
+      "$([[ $probe_para == 'second, the anchor ANCHOR lives here with Go ' ]] && echo 0 || echo 1)" \
+      "read [$probe_para]"
+check "paragraph extractor is empty when the anchor is absent" \
+      "$([[ -z $(paragraph_with "$SELFTMP/paras.md" 'NO_SUCH_ANCHOR') ]] && echo 0 || echo 1)" \
+      "an absent anchor must return nothing, so the floor below can catch it"
+check "bare-word matching does not accept a longer word" \
+      "$(in_paragraph 'third, with Google and src/test' 'Go' && echo 1 || echo 0)" \
+      "[Go] matched inside Google — the boundary is what the old marker lacked"
+
+for f in README.md README.en.md; do
+  cap=$(paragraph_with "$f" "$CAP_ANCHOR")
+  # Floor, same reason as sections 4 and 15: an empty paragraph would make every
+  # token below report "missing" for one reason (the anchor moved) while reading
+  # like another (the rule was deleted), and a paragraph that swallowed the file
+  # would make them all pass.
+  check "$f has an empty-suite paragraph to check" \
+        "$([[ -n ${cap// /} ]] && echo 0 || echo 1)" \
+        "no paragraph carries [$CAP_ANCHOR] — every per-stack assertion below
+depends on finding it, and none of them means anything without it"
+  for token in \
+    'No test files found' \
+    'passWithNoTests' \
+    'Go' \
+    '.NET' \
+    'Rust' \
+    'tests/*.rs' \
+    '#[test]' \
+    'Maven' \
+    'Gradle' \
+    'src/test' \
+    'Ruby' \
+    '_spec.rb' \
+    '_test.rb' \
+    'test_*.rb' \
+    'pytest'
+  do
+    check "the empty-suite paragraph of $f names [$token]" \
+          "$(in_paragraph "$cap" "$token" && echo 0 || echo 1)" \
+          "[$token] is not in the paragraph that states the empty-suite cap.
+A stack named there without its evidence, or evidence without its stack, is a
+rule the reader cannot apply — and the same string somewhere else in the file
+is not that rule."
   done
 done
 
@@ -1275,7 +1372,6 @@ done
 # it. A grep that reads line by line asserts where the wrap falls, and would go
 # red on a rewrap that changed no meaning at all — the Portuguese abort branch
 # is split between "a skill **aborta** o" and "pipeline quando um comando".
-reflow() { tr '\n' ' ' < "$1" | tr -s ' '; }
 
 for pair in \
   'SKILL.md|override the GREEN column' \
