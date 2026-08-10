@@ -1693,6 +1693,26 @@ do
 one trigger phrase, and the automatic route can pick the older one"
 done
 
+# 20. The leg of the guard contract that no suite covers. -------------------
+# guard_test.sh builds the hook JSON by hand and calls the script directly. That
+# proves behaviour and says nothing about delivery: whether hooks.json routes the
+# call at all, and whether exit 2 reaches the model with its stderr attached.
+# Both were checked by hand against an installed plugin (#34) and neither has a
+# suite. A repository that publishes 47 green cases without saying which question
+# they answer invites the reader to assume the other one is covered too — the
+# same defect #40 fixed in the gate suite's own summary.
+for pair in \
+  'README.md|não a entrega' \
+  'README.en.md|not its delivery'
+do
+  f=${pair%%|*}
+  phrase=${pair#*|}
+  check "$f says which half of the guard contract the suite does not cover" \
+        "$(reflow "$f" | grep -q -F -- "$phrase" && echo 0 || echo 1)" \
+        "missing [$phrase] — the guard suite proves the script's behaviour, and a
+green count that does not name its own scope reads as coverage it does not have"
+done
+
 echo "----"
 echo "$((total-failures))/$total invariants held"
 [[ $failures -eq 0 ]]
