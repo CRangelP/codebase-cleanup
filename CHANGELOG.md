@@ -9,6 +9,40 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.3.2] — 2026-08-10
+
+Fecha a [#40](https://github.com/CRangelP/codebase-cleanup/issues/40) e a
+[#41](https://github.com/CRangelP/codebase-cleanup/issues/41). As duas são a mesma queixa: a
+saída não contava a verdade a quem estava olhando.
+
+### Corrigido
+
+- **A suíte do gate anunciava `NN/NN` sem dizer o que a máquina não rodou.** No macOS os dois
+  casos de `timeout -k` são pulados e **contados**, para o total não variar por ambiente — o que
+  mantém a seção 9 honesta e custa exatamente isto: removendo o ramo 137 de `wd_timed_out`, a
+  suíte continua **142/142 verde** ali. Medido. A perna Linux da CI cobre, então o número não
+  está errado; errado seria concluir de um verde local que a matriz rodou.
+
+  O resumo agora nomeia o que ficou de fora, separando o que foi pulado e contado do que não
+  rodou e não entrou na conta (o bloco perl). Sem nada pulado ele diz isso também — silêncio não
+  serve como afirmação. E os dois READMEs registram, onde a run validada é publicada, que
+  validação completa é nas duas plataformas.
+
+- **O gate ficava mudo na suíte JS sem avisar.** Aquele caminho bufferiza a saída e só a
+  reimprime quando o runner termina — um teste que deixa um neto de processo segurando o pipe
+  travaria o gate até esse neto morrer, com o watchdog impotente. Numa suíte longa o gate fica
+  quieto e o watchdog tem 900s de padrão: tempo de sobra para alguém concluir que travou.
+
+  Uma linha dita **antes** do comando começar, mais o comportamento registrado no parágrafo do
+  gate nos dois READMEs. Duas redes: `js-buffer-notice` assere a linha onde o buffer acontece, e
+  `js-no-buffer-notice-on-typecheck-only` assere que ela não aparece no typecheck, que transmite
+  ao vivo — a mesma promessa lá seria mentira.
+
+- **Os READMEs e o workflow ainda diziam "as quatro suítes".** São seis desde a
+  `mutation_test.sh`.
+
+142 casos, 382 invariantes.
+
 ## [0.3.1] — 2026-08-10
 
 Fecha a [#38](https://github.com/CRangelP/codebase-cleanup/issues/38).

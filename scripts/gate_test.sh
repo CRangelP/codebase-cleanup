@@ -22,6 +22,14 @@ cleanup() {
 trap cleanup EXIT
 failures=0
 total=0
+# What this environment could not run. Printed in the summary, because NN/NN
+# alone cannot tell a full matrix from a partial one: on macOS the two -k cases
+# are skipped and counted, so removing the 137 branch from wd_timed_out leaves
+# the suite green with the same number. The Linux leg of CI covers it — but
+# whoever validates only locally deserves to be told which part they did not
+# exercise, instead of reading a total that looks complete.
+SKIPPED=""
+NOT_RUN=""
 
 BASE="/usr/bin:/bin"
 
@@ -166,7 +174,19 @@ case_run() { # case_run <name> <expected_exit> <dir> <PATH|-> <grep_pattern...>
 # number true on both, and the reason is printed so nobody reads it as a pass.
 skipped() {
   total=$((total+1))
+  SKIPPED="$SKIPPED$1 ($2)
+"
   echo "ok: $1 (skipped: $2)"
+}
+
+# not_run <name> <reason> — a whole block the environment cannot run. Unlike
+# skipped(), it does not touch the total: the cases inside were never reached,
+# so counting them would publish a number no run produced. It is named in the
+# summary for the same reason a skip is.
+not_run() {
+  NOT_RUN="$NOT_RUN$1 ($2)
+"
+  echo "skip: $1 ($2)"
 }
 
 elapsed_lt() { # elapsed_lt <name> <seconds> — asserts on the last case_run
@@ -1021,6 +1041,17 @@ make_escapee "$ESCAPE_NOLS" "$TMP/escapee-nols.pid"
 case_run bad-path         2 "$TMP/nope"         -             "bad path"
 case_run empty            3 "$TMP/empty"        -             "no runnable checks"
 case_run js-green         0 "$TMP/js-green"     -             "checks=typecheck,test" "GREEN"
+# The buffering notice, asserted where the buffering happens. It is the only
+# thing the user gets between the command line and the output on a suite that
+# takes minutes, and the watchdog's 900s default is long enough for someone to
+# conclude the gate hung. A notice nothing asserts is a notice that disappears
+# in the next refactor of this path — and it is not decoration: the silence it
+# explains is a design decision, not a symptom.
+case_run js-buffer-notice 0 "$TMP/js-green"     -             "output appears when this command finishes"
+# ...and only on the path that actually buffers. Typecheck goes through run(),
+# which streams, so the same promise there would be a lie.
+case_run js-no-buffer-notice-on-typecheck-only 0 "$TMP/js-typecheck-only" - \
+         "!output appears when this command finishes"
 case_run js-test-only     0 "$TMP/js-test-only" -             "checks=test" "YELLOW"
 case_run js-red           1 "$TMP/js-red"       -             "RED"
 case_run js-no-node       3 "$TMP/js-green"     "$NOTOOL"     "toolchain 'node' missing"
@@ -1349,7 +1380,7 @@ if command -v perl >/dev/null; then
   elapsed_lt wd-ps-no-lstart-is-bounded 10
   assert_reaped wd-ps-no-lstart-reaped "$TMP/escapee-nols.pid"
 else
-  echo "skip: wd-perl-forced (no perl on this machine)"
+  not_run wd-perl-forced "no perl on this machine"
 fi
 
 # 0 disables the watchdog: a check that exits 124 on its own is RED, not
@@ -1366,4 +1397,14 @@ assert_log wd-bad-value-args "$WD_LOG_T" "900 go build ./..."
 
 echo "----"
 echo "$((total-failures))/$total cases passed"
+# The environment report. It is not decoration: a green NN/NN over a matrix this
+# machine could only half run is the exact shape of a regression that hides.
+if [[ -n $SKIPPED || -n $NOT_RUN ]]; then
+  echo "this run did not exercise the whole matrix:"
+  [[ -n $SKIPPED ]] && printf '%s' "$SKIPPED" | sed 's/^/    skipped, counted: /'
+  [[ -n $NOT_RUN ]] && printf '%s' "$NOT_RUN" | sed 's/^/    not run, uncounted: /'
+  echo "    the other platform of the CI matrix covers these"
+else
+  echo "whole matrix exercised: nothing was skipped on this machine"
+fi
 [[ $failures -eq 0 ]]

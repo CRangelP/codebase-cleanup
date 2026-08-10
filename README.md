@@ -37,7 +37,12 @@ sua resposta.
   `$VIRTUAL_ENV/bin`, `.venv/bin`, `venv/bin` ou os runners `uv run` e
   `poetry run` (nessa ordem). Cada check roda sob um watchdog (`GATE_TIMEOUT`, 900s por
   padrão, `0` desliga): estourou o tempo, o gate sai 4 e vale como não
-  conclusivo. É script bash (o 3.2 do macOS serve); no Windows, use WSL.
+  conclusivo. Em JS/TS a saída da suíte é bufferizada e só aparece quando o
+  comando termina — um teste que deixa um neto de processo segurando o pipe
+  travaria o gate até esse neto morrer, e aí o watchdog não teria como agir. O
+  gate avisa antes de começar; numa suíte longa ele fica mudo, e ficar mudo é o
+  esperado, não sintoma de travamento. É script bash (o 3.2 do macOS serve); no
+  Windows, use WSL.
 
 ## Instalação
 
@@ -153,8 +158,13 @@ toolchain, o guarda e o rollback criam repositórios descartáveis dentro de um
 `mktemp -d`, com `HOME` redirecionado e identidade de commit passada por `-c`
 — sua config do git não é lida nem escrita —, e a de coerência só lê arquivos.
 
-A CI roda as quatro suítes a cada push e PR: ubuntu (GNU `timeout` real,
-procps) e macOS com o `/bin/bash` 3.2 de fábrica.
+A CI roda as seis suítes a cada push e PR: ubuntu (GNU `timeout` real,
+procps) e macOS com o `/bin/bash` 3.2 de fábrica. As duas pernas são
+necessárias, e não redundantes: no macOS os dois casos de `timeout -k` são
+pulados e contados, então o total não se mexe e uma regressão no ramo 137 do
+watchdog passa verde ali com o mesmo `NN/NN`. Por isso o resumo do
+`gate_test.sh` nomeia o que a máquina não rodou — validação completa é nas duas
+plataformas.
 
 As suítes também rodam fora do macOS. Num container Linux, o caso de hang
 exercita o GNU `timeout` real em vez do backend perl:
@@ -162,8 +172,8 @@ exercita o GNU `timeout` real em vez do backend perl:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validado em 08/2026: 140/140 casos, 42/42 casos do guarda, 5/5 propriedades,
-# 35/35 casos de métrica, 374/374 invariantes, 9/9 mutações pegas
+# validado em 08/2026: 142/142 casos, 42/42 casos do guarda, 5/5 propriedades,
+# 35/35 casos de métrica, 382/382 invariantes, 9/9 mutações pegas
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`

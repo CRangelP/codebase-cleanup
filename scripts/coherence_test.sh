@@ -52,7 +52,12 @@ paragraph_with() {
     # buf is cleared before exit: END runs after exit too, and would print the
     # same paragraph a second time.
     /^[[:space:]]*$/ { if (index(buf, needle)) { print buf; buf = ""; exit } buf = ""; next }
-    { buf = buf $0 " " }
+    # Leading indentation is dropped before joining: these files are wrapped by
+    # hand and a continuation line carries the indent of its list marker, so a
+    # phrase split across two lines would come back with a run of spaces in the
+    # middle, and no literal search would ever find it. (No apostrophes in here:
+    # this awk program is a single-quoted shell string.)
+    { line = $0; sub(/^[[:space:]]+/, "", line); buf = buf line " " }
     END { if (index(buf, needle)) print buf }
   ' "$1"
 }
@@ -868,6 +873,51 @@ A stack named there without its evidence, or evidence without its stack, is a
 rule the reader cannot apply — and the same string somewhere else in the file
 is not that rule."
   done
+done
+
+# The two-platform premise of the validated run. gate_test.sh counts the two
+# -k cases as skips so the total stays the same on both platforms, which keeps
+# section 9 honest — and costs exactly this: on macOS, removing the 137 branch
+# from wd_timed_out leaves the suite green with the same NN/NN. Measured. The
+# Linux leg covers it, so the number is not wrong; what would be wrong is a
+# reader concluding from a local green that the matrix ran. The summary says so
+# at runtime, and the READMEs have to say so where the validated run is
+# published, which is where that conclusion gets drawn.
+for pair in \
+  'README.md|As duas pernas são necessárias' \
+  'README.en.md|Both legs are required'
+do
+  f=${pair%%|*}
+  phrase=${pair#*|}
+  ci_para=$(paragraph_with "$f" 'procps')
+  check "$f has a paragraph describing the CI matrix" \
+        "$([[ -n ${ci_para// /} ]] && echo 0 || echo 1)" \
+        "no paragraph carries [procps]; the check below needs it"
+  check "$f states that one platform is not a complete validation" \
+        "$(printf '%s' "$ci_para" | grep -q -F -- "$phrase" && echo 0 || echo 1)" \
+        "missing [$phrase] — a green run on one platform skips cases the other
+counts, and nothing in the number says so"
+done
+
+# The buffering notice, in the paragraph that describes the gate. gate_test.sh
+# already asserts the line the gate prints (js-buffer-notice); this is the other
+# half — the READMEs are where someone decides whether a quiet gate is a hung
+# gate, and the notice only helps if it is also written down where they look.
+# Anchored on GATE_TIMEOUT, the token that paragraph exists to introduce.
+for pair in \
+  'README.md|só aparece quando o comando termina' \
+  'README.en.md|only appears once the command finishes'
+do
+  f=${pair%%|*}
+  phrase=${pair#*|}
+  gate_para=$(paragraph_with "$f" 'GATE_TIMEOUT')
+  check "$f has a paragraph describing the gate" \
+        "$([[ -n ${gate_para// /} ]] && echo 0 || echo 1)" \
+        "no paragraph carries [GATE_TIMEOUT]; the check below needs it"
+  check "$f says the JS test output is buffered until the command ends" \
+        "$(printf '%s' "$gate_para" | grep -q -F -- "$phrase" && echo 0 || echo 1)" \
+        "missing [$phrase] — on a long suite the gate goes quiet for minutes and
+the watchdog default is 900s, so silence reads as a hang to whoever is watching"
 done
 
 # Bash ${#var} counts characters under a UTF-8 locale; awk's length() counts

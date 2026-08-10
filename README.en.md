@@ -38,8 +38,13 @@ answer.
   from `$VIRTUAL_ENV/bin`, `.venv/bin`, `venv/bin` or the `uv run` and
   `poetry run` runners (in that order). Every check runs under a watchdog
   (`GATE_TIMEOUT`, 900s by default, `0` disables it): if it runs out of time,
-  the gate exits 4 and counts as inconclusive. It is a bash script (the bash
-  3.2 shipped with macOS is enough); on Windows, use WSL.
+  the gate exits 4 and counts as inconclusive. On JS/TS the suite's output is
+  buffered and only appears once the command finishes — a test that leaves a
+  detached grandchild holding the pipe would block the gate until that
+  grandchild died, with the watchdog powerless. The gate says so before it
+  starts; on a long suite it goes quiet, and going quiet is the expected shape,
+  not a symptom of a hang. It is a bash script (the bash 3.2 shipped with macOS
+  is enough); on Windows, use WSL.
 
 ## Installation
 
@@ -157,8 +162,12 @@ inside a `mktemp -d`, with `HOME` redirected and the commit identity passed via
 `-c` — your git config is never read nor written —, and the coherence suite
 only reads files.
 
-CI runs the four suites on every push and PR: ubuntu (real GNU `timeout`,
-procps) and macOS with the stock `/bin/bash` 3.2.
+CI runs the six suites on every push and PR: ubuntu (real GNU `timeout`,
+procps) and macOS with the stock `/bin/bash` 3.2. Both legs are required, not
+redundant: on macOS the two `timeout -k` cases are skipped and counted, so the
+total does not move and a regression in the watchdog's 137 branch passes green
+there with the same `NN/NN`. That is why the `gate_test.sh` summary names what
+the machine did not run — a complete validation takes both platforms.
 
 The suites also run outside macOS. In a Linux container the hang case
 exercises the real GNU `timeout` instead of the perl backend:
@@ -166,8 +175,8 @@ exercises the real GNU `timeout` instead of the perl backend:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validated 2026-08: 140/140 cases, 42/42 guard cases, 5/5 properties,
-# 35/35 metrics cases, 374/374 invariants, 9/9 mutations caught
+# validated 2026-08: 142/142 cases, 42/42 guard cases, 5/5 properties,
+# 35/35 metrics cases, 382/382 invariants, 9/9 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK
