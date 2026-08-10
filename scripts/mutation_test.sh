@@ -39,6 +39,10 @@ apply() {
     # Not a deletion: the block goes back where it was before, at the end of the
     # file, which is where a reader ordering sections by narrative would put it.
     # Every text invariant stays green — the rules are all still there.
+    # The regression this one names cost two mechanisms at once, and neither
+    # complained: on an unborn HEAD the call exits 128, `|| return 1` reads it as
+    # "no repo", and the guard sleeps on a cleanup/ branch.
+    M11) perl -0pi -e 's/git branch --show-current 2>\/dev\/null/git rev-parse --abbrev-ref HEAD 2>\/dev\/null/' scripts/guard.sh ;;
     M10) perl -0pi -e 'BEGIN{$/=undef} s/(## Rules that apply to the whole pipeline.*?)(## Step 0 — Calibrate autonomy)/$2/s; ' SKILL.md
          perl -0pi -e 'BEGIN{$/=undef} s/(## Final report)/## Rules that apply to the whole pipeline\n\n**`\/clear` between phases.** Not optional.\n\n**Never merge two steps.** The separation is what prevents that.\n\n**A red gate means rollback, not repair.** Revert, record, move on.\n\n**Never force push, never commit on main.** All the work lives on the cleanup branch.\n\n$1/s' SKILL.md ;;
   esac
@@ -56,6 +60,7 @@ desc() {
     M8) echo "the Portuguese README retries a rollback a hook blocked" ;;
     M9) echo "the empty-suite rule for Rust drops out of both READMEs" ;;
     M10) echo "the pipeline rules move back to the end of SKILL.md, past the compaction cut" ;;
+    M11) echo "the guard reads the branch through rev-parse --abbrev-ref again" ;;
   esac
 }
 
@@ -75,6 +80,7 @@ expect() {
     M8) echo "README.md keeps the abort branch of a rollback blocked by a hook" ;;
     M9) echo "the empty-suite paragraph of README.md names [Rust]" ;;
     M10) echo "[a red gate rolls back] is inside the budget that survives a compaction" ;;
+    M11) echo "guard.sh reads no branch name through rev-parse --abbrev-ref" ;;
   esac
 }
 
@@ -84,11 +90,11 @@ copy_repo() {
   rm -rf "$1/.git"
 }
 
-MUTATIONS="M1 M2 M3 M4 M5 M6 M7 M8 M9 M10"
+MUTATIONS="M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 M11"
 # Every file any mutation edits. The STALE guard below compares this set before
 # and after: a file missing from it makes its own mutations report "changed
 # nothing" forever, which is the stale-by-construction case the guard exists for.
-MUTATED_FILES="SKILL.md README.md README.en.md references/phase-2-consolidation.md"
+MUTATED_FILES="SKILL.md README.md README.en.md references/phase-2-consolidation.md scripts/guard.sh"
 total=0
 for m in $MUTATIONS; do total=$((total + 1)); done
 

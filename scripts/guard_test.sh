@@ -100,6 +100,36 @@ blocks "reset behind -c"             "$R" "git -c core.pager=cat reset --hard"
 blocks "second half of a chain"      "$R" "npm test && git add -A"
 blocks "third of three"              "$R" "echo a; echo b; git clean -xdf"
 
+# 1b. A repository with no commit at all. -------------------------------------
+# `git init` and nothing else is a work tree with an unborn HEAD, and it defeats
+# the guard from the first line of inside_run(): `git rev-parse --abbrev-ref HEAD`
+# exits 128 there, so `|| return 1` concluded "not in a run" and let everything
+# through — on a `cleanup/` branch, which is the strongest signal the guard has
+# that it IS in one. The skill's own Step 0 lets this state pass too (#55), so
+# the two safety mechanisms failed together, in silence, in the same condition.
+# `git branch --show-current` answers on an unborn HEAD and stays empty on a
+# detached one, which is exactly the distinction both call sites need.
+unborn_repo() { # unborn_repo <name> [branch] — git init and nothing else
+  local repo="$TMP/$1"
+  mkdir -p "$repo"
+  g "$repo" init -q
+  [[ ${2:-} ]] && g "$repo" checkout -q -b "$2"
+  printf '%s' "$repo"
+}
+
+U=$(unborn_repo unborn cleanup/20260810)
+blocks "git add -A on a cleanup branch with no commit" "$U" "git add -A"
+blocks "git reset --hard with no commit"               "$U" "git reset --hard"
+blocks "git push with no commit"                       "$U" "git push origin HEAD"
+allows "pathspec staging with no commit"               "$U" "git add -- src/a.ts"
+
+# The trunk rule reads the branch name through the same call. A repo whose first
+# commit was never made is the one place where committing on main is most likely
+# to be an accident, and it was the one place the rule did not reach.
+UM=$(unborn_repo unborn-main)
+printf 'x\n' > "$UM/CLEANUP_PROGRESS.md"
+blocks "git commit on main with no commit yet" "$UM" "git commit -m x"
+
 # 2. Everything the protocol actually runs. -----------------------------------
 # This half is the one that keeps the guard from killing a legitimate run.
 allows "the canonical rollback" "$R" "git restore --staged --worktree ."

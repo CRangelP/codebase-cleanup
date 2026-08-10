@@ -105,16 +105,30 @@ of it, not a preference.
 
 ```bash
 git rev-parse --is-inside-work-tree       # is there a repo at all?
+git rev-parse --verify HEAD               # is there a commit to roll back to?
 git status --porcelain                    # anything uncommitted?
-git rev-parse --abbrev-ref HEAD           # current branch (HEAD = detached)
+git branch --show-current                 # current branch (empty = detached)
 ```
 
 Read those three answers before running anything else:
 
-**No git repository** (`--is-inside-work-tree` fails). The level is **RED**,
-diagnosis only, whatever the gate says afterwards. Without commits there is no
-rollback, and the whole safety argument of this skill rests on being able to
-return to a good HEAD. Say so in one line and produce a report.
+**No commit to roll back to** — either `--is-inside-work-tree` fails, or it
+succeeds and `--verify HEAD` fails. The level is **RED**, diagnosis only,
+whatever the gate says afterwards. Without commits there is no rollback, and the
+whole safety argument of this skill rests on being able to return to a good
+HEAD. Say so in one line and produce a report.
+
+The second half is not a corner case dressed up as one: `git init` and nothing
+else is a work tree with an unborn HEAD, where `--is-inside-work-tree` answers
+`true`, `git status --porcelain` prints nothing, and
+`git restore --staged --worktree .` answers `fatal: could not resolve 'HEAD'`.
+Every measurement says go, and the rollback the whole pipeline rests on does not
+exist. Asking only whether a repository exists answers a different question from
+the one this rule states.
+
+`git branch --show-current`, never `rev-parse --abbrev-ref HEAD`: on an unborn
+HEAD the latter exits 128 while printing the literal `HEAD`, which is what a
+detached HEAD prints too — a state this skill treats differently.
 
 **Dirty working tree** (`git status --porcelain` prints anything). **Stop and
 ask.** This is the conditional stop, and it is not negotiable: the rollback of
@@ -177,7 +191,7 @@ as a plain failure would report a hung check as a broken one.
 | Typecheck **and** tests pass | **GREEN** | Runs phase 1 in full without asking. Phase 2 and phase 3 each stop at their human checkpoint before mutating. Phase 4 runs tier A per covered target and stops at a checkpoint for tier B. |
 | A partial net, or no test file in the stack | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Does **not** run phase 2, phase 3 or phase 4; reports and stops. |
 | A check fails, or no tests and no typecheck | **RED** | Diagnoses only. Does not delete, does not move, does not commit. May create the cleanup branch; does **not** commit `CLEANUP_PROGRESS.md`. Delivers a report. |
-| No git repository | **RED** | Diagnoses only, regardless of the gate result — there is no HEAD to roll back to. |
+| No repository, or a repository with no commit | **RED** | Diagnoses only, regardless of the gate result — there is no HEAD to roll back to. |
 
 **Take the quality baseline in the same breath**, at every level including RED —
 the measurer is read-only, and this is the only chance to see the repo before

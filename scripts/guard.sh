@@ -33,9 +33,23 @@ set -uo pipefail
 # Untracked is the whole point of the second one. A tracked log on a normal
 # branch is a finished cleanup that got merged, not a live run: keying on mere
 # existence would leave the guard awake on main forever after the first merge.
+# current_branch — the branch HEAD points at, or empty when there is none.
+# Not `rev-parse --abbrev-ref HEAD`: on a repository whose first commit was never
+# made, that exits 128 and prints the literal string `HEAD` — the same output a
+# detached HEAD produces, so the caller cannot tell the two apart even when it
+# checks the exit code. Every caller here paid for it: `|| return 1` read "no
+# repo" and the guard went to sleep on a `cleanup/` branch, which is the
+# strongest evidence it has that a run is in flight.
+# `git branch --show-current` answers with the branch name on an unborn HEAD and
+# with nothing on a detached one, which is the distinction both callers need.
+current_branch() {
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+  git branch --show-current 2>/dev/null
+}
+
 inside_run() {
   local branch
-  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || return 1
+  branch=$(current_branch) || return 1
   case $branch in cleanup/*) return 0 ;; esac
   git rev-parse --show-toplevel >/dev/null 2>&1 || return 1
   local root; root=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
@@ -46,7 +60,7 @@ inside_run() {
 }
 
 on_trunk() { # is HEAD on the branch nobody may commit to?
-  local b; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || return 1
+  local b; b=$(current_branch) || return 1
   case $b in main|master) return 0 ;; *) return 1 ;; esac
 }
 
@@ -126,7 +140,7 @@ protocol needs it."
 merging it is the user's decision, on their own schedule."
       ;;
     commit)
-      on_trunk && deny "git commit on $(git rev-parse --abbrev-ref HEAD 2>/dev/null)" \
+      on_trunk && deny "git commit on $(current_branch)" \
         "All the work belongs on the cleanup/ branch. Create it (or switch back to
 it) and commit there."
       ;;
