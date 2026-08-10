@@ -173,7 +173,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 142/142 casos, 42/42 casos do guarda, 5/5 propriedades,
-# 35/35 casos de métrica, 382/382 invariantes, 9/9 mutações pegas
+# 35/35 casos de métrica, 388/388 invariantes, 9/9 mutações pegas
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -219,7 +219,7 @@ e se classifica em um de três níveis:
 
 | Nível | Condição | O que ela faz |
 |---|---|---|
-| GREEN | typecheck e testes passam | executa a fase 1 sem perguntar; fase 2 e fase 3 param no checkpoint humano |
+| GREEN | typecheck e testes passam | executa a fase 1 sem perguntar; fase 2 e fase 3 param no checkpoint humano; a fase 4 aplica o tier A por alvo coberto e para no checkpoint do tier B |
 | YELLOW | rede parcial, ou nenhum arquivo de teste no stack | só deps e arquivos órfãos, sem mexer em exports; não roda fase 2, fase 3 nem fase 4 |
 | RED | sem testes e sem typecheck, ou baseline já vermelho | só diagnostica; nada é deletado; não commit de `CLEANUP_PROGRESS` |
 
