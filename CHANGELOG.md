@@ -9,6 +9,48 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.3.6] — 2026-08-10
+
+Fecha a [#55](https://github.com/CRangelP/codebase-cleanup/issues/55) e a
+[#56](https://github.com/CRangelP/codebase-cleanup/issues/56), as duas achadas ao executar o
+roteiro da #34 com o plugin instalado de verdade — que é o que aquela issue existe para
+encontrar.
+
+### Corrigido
+
+- **Um repositório sem nenhum commit derrotava os dois mecanismos de segurança ao mesmo tempo.**
+  Medido num `git init` e nada mais: `--is-inside-work-tree` responde `true`,
+  `git status --porcelain` não imprime nada, e `git restore --staged --worktree .` responde
+  `fatal: could not resolve 'HEAD'`. Todas as medidas do Step 0 diziam *prossiga*, e o rollback
+  sobre o qual todo o argumento de segurança se apoia não existia ali.
+
+  O Step 0 escrevia "without commits there is no rollback" e testava se havia **repositório** —
+  outra pergunta, com outra resposta. Agora ele roda `git rev-parse --verify HEAD`, e a linha da
+  tabela de níveis cobre as duas condições.
+
+  O guarda falhava na mesma condição e pelo mesmo motivo: `inside_run()` abria com o que nunca
+  serviu aqui, `git rev-parse --abbrev-ref HEAD` — sai 128 numa HEAD não nascida, e o `|| return 1` lia
+  isso como "não é repo" — dormindo numa branch `cleanup/`, que é o sinal mais forte que ele tem
+  de que está numa run. Passa a ler o nome da branch com `git branch --show-current`, que
+  responde numa HEAD não nascida e fica vazio numa detached: é a distinção que os dois pontos de
+  chamada precisavam.
+
+  Cinco casos novos no `guard_test.sh`, os quatro primeiros vermelhos antes do conserto. Seção 18
+  do coherence e mutação M11.
+
+- **A cópia antiga e o plugin disputavam o mesmo gatilho automático.** Quem seguiu os READMEs
+  duas vezes, uma em cada época, fica com duas skills registradas, as duas com a mesma frase de
+  gatilho na `description`. A invocação explícita desambigua pelo namespace; o gatilho automático
+  fica em cima do muro e pode cair na cópia — a versão daquele dia, sem as fases e as correções
+  que vieram depois.
+
+  As duas formas de instalação continuam: a cópia existe para quem não usa plugin, e o
+  `${CLAUDE_PLUGIN_ROOT:-.}` do protocolo foi escrito para mantê-la funcionando. O que não pode
+  continuar é a migração silenciosa, e agora os dois READMEs mandam apagar a cópia, com o comando
+  e a razão. Seção 19 do coherence.
+
+418 invariantes, 11 mutações, 47 casos do guarda.
+
 ## [0.3.5] — 2026-08-10
 
 ### Corrigido
