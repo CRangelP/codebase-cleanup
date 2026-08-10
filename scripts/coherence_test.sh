@@ -1554,12 +1554,23 @@ code without any file in this repo changing"
 # sat at byte 40.732 — past any plausible reading of the cut. The level went on
 # being announced; what disappeared was what the level obliges.
 #
-# The budget is in BYTES because this suite has no tokenizer, and the conversion
-# is a choice of evidence, not a measurement: 3 bytes per token is the pessimistic
-# end for prose carrying markdown and code, so the error falls on the safe side.
-# A rule that fits here fits under any tokenizer; one that does not may still fit
-# under a kinder one, and the check would be early rather than wrong.
-SURVIVAL_BUDGET=15000   # 5.000 tokens x 3 bytes/token, the pessimistic conversion
+# The budget is in BYTES because this suite has no tokenizer. The conversion used
+# to be a guess — 3 bytes per token, described here as pessimistic — and the guess
+# was wrong in the dangerous direction. The host itself publishes the number:
+#
+#   $ claude plugin details codebase-cleanup
+#     codebase-cleanup   ~370 always-on   ~15.7k on-invoke
+#
+# 44.801 bytes over ~15.700 tokens is 2,854 bytes per token for this file, so the
+# old 15.000-byte budget was 5.257 tokens — above the very cut it was defending.
+# A check that is generous with a safety margin is not a safety margin.
+#
+# 14.000 bytes is 4.905 tokens at the measured rate, which keeps the margin on the
+# side that costs nothing: a rule that fits here fits under any tokenizer, and one
+# that does not may still fit under a kinder one, so the check errs early rather
+# than wrong. Re-measure with the command above when the file changes shape — a
+# rate derived from one file is not a constant of nature.
+SURVIVAL_BUDGET=14000   # 5.000 tokens x 2,854 bytes/token, measured by the host
 
 byte_offset() { # byte_offset <file> <literal> — bytes before the first match
   LC_ALL=C grep -abo -F -- "$2" "$1" 2>/dev/null | head -1 | cut -d: -f1

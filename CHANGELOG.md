@@ -9,6 +9,39 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.3.5] — 2026-08-10
+
+### Corrigido
+
+- **O orçamento da seção 17 estava frouxo, e o comentário dizia o contrário.** A conversão de
+  bytes para tokens era um chute — 3 bytes por token, descrito no código como "a conversão
+  pessimista". O host publica o número real:
+
+  ```
+  $ claude plugin details codebase-cleanup
+    codebase-cleanup   ~370 always-on   ~15.7k on-invoke
+  ```
+
+  44.801 bytes sobre ~15.700 tokens dão **2,854 bytes por token** neste arquivo. O orçamento de
+  15.000 bytes valia **5.257 tokens** — acima do próprio corte que ele existia para defender. Um
+  check generoso com a margem de segurança não é margem de segurança.
+
+  Agora são 14.000 bytes, que ao ritmo medido são 4.905 tokens. Provado: empurrando as regras
+  para o byte 15.974 — dentro do teto antigo — cinco checks reprovam.
+
+### Notas de projeto
+
+- **`claude plugin details <nome>` mede o que a #53 precisa medir.** Ele imprime o inventário de
+  componentes e o custo de token projetado, separando o que é pago em toda sessão (~370, o
+  frontmatter) do que é pago a cada disparo (**~15,7k**). É a régua da issue #53, e substitui
+  estimativa por número do host.
+- **`Skills (1) codebase-cleanup`** — o mesmo comando confirma que um `SKILL.md` na raiz, sem
+  `skills/`, é registrado como skill. O contador do `/reload-plugins` mostra `0 skills` nesse
+  layout, e é só o contador: o inventário, a invocação e o comportamento observado dizem o
+  contrário.
+
+410 invariantes.
+
 ## [0.3.4] — 2026-08-10
 
 Primeira parte da [#44](https://github.com/CRangelP/codebase-cleanup/issues/44): a pesquisa em
