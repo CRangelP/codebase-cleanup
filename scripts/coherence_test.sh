@@ -997,9 +997,20 @@ GUARDED
 # file is a delegation that dies at call time, and the two read-only ones carry
 # the checkpoint: a survey agent that can write is a survey that can decide,
 # which is the one thing the checkpoint exists to prevent. Plugin agents also
-# may not declare hooks, mcpServers or permissionMode — Claude Code refuses the
-# agent outright — so the ban is checked here rather than discovered on a user's
-# machine.
+# may not declare hooks, mcpServers or permissionMode. The reason this check
+# exists is the mechanism, and it is the opposite of what this comment used to
+# say: the host does not refuse the agent, it drops the fields without a word.
+#   "For security reasons, `hooks`, `mcpServers`, and `permissionMode` are not
+#    supported for plugin-shipped agents."
+#    — code.claude.com/docs/en/plugins-reference#agents, consultado 2026-08-10
+#   "plugin subagents don't support the `hooks`, `mcpServers`, or
+#    `permissionMode` frontmatter fields. These fields are ignored when loading
+#    agents from a plugin."
+#    — code.claude.com/docs/en/sub-agents#choose-the-subagent-scope, idem
+# The plugin loads, `claude plugin validate --strict` says nothing, and the
+# author ships believing a guard is in place. A field that is refused is caught
+# by the host; a field that is ignored is caught by nobody — which makes this
+# check the only place the mistake can surface at all.
 agent_frontmatter() { # agent_frontmatter <file> — the YAML block, or empty
   awk '/^---[[:space:]]*$/ { fm++; next } fm == 1 { print } fm >= 2 { exit }' "$1"
 }
@@ -1029,7 +1040,8 @@ filename is a delegation nobody can call"
   banned=$(agent_frontmatter "$f" | grep -E '^(hooks|mcpServers|permissionMode):' | tr '\n' ' ')
   check "$a declares no field a plugin agent may not have" \
         "$([[ -z $banned ]] && echo 0 || echo 1)" \
-        "plugin agents support none of hooks, mcpServers, permissionMode: $banned"
+        "a plugin agent does not get these fields, and is not told so — they are
+ignored on load, so the agent runs without the guard its frontmatter claims: $banned"
 
   check "Step 0.2 names $a" \
         "$(grep -q -F -- "codebase-cleanup:$a" SKILL.md && echo 0 || echo 1)" \
