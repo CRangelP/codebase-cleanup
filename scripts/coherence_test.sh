@@ -1262,25 +1262,51 @@ done
 # references/other-stacks.md then lowers that ceiling per stack. An agent that
 # reads only SKILL.md and never opens the reference would run at the table's
 # level, so the pointer has to exist in each file that carries the table.
-STACK_CAP_PHRASE='override the GREEN column'
-missing_cap=""
-for f in SKILL.md README.en.md references/other-stacks.md; do
-  grep -qF "$STACK_CAP_PHRASE" "$f" 2>/dev/null || missing_cap="$missing_cap $f"
+#
+# One phrase per file, not one phrase for all of them: README.md is in
+# Portuguese, and an English-only invariant leaves the Portuguese half of the
+# repo with no net at all. Measured before this list existed — deleting the cap
+# line from README.md, and turning its abort branch into a retry below, both
+# left the suite at 309/309 green. Same shape as section 9, which already pairs
+# each README with the word it uses.
+#
+# reflow, not a line-anchored grep: both READMEs are hard-wrapped by hand at
+# ~80 columns, so a sentence spans two lines the moment a word is added before
+# it. A grep that reads line by line asserts where the wrap falls, and would go
+# red on a rewrap that changed no meaning at all — the Portuguese abort branch
+# is split between "a skill **aborta** o" and "pipeline quando um comando".
+reflow() { tr '\n' ' ' < "$1" | tr -s ' '; }
+
+for pair in \
+  'SKILL.md|override the GREEN column' \
+  'README.en.md|override the GREEN column' \
+  'references/other-stacks.md|override the GREEN column' \
+  'README.md|sobrescrevem a coluna GREEN'
+do
+  f=${pair%%|*}
+  phrase=${pair#*|}
+  check "$f states that stack caps override the GREEN column" \
+        "$(reflow "$f" | grep -qF -- "$phrase" && echo 0 || echo 1)" \
+        "missing [$phrase] — without it a .NET or JVM repo reads GREEN from the
+table and runs with an authority its stack section refuses"
 done
-check "the stack-cap override is stated in every file carrying the level table" \
-      "$([[ -z $missing_cap ]] && echo 0 || echo 1)" \
-      "missing in:$missing_cap — without it a .NET or JVM repo reads GREEN from
-the table and runs with an authority its stack section refuses"
 
 # 16.3 The abort branch of a blocked rollback. When a hook refuses the restore,
 # the only safe move is to stop: working around the hook is the failure mode the
 # guard exists to prevent, and 'retry' or 'continue' would be exactly that. The
-# rule shipped as prose, so deleting the branch left the suite green.
-abort_files=$(grep -rlEi 'abort' --include='*.md' . 2>/dev/null | grep -vc '^$' || true)
-check "a blocked rollback still has an abort branch" \
-      "$(grep -qiE 'skill \*\*aborts\*\* the pipeline when a command of the protocol is blocked' README.en.md && echo 0 || echo 1)" \
-      "README.en.md must keep the abort branch for a protocol command blocked by
-a hook; working around the hook is what the guard exists to prevent"
+# rule shipped as prose, so deleting the branch left the suite green — in either
+# language, which is why this list has two rows and not one.
+for pair in \
+  'README.en.md|the skill **aborts** the pipeline when a command of the protocol is blocked' \
+  'README.md|a skill **aborta** o pipeline quando um comando do protocolo é barrado'
+do
+  f=${pair%%|*}
+  phrase=${pair#*|}
+  check "$f keeps the abort branch of a rollback blocked by a hook" \
+        "$(reflow "$f" | grep -qF -- "$phrase" && echo 0 || echo 1)" \
+        "missing [$phrase] — a protocol command blocked by a hook has to stop the
+run; working around the hook is what the guard exists to prevent"
+done
 
 # 16.4 A live 'git add -A' beside the correct form. Section 4 asserts the
 # positive form (`git add -- <pathspec>`) is present, which a document can

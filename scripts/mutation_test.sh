@@ -32,6 +32,8 @@ apply() {
     M4) perl -0pi -e 's/(`git add -- <paths this step produced or edited>`)/$1, or `git add -A` when that is quicker,/' SKILL.md ;;
     M5) perl -0pi -e 's/npx knip\@6\.32\.0 --cycles/npx knip --cycles/' references/phase-2-consolidation.md ;;
     M6) perl -0pi -e 's/\| A partial net, or no test file in the stack \| \*\*YELLOW\*\* \| [^|]*\|/| A partial net, or no test file in the stack | **YELLOW** | Runs phase 1 (deps and orphan files only, **not** exports). Does **not** run phase 2 by default, but runs phase 3 and phase 4 and commits what it changes. |/' SKILL.md ;;
+    M7) perl -ni -e 'print unless /sobrescrevem a coluna GREEN/' README.md ;;
+    M8) perl -0pi -e 's/a skill \*\*aborta\*\* o\npipeline quando um comando do protocolo é barrado/a skill tenta o comando de novo quando ele é barrado/' README.md ;;
   esac
 }
 
@@ -43,6 +45,8 @@ desc() {
     M4) echo "a live 'git add -A' offered beside the correct form" ;;
     M5) echo "npx without a pinned version" ;;
     M6) echo "YELLOW keeps both refusal phrases and grants phases 3 and 4 anyway" ;;
+    M7) echo "the stack-cap override disappears from the Portuguese README" ;;
+    M8) echo "the Portuguese README retries a rollback a hook blocked" ;;
   esac
 }
 
@@ -53,11 +57,13 @@ desc() {
 expect() {
   case $1 in
     M1) echo "the YELLOW cell of SKILL.md has [exports] denied" ;;
-    M2) echo "the stack-cap override is stated in every file carrying the level table" ;;
-    M3) echo "a blocked rollback still has an abort branch" ;;
+    M2) echo "SKILL.md states that stack caps override the GREEN column" ;;
+    M3) echo "README.en.md keeps the abort branch of a rollback blocked by a hook" ;;
     M4) echo "no live 'git add -A' or 'git add .' anywhere in the docs" ;;
     M5) echo "every npx in the docs pins a version" ;;
     M6) echo "the YELLOW cell of SKILL.md has [phase 3] denied" ;;
+    M7) echo "README.md states that stack caps override the GREEN column" ;;
+    M8) echo "README.md keeps the abort branch of a rollback blocked by a hook" ;;
   esac
 }
 
@@ -67,7 +73,11 @@ copy_repo() {
   rm -rf "$1/.git"
 }
 
-MUTATIONS="M1 M2 M3 M4 M5 M6"
+MUTATIONS="M1 M2 M3 M4 M5 M6 M7 M8"
+# Every file any mutation edits. The STALE guard below compares this set before
+# and after: a file missing from it makes its own mutations report "changed
+# nothing" forever, which is the stale-by-construction case the guard exists for.
+MUTATED_FILES="SKILL.md README.md README.en.md references/phase-2-consolidation.md"
 total=0
 for m in $MUTATIONS; do total=$((total + 1)); done
 
@@ -97,9 +107,9 @@ for m in $MUTATIONS; do
   # A mutation that no longer edits anything would report "caught" forever,
   # which is the same false confidence this suite exists to remove. If the text
   # it targets was reworded, this fails loudly instead of going quiet.
-  before=$(cd "$W" && cat SKILL.md README.en.md references/phase-2-consolidation.md | cksum)
+  before=$(cd "$W" && cat $MUTATED_FILES | cksum)
   ( cd "$W" && apply "$m" )
-  after=$(cd "$W" && cat SKILL.md README.en.md references/phase-2-consolidation.md | cksum)
+  after=$(cd "$W" && cat $MUTATED_FILES | cksum)
   if [[ $before == "$after" ]]; then
     echo "STALE   $m — the mutation changed nothing; its target text was reworded"
     undetected=$((undetected + 1)); rm -rf "$W"; continue
