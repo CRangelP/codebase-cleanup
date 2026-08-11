@@ -145,7 +145,8 @@ anyway because "the diff looks small". Only an explicit answer unblocks the
 pipeline. If they pick 1 or 2, run `git status --porcelain` again and confirm
 it is empty before moving on.
 
-**Detached HEAD** (`--abbrev-ref HEAD` prints `HEAD`). Not a blocker: record
+**Detached HEAD** (`git branch --show-current` prints nothing, and `--verify HEAD`
+succeeded — that pair is the whole test). Not a blocker: record
 the current commit in `CLEANUP_PROGRESS.md` and create the cleanup branch
 normally — it will branch off that commit, which is exactly what you want. Note
 in the final report that the work started from a detached HEAD, so the user

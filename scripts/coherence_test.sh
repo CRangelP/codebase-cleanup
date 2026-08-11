@@ -1641,8 +1641,20 @@ check "guard.sh reads no branch name through rev-parse --abbrev-ref" \
 printing the literal 'HEAD', which is also what a detached HEAD prints, so the
 caller cannot tell the two apart and \`|| return 1\` reads it as 'no repo'"
 
-abbrev_in_docs=$(uncovered 'rev-parse --abbrev-ref')
-check "no doc offers rev-parse --abbrev-ref as the way to read the branch" \
+# `--abbrev-ref` bare, not only after `rev-parse`: the detached-HEAD paragraph of
+# SKILL.md kept teaching the old form for two commits after the fix because it
+# named the flag without the subcommand, and a pattern anchored on `rev-parse`
+# walked right past the one place that still had it wrong.
+# CHANGELOG.md is excluded here, and only here. A changelog exists to narrate what
+# changed, so it has to name the old form in the past tense — "the invariant was
+# anchored on X" is the sentence, and there is no honest way to put a negation
+# 48 characters before it without lying about the tense. The other users of this
+# helper (bare `npx knip`, `git add -A`) do not have that problem: a changelog
+# never has a reason to write those as instructions. Narrowing the exemption to
+# this call site keeps the exemption honest — a blanket one inside the helper
+# would let the changelog teach an unpinned npx forever.
+abbrev_in_docs=$(uncovered '[-]-abbrev-ref' | tr ' ' '\n' | grep -v '^\./CHANGELOG\.md$' | tr '\n' ' ')
+check "no doc offers --abbrev-ref as the way to read the branch" \
       "$([[ -z ${abbrev_in_docs// /} ]] && echo 0 || echo 1)" \
       "uncovered occurrence in: ${abbrev_in_docs:-none} — the docs may quote the
 call to explain why it is wrong; offering it as the instruction is what puts the

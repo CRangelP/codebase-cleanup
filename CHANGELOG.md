@@ -9,6 +9,26 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.3.7] — 2026-08-10
+
+### Corrigido
+
+- **O parágrafo de detached HEAD ainda ensinava a forma que a 0.3.6 tinha acabado de proibir.**
+  O conserto da [#55](https://github.com/CRangelP/codebase-cleanup/issues/55) trocou a leitura da
+  branch em todo o `guard.sh` e escreveu o invariante que impede a volta — mas o invariante
+  ancorava em `rev-parse --abbrev-ref`, e o `SKILL.md` nomeava a flag **sem o subcomando na
+  frente**. Passou reto pelo único lugar que continuava errado.
+
+  Ironia útil: o texto que sobrou mandava reconhecer detached HEAD justamente pela chamada que
+  **não** distingue detached de HEAD não nascida — as duas imprimem a string literal `HEAD`. Era o
+  defeito da #55 sobrevivendo na prosa depois de morrer no código.
+
+  Agora o teste é o par que o `guard.sh` usa: `git branch --show-current` vazio **com**
+  `--verify HEAD` bem-sucedido. O invariante passou a morder `--abbrev-ref` nua, e a mutação M12
+  devolve a frase antiga.
+
+420 invariantes, 12 mutações, 47 casos do guarda.
+
 ## [0.3.6] — 2026-08-10
 
 Fecha a [#55](https://github.com/CRangelP/codebase-cleanup/issues/55) e a
