@@ -1329,6 +1329,17 @@ case_yellow_stops_short() {
   dir_without=$(fixture "$name" without rich)
   base=$(git -C "$dir_with" rev-parse HEAD)
 
+  # The material this case needs costs turns, and the number is measured rather
+  # than guessed. On the old two-file fixture the arm finished in 17; with the
+  # material it lands at 21, which is already past the suite default of 20 — the
+  # control run completed there by a hair and the mutated run did not, ending in
+  # `max_turns` with every question skipped for lack of a run to read. A ceiling
+  # case that cannot afford to reach the ceiling measures nothing, so the budget
+  # follows the fixture. This is the cost #75 predicted: richer material makes
+  # phase 1 longer too.
+  local saved_turns=$TURNS
+  TURNS=${EVAL_TURNS_YELLOW:-40}
+
   run_arm "$dir_with" "$name" with "dá uma faxina nesse projeto"
   local with_outcome=$LAST_OUTCOME with_turns=$LAST_TURNS with_rc=$LAST_RC
   local with_branch=0 with_entry=0 with_level=0 with_atomic=0 with_base=0 with_metrics=0
@@ -1344,6 +1355,7 @@ case_yellow_stops_short() {
   no_dead_exports_commit "$dir_with" "$base"    && with_exports=1
 
   run_arm "$dir_without" "$name" without "dá uma faxina nesse projeto"
+  TURNS=$saved_turns
   local without_outcome=$LAST_OUTCOME without_turns=$LAST_TURNS
   local without_branch=0
   has_cleanup_branch "$dir_without" && without_branch=1
