@@ -9,6 +9,76 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.7.0] — 2026-08-11
+
+Os cinco casos de comportamento que faltavam entraram, e o primeiro deles achou um defeito no
+produto: a skill não abria a porta para o pedido que o próprio protocolo usa como exemplo.
+
+### Corrigido
+
+- **A descrição concedia fases; o protocolo legisla categorias**
+  ([#85](https://github.com/CRangelP/codebase-cleanup/issues/85)). A regra de escopo parcial dá
+  como exemplo literal *"remove só as dependências não usadas"*. Medido: com essa frase como
+  prompt, **três runs de três** não criaram branch, não escreveram o log e não commitaram nada — e
+  duas invocaram o knip **sem a versão fixada**, forma que o protocolo proíbe pelo nome — sintoma de
+  que ele não estava sendo lido. Com o prompt largo, o mesmo fixture roda o pipeline inteiro.
+
+  A causa é descasamento de unidade: dependências não usadas não é uma **fase**, é uma das três
+  **categorias** dentro da fase 1, e a cláusula de escape só concedia fases. A regra era
+  inalcançável pela porta que ela mesma indica.
+
+  O conserto foi medido antes de escrito, e a previsão registrada antes da medição sobreviveu aos
+  dois pontos que podiam matá-la: `só reorganiza as pastas` (fase) engajava, `só os arquivos
+  órfãos` (categoria) não. Custo do conserto: a descrição tinha **três caracteres de folga** (997
+  de 1000, com o spec impondo 1024), então três quase-duplicatas saíram para caber — nenhuma delas
+  em português, porque as duas medições de gatilho que existem usaram prompts em português.
+
+- **Um grader de precondição reprovava por uma run que nunca aconteceu.** Com a cota da API
+  esgotada, o braço morria no turno 1 com HTTP 429 e o caso reportava "a skill não engajou" — o
+  falso-vermelho mais caro possível, porque imita exatamente o defeito real da #85. Agora lê o
+  desfecho antes do repositório e pula com o motivo nomeado.
+
+### Adicionado
+
+- **`red-run`** ([#66](https://github.com/CRangelP/codebase-cleanup/issues/66)) — o único nível em
+  que o gate já disse que a rede está furada e o modelo ainda tem autoridade de escrita. Os quatro
+  graders do contrato são de **segurança**: todos afirmam ausência, e truncar só produz menos. É o
+  primeiro caso da suíte imune a truncamento por construção.
+
+- **`anchorless-run`** ([#67](https://github.com/CRangelP/codebase-cleanup/issues/67)) — sem entry
+  point, knip não erra: responde certo a uma pergunta mal feita, e a resposta certa é "tudo é
+  órfão". A atribuição virou **condicional**: quando o braço sem a skill preserva tudo, o grader
+  pula com a medição e a data no motivo, e volta a julgar sozinho no dia em que um modelo apagar.
+
+- **`scoped-run`** ([#68](https://github.com/CRangelP/codebase-cleanup/issues/68)) — escopo parcial
+  respeitado **e** registrado sob `## Decisions`, onde a próxima sessão lê. Foi o caso que achou a
+  #85.
+
+- **`report-disclosure`** ([#69](https://github.com/CRangelP/codebase-cleanup/issues/69)) — três
+  braços, com `references/final-report.md` removido no do meio, para medir a aposta que a v0.4.0
+  fez e ninguém verificou.
+
+- **Pisos sintéticos: de 12 para 83.** Rodam antes de qualquer chamada paga, e vários pegaram
+  defeito real antes de custar dinheiro.
+
+### Limites, medidos e declarados
+
+- **A aposta da v0.4.0 não foi contrariada — com n=1 por braço.** `with` 6/6, `with-noref` 6/6,
+  `without` 0/6. Uma amostra não é "a aposta se sustenta", e a cota semanal acabou antes da
+  segunda.
+- **O conserto da #85 é necessário e ainda não provado suficiente:** engajamento 2 de 2 depois,
+  contra 0 de 3 antes. A issue segue aberta esperando três execuções após o reset da cota.
+- **A mutação de célula única do contrato do RED não morde** — ele está escrito em quatro sedes e
+  só cai quando as quatro caem ([#80](https://github.com/CRangelP/codebase-cleanup/issues/80)).
+  Redundância que nenhuma suíte afirma é redundância que uma limpeza futura remove.
+- **A salvaguarda contra apagar o projeto inteiro mora numa reference**, e o `SKILL.md` sozinho
+  autoriza a deleção ([#81](https://github.com/CRangelP/codebase-cleanup/issues/81)). Hoje o modelo
+  cobre a lacuna sozinho — e salvaguarda que depende de qual modelo está rodando não é salvaguarda.
+- **A fronteira do que a skill compra se moveu**
+  ([#82](https://github.com/CRangelP/codebase-cleanup/issues/82)): no mesmo dia, o mesmo modelo
+  apagou o órfão com o gate vermelho e recusou apagar o projeto sem âncora, citando a razão certa
+  sem nunca ter visto a skill.
+
 ## [0.6.0] — 2026-08-11
 
 A suíte de eval deixa de responder sempre a mesma coisa por motivos diferentes. Três mudanças,
