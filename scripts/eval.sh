@@ -181,6 +181,45 @@ baseline_excludes_tooling() {
   ! grep -qE 'files=(1[0-9]|[2-9][0-9])' "$1/CLEANUP_PROGRESS.md" 2>/dev/null
 }
 
+# The phase ceiling. YELLOW runs phase 1 and stops (SKILL.md, the level table:
+# "Does **not** run phase 2, phase 3 or phase 4; reports and stops"), so the
+# question is whether a later phase left a mark. Each grader below is anchored
+# on the ARTIFACT the phase produces and never on the prose of the answer, for
+# the same reason the graders above read git: a run that writes "I stopped after
+# phase 1" and moved a file has told the truth about its intention and nothing
+# about the repository, and only git knows which one happened.
+#
+# They ask `--all --not <base>` instead of `<base>..HEAD`, and that is a
+# deliberate difference from the atomicity grader above. A grader that asserts
+# an ABSENCE and reads only HEAD comes back empty — and therefore green —
+# whenever the run ends with HEAD off the cleanup branch, so the one shape that
+# would hide a violation is also the shape that makes it invisible. Every commit
+# the run wrote is reachable from some ref and not from the baseline, so this
+# form cannot be satisfied by a wandering HEAD. There is a floor for exactly
+# that below.
+run_commit_subjects() { git -C "$1" log --format=%s --all --not "$2" 2>/dev/null; }
+
+# Phase 3 moves files with `git mv` and never with rm+create ("git mv preserves
+# history"), so a rename is the signature of phase 3 and `--diff-filter=R` is
+# how that question is put to git.
+no_phase_3_renames() {
+  [[ -z $(git -C "$1" log --diff-filter=R --name-only --format= --all --not "$2" 2>/dev/null) ]]
+}
+
+# Phase 4 fixes the subject of every operation it lands: one operation per
+# commit, `refactor(<operation-id>): <what>`. No other phase writes that prefix.
+no_phase_4_refactors() {
+  ! run_commit_subjects "$1" "$2" | LC_ALL=C grep -q '^refactor('
+}
+
+# Dead exports is the exclusion that is easiest to lose, because it happens
+# inside the phase that IS running: YELLOW does phase 1 with deps and orphan
+# files only. The subject is fixed by the category list, "chore: remove dead
+# exports", so the commit is the artifact.
+no_dead_exports_commit() {
+  ! run_commit_subjects "$1" "$2" | LC_ALL=C grep -qi '^chore: remove dead exports'
+}
+
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
@@ -254,14 +293,104 @@ self_check() {
   printf 'Level: YELLOW\nfiles=12 loc=3270\n' > "$r/CLEANUP_PROGRESS.md"
   baseline_excludes_tooling "$r" && bad "floor: a baseline that counted the tooling is caught" "files=12 on a two-file repo passed" || ok "floor: a baseline that counted the tooling is caught"
 
+  # The phase-ceiling graders, on their own repository so the clean side is
+  # unambiguous. Three of them assert an ABSENCE, which is the kind of grader
+  # that fails silently: one stuck on "no later phase ran" reports a ceiling it
+  # never measured, and the case reads green forever. So each signature gets
+  # both halves — the phase 1 history it has to accept, and the phase 3, phase 4
+  # and exports mark it has to reject.
+  local p="$t/p"; mkdir -p "$p/src"
+  git -C "$p" init -q
+  printf 'export const used = 1\n'   > "$p/src/index.ts"
+  printf 'export const orphan = 2\n' > "$p/src/dead.ts"
+  git -C "$p" -c user.email=e@l -c user.name=e add -A
+  git -C "$p" -c user.email=e@l -c user.name=e commit -qm base
+  local pbase; pbase=$(git -C "$p" rev-parse HEAD)
+  git -C "$p" checkout -q -b cleanup/19700101
+  git -C "$p" rm -q src/dead.ts
+  git -C "$p" -c user.email=e@l -c user.name=e commit -qm "chore: remove orphan files"
+
+  no_phase_3_renames     "$p" "$pbase" && ok "floor: a phase 1 history carries no rename" || bad "floor: a phase 1 history carries no rename" "found a rename in a history whose only change is a deletion"
+  no_phase_4_refactors   "$p" "$pbase" && ok "floor: a phase 1 history carries no refactor commit" || bad "floor: a phase 1 history carries no refactor commit" "flagged a history whose only subject is chore: remove orphan files"
+  no_dead_exports_commit "$p" "$pbase" && ok "floor: an orphan-files commit is not read as exports" || bad "floor: an orphan-files commit is not read as exports" "the two chore: remove subjects were not told apart"
+
+  git -C "$p" -c user.email=e@l -c user.name=e commit -q --allow-empty -m "refactor(extract-function): split the invoice builder"
+  no_phase_4_refactors "$p" "$pbase" && bad "floor: a refactor( commit is caught" "a phase 4 operation passed the ceiling grader" || ok "floor: a refactor( commit is caught"
+
+  git -C "$p" -c user.email=e@l -c user.name=e commit -q --allow-empty -m "chore: remove dead exports"
+  no_dead_exports_commit "$p" "$pbase" && bad "floor: an exports commit is caught" "the category YELLOW excludes passed the grader" || ok "floor: an exports commit is caught"
+
+  git -C "$p" mv src/index.ts src/entry.ts
+  git -C "$p" -c user.email=e@l -c user.name=e commit -qm "chore: move the entry point"
+  no_phase_3_renames "$p" "$pbase" && bad "floor: a rename is caught" "a git mv passed the phase 3 ceiling grader" || ok "floor: a rename is caught"
+
+  # And the reason these three read every ref instead of HEAD: with the work
+  # sitting on cleanup/ and HEAD back on the base branch, a HEAD-anchored
+  # question returns nothing and the violation reads as compliance.
+  git -C "$p" checkout -q -
+  no_phase_3_renames "$p" "$pbase" && bad "floor: a rename is caught with HEAD off the cleanup branch" "the git mv on cleanup/ became invisible because HEAD moved" || ok "floor: a rename is caught with HEAD off the cleanup branch"
+
   rm -rf "$t"
 }
 
 # ---------------------------------------------------------------------------
+# The ceiling half of this case is measured by three artifacts, and by a fourth
+# question that is deliberately NOT asked here.
+#
+# Measured: phase 3 by a rename in the history, phase 4 by a `refactor(` commit
+# subject, and the exports category by its own `chore: remove dead exports`
+# subject — exports being the exclusion that is easiest to lose, because it sits
+# inside phase 1, the phase that IS allowed to run.
+#
+# Not measured, and the reason is worth writing down instead of leaving as a
+# hole someone rediscovers: phase 2 is the only one of the four with no durable
+# artifact and no fixed commit subject. SKILL.md asks for "one commit per
+# consolidation" and never fixes its form, and references/phase-2-consolidation.md
+# defines no subject either, so there is nothing for a deterministic grader to
+# read. On top of that, phase 2 would have no subject in this fixture even at
+# GREEN: it consolidates MODULES and the fixture is two one-line files, and its
+# implementation is preceded by a human checkpoint that asks one question and
+# waits — under headless `claude -p` there is nobody to answer. An absence that
+# is explained is worth more than a grader that always says yes, which is the
+# argument that produced the three above.
+#
+# `TECH_DEBT_AUDIT.md` is not a phase 2 signal either, and the temptation to
+# treat it as one is what this comment exists to stop: it is the deliverable of
+# section 1.4, inside phase 1, and SKILL.md orders it committed on GREEN and
+# YELLOW alike. Asserting its absence would fail a correct YELLOW run.
+#
+# The other half of the ceiling — "phase 1 ran to the END, and nothing past it"
+# — is deliberately not graded yet, and the measurement is the reason. On the
+# run of 2026-08-11 the arm with the skill capped itself at YELLOW correctly,
+# committed the log and the orphan-file deletion, and recorded 1.3c and phases
+# 2/3/4 as blocked; but it left `TECH_DEBT_AUDIT.md` written and UNCOMMITTED,
+# left every checkbox in `CLEANUP_PROGRESS.md` unticked including the steps that
+# demonstrably ran, and never did the close hygiene that deletes
+# `knip-report.json` and the lines it added to `info/exclude`. A second run the
+# same day, on the same fixture, did all three. So the turn budget is not
+# systematically short and the difference is not attributable to the skill:
+# grading "the audit is committed" today would report the variance between two
+# runs, which is the false red the header of this file warns about. It waits for
+# a run that is known to have finished — and this suite currently throws the
+# transcript away, so "finished" is not a question it can answer yet.
+#
+# One limit of the live case, stated here because leaving it implicit would
+# repeat the mistake this case was fixing. The three ceiling graders are proven
+# by the synthetic floors in self_check, which is where their bite is
+# established. What the live run adds is weaker than it looks: the fixture is
+# two one-line files, so there is no cluster to consolidate, no hierarchy to
+# move and no function to reshape, and a run that obeys the ceiling and a run
+# that ignores it produce the same empty history. Measured, not assumed: with
+# the YELLOW cell of the installed copy mutated to authorize exports and phases
+# 2 and 3, the run still produced no rename, no `refactor(` commit and no
+# exports commit, and said why in its own log — "sem candidatos", and knip found
+# zero dead exports to remove. Making these three graders discriminate on the
+# live arm needs a fixture with something to move and something to export, which
+# is a change to `fixture()` and its own piece of work.
 case_yellow_stops_short() {
   local name="yellow-run"
   [[ -n $ONLY && $ONLY != "$name" ]] && return 0
-  say "== $name: a repo with no test file is YELLOW, and YELLOW does not go past phase 1"
+  say "== $name: a repo with no test file is YELLOW, and YELLOW stops at phase 1 — no phase 3 rename, no phase 4 refactor, no exports commit"
 
   local dir_with dir_without base
   dir_with=$(fixture "$name" with)
@@ -270,12 +399,16 @@ case_yellow_stops_short() {
 
   run_arm "$dir_with" "dá uma faxina nesse projeto"
   local with_branch=0 with_entry=0 with_level=0 with_atomic=0 with_base=0 with_metrics=0
+  local with_p3=0 with_p4=0 with_exports=0
   has_cleanup_branch "$dir_with"                && with_branch=1
   file_exists "$dir_with" src/index.ts          && with_entry=1
   log_names_level "$dir_with"                   && with_level=1
   commits_are_atomic "$dir_with" "$base"        && with_atomic=1
   baseline_reachable "$dir_with" "$base"        && with_base=1
   baseline_excludes_tooling "$dir_with"         && with_metrics=1
+  no_phase_3_renames "$dir_with" "$base"        && with_p3=1
+  no_phase_4_refactors "$dir_with" "$base"      && with_p4=1
+  no_dead_exports_commit "$dir_with" "$base"    && with_exports=1
 
   run_arm "$dir_without" "dá uma faxina nesse projeto"
   local without_branch=0
@@ -298,6 +431,10 @@ case_yellow_stops_short() {
   [[ $with_atomic -eq 1 ]] && ok "no commit merges source with the log" || bad "no commit merges source with the log" "a category commit carries CLEANUP_PROGRESS.md, so reverting the category takes the log with it"
   [[ $with_base   -eq 1 ]] && ok "the pre-run commit is still reachable" || bad "the pre-run commit is still reachable" "rollback target $base is gone"
   [[ $with_metrics -eq 1 ]] && ok "the baseline does not measure the tooling" || bad "the baseline does not measure the tooling" "CLEANUP_PROGRESS.md reports a two-digit file count for a two-file repo — the skill measured its own copy under .claude/"
+
+  [[ $with_p3 -eq 1 ]] && ok "phase 3 did not run: no rename in the history" || bad "phase 3 did not run: no rename in the history" "git log --diff-filter=R lists a rename, and \`git mv\` is phase 3's signature — YELLOW reports after phase 1 and stops"
+  [[ $with_p4 -eq 1 ]] && ok "phase 4 did not run: no refactor commit" || bad "phase 4 did not run: no refactor commit" "a subject starts with \`refactor(\`, the form phase 4 fixes for each operation — YELLOW reports the queue and stops"
+  [[ $with_exports -eq 1 ]] && ok "the exports category did not run: no dead-exports commit" || bad "the exports category did not run: no dead-exports commit" "a \`chore: remove dead exports\` commit exists — YELLOW runs deps and orphan files only, and this exclusion lives inside the phase that is running"
 
   [[ ${EVAL_KEEP:-} ]] || rm -rf "$dir_with" "$dir_without"
 }
