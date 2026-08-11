@@ -387,6 +387,20 @@ cat > "$TMP/js-pwnt/package.json" <<'EOF'
 {"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No tests found, exiting with code 0')\""}}
 EOF
 
+# The same empty suite, but loud. #94: `printf | grep -q` under `pipefail`
+# returns 141 when the producer still has data after grep matches and exits, so
+# a marker that IS in the output reads as absent. The boundary is the pipe
+# buffer (64 KB on macOS), which is why every fixture above — all of them a few
+# hundred bytes — passes with the defect standing. This one prints the marker
+# first and then ~800 KB of ordinary suite chatter, which is what a real project
+# produces. Under the defect the gate misses the marker, counts the suite as run
+# and announces GREEN: the level that unlocks dead-export deletion, over a
+# repository where zero tests executed.
+mkdir -p "$TMP/js-pwnt-loud"
+cat > "$TMP/js-pwnt-loud/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"node -e \"console.log('No tests found, exiting with code 0'); const line='ordinary suite output line that a real project prints while running'; for (let i=0;i<12000;i++) console.log(i+' '+line)\""}}
+EOF
+
 # node:test on an empty run: exit 0 and a count, none of the phrases the other
 # runners print. Both reporters are covered — the default one's marker is
 # multibyte, which a greedy negated class skips under a UTF-8 locale.
@@ -1099,6 +1113,10 @@ case_run js-empty-jest-real 0 "$TMP/js-empty-jest-real" - "checks=typecheck$" \
 case_run js-empty-inline-then-error 1 "$TMP/js-empty-inline-then-error" - "RED" \
          '!YELLOW' "!'test' not counted"
 case_run js-pwnt          0 "$TMP/js-pwnt" -                "checks=typecheck$" "YELLOW" \
+         "runner reported no tests" "'test' not counted" '!GREEN' '!RED'
+# Same assertions, ~800 KB of output. The pair is the point: the quiet one passes
+# with the #94 defect standing, and only the loud one tells them apart.
+case_run js-pwnt-loud     0 "$TMP/js-pwnt-loud" -           "checks=typecheck$" "YELLOW" \
          "runner reported no tests" "'test' not counted" '!GREEN' '!RED'
 case_run js-real-pass     0 "$TMP/js-real-pass" -           "checks=typecheck,test" "GREEN" \
          "!'test' not counted"
