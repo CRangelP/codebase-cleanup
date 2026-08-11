@@ -9,6 +9,90 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.6.0] — 2026-08-11
+
+A suíte de eval deixa de responder sempre a mesma coisa por motivos diferentes. Três mudanças,
+e a terceira muda como toda vermelhidão desta suíte se lê daqui para frente.
+
+### Adicionado
+
+- **O desfecho da run virou dado** ([#74](https://github.com/CRangelP/codebase-cleanup/issues/74)).
+  O `run_arm` atribuía o transcript a `LAST_OUT` e nenhum caso o lia: a suíte jogava fora a
+  evidência mais cara que produz. Agora o envelope de `--output-format json` é guardado **ao lado**
+  do fixture e nunca dentro — transcript dentro do repositório seria lido pelos graders que fazem
+  `grep` nele, que é o mesmo defeito que esta suíte encontrou na estreia, quando a skill instalada
+  em `.claude/` inflou o baseline que devia medir.
+
+  Medido nos dois desfechos (claude 2.1.220): run que termina dá
+  `terminal_reason=completed`, `subtype=success` e a prosa em `result`; run que bate no teto dá
+  `max_turns`, `error_max_turns` e — a assimetria que decide desenho — **sem a chave `result`**.
+  Não é prosa curta, é prosa ausente: todo grader que lê prosa é grader de conclusão por
+  construção, não por escolha.
+
+- **Graders passaram a ter família, e truncamento deixou de ser veredito.** Perguntas de
+  **segurança** (o entry point sobreviveu, o commit anterior é alcançável, nenhum commit fundiu
+  fonte com log, nenhum rename, nenhum `refactor(`, nenhum commit de exports) valem sempre: quem
+  destruiu o alvo de rollback e depois bateu no teto destruiu do mesmo jeito, e "não terminei" não
+  é defesa. Perguntas de **conclusão** (o log nomeia o nível) viram `skip` **nomeado** quando a run
+  não terminou — nunca `pass`, que seria inventar evidência, nunca `fail`, que é o falso-vermelho
+  contra o qual o cabeçalho do arquivo avisa desde a primeira versão.
+
+  Antes havia um veredito só para as duas famílias, e a escolha era entre reportar truncamento como
+  defeito ou ignorar vermelho. As duas ensinam a parar de ler a saída.
+
+- **O teto de fase do YELLOW virou grader em vez de promessa no nome**
+  ([#65](https://github.com/CRangelP/codebase-cleanup/issues/65)). O caso se anunciava como
+  *"YELLOW does not go past phase 1"* e nenhum dos seis graders dele perguntava se a fase 2, 3 ou 4
+  rodou. Cobertura falsa é pior que ausência: ninguém procura o que já acha medido. Entraram três,
+  cada um ancorado no artefato que a fase produz — rename no histórico (a fase 3 é sempre
+  `git mv`), assunto `refactor(` (a fase 4 fixa a forma) e `chore: remove dead exports` (a exclusão
+  mais fácil de perder, porque mora dentro da fase que **está** autorizada a rodar).
+
+  Eles perguntam `--all --not <base>` e não `<base>..HEAD`: grader que afirma ausência e lê só o
+  `HEAD` volta vazio — e portanto verde — sempre que a run termina fora da branch `cleanup/`.
+
+- **Os fixtures ficaram herméticos** ([#72](https://github.com/CRangelP/codebase-cleanup/pull/72)).
+  A fase 1 roda `npx knip@6.32.0`, e sem cópia local esse comando precisa do registry: com cache
+  frio e `npm_config_offline`, ele morre em `ENOTCACHED`. Download dentro de uma run limitada por
+  `--max-turns` é tempo morto no melhor caso e, no pior, um vermelho cuja causa não é a skill.
+
+  O knip é **declarado** e não contrabandeado, porque `npm install` — que a categoria de deps roda
+  para re-resolver — poda o que `node_modules` tem e o `package.json` não declara: 20 pacotes
+  viraram 3 na medição, o knip entre eles. E declarar não entrega alvo falso à run: o knip não
+  acusa a si mesmo, com o contra-teste de que **acusa** um `left-pad` no mesmo repositório.
+
+- **Pisos sintéticos: de 12 para 39.** Rodam antes de qualquer chamada paga e provam a mordida onde
+  ela pode ser provada de graça. Entre eles, o que mais importa desta versão: *truncar não pode
+  fabricar VERDE* — `skip` é ausência de evidência, não evidência de conformidade.
+
+### Corrigido
+
+- **Um grader que era seguro no vermelho e vazio no verde.** `the baseline does not measure the
+  tooling` é escrito como negação, então uma run que nunca tirou baseline passava por **ausência de
+  contagem**, não por contagem certa. Ganhou pré-condição: sem linha `files=` no log, a resposta é
+  `skip`. O vermelho dele sempre foi real; o verde é que não era evidência.
+
+- **O contador `skipped` existia desde a estreia e nunca era lido.** Agora conta o que não rodou, e
+  o resumo o nomeia — piso que não rodou não é piso que passou.
+
+### Limites, medidos e declarados
+
+Publicados porque prometer cobertura que a medição não entrega é o defeito que esta versão
+conserta, e repeti-lo um andar acima seria pior.
+
+- **A prova cara do teto de fase não mordeu.** Com a célula do YELLOW mutada para autorizar exports
+  e as fases 2 e 3, os três graders continuaram verdes — e a causa não está neles: o fixture tem
+  dois arquivos de uma linha, então obedecer o teto e ignorá-lo produzem a mesma história vazia. A
+  mordida está estabelecida nos pisos sintéticos, que é onde ela pode ser estabelecida.
+  ([#75](https://github.com/CRangelP/codebase-cleanup/issues/75))
+- **A fase 2 não tem grader**, e o cabeçalho do caso explica por quê: é a única das quatro sem
+  artefato durável nem assunto de commit fixo, e neste fixture não teria nem sujeito nem
+  interlocutor. ([#71](https://github.com/CRangelP/codebase-cleanup/issues/71))
+- **O grader "a fase 1 fechou inteira" segue bloqueado por metade.** Em duas runs comprovadamente
+  completas, o `TECH_DEBT_AUDIT.md` foi commitado 2 de 2 e o commit `chore: duplication survey`
+  apareceu 0 de 2, com a run registrando *"1.5 não aplicável"* — e o texto não abre exceção para
+  isso. ([#77](https://github.com/CRangelP/codebase-cleanup/issues/77))
+
 ## [0.5.0] — 2026-08-10
 
 Fecha a [#63](https://github.com/CRangelP/codebase-cleanup/issues/63). A primeira suíte deste
