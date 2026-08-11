@@ -480,6 +480,54 @@ paragraph_with() {
 # yellow-run of 2026-08-11, whose CLEANUP_PROGRESS.md is entirely in Portuguese
 # and whose Decisions section already says "fora de escopo". A grader that took
 # only the English literal would be measuring which language the session ran in.
+# ---------------------------------------------------------------------------
+# The final report is the one product of this protocol that is PROSE: it is
+# delivered in the answer, not written into the repository. This suite refuses
+# an LLM judge — the same reason phase 1.5 refuses one — so the questions below
+# are anchored on tokens the NORMATIVE TEXT names, never on style.
+#
+# SKILL.md lists what the summary has to carry, and each anchor here is one item
+# of that list, with the reason it is a token and not a taste:
+#
+#   the branch ................. `cleanup/`, the prefix Step 0 creates
+#   the level .................. GREEN / YELLOW / RED, the words the table uses
+#   the commit count ........... a number followed by "commit"
+#   one row per phase .......... the word phase, in either language
+#   the quality delta .......... `files` and `loc`, the quantities metrics.sh
+#                                measures and the diff is taken over
+#   how to revert .............. `git revert`, the literal command SKILL.md gives
+#
+# One anchor was measured wrong on the first pass and is worth recording,
+# because it is the same trap as reading a null result as a negative one. The
+# delta check started as `files=` — the exact shape metrics.sh prints. The arm
+# with the reference removed reported the delta as "files 3→2, loc 5→4", which
+# satisfies the OBLIGATION and not the FORMAT, and the grader would have scored
+# that as a degradation caused by the missing reference. That would have been
+# this case inventing evidence for its own hypothesis. The anchor is the
+# quantity, not the punctuation.
+report_has_branch()   { printf '%s' "$1" | LC_ALL=C grep -q 'cleanup/'; }
+report_has_level()    { printf '%s' "$1" | LC_ALL=C grep -qE '(^|[^A-Za-z])(GREEN|YELLOW|RED)([^A-Za-z]|$)'; }
+report_has_revert()   { printf '%s' "$1" | LC_ALL=C grep -q 'git revert'; }
+report_has_phases()   { printf '%s' "$1" | LC_ALL=C grep -qiE '(^|[^a-z])(fase|phase)s?([^a-z]|$)'; }
+report_has_commits()  { printf '%s' "$1" | LC_ALL=C grep -qiE '[0-9]+[[:space:]]*commits?'; }
+report_has_delta()    {
+  printf '%s' "$1" | LC_ALL=C grep -qi 'files' && printf '%s' "$1" | LC_ALL=C grep -qi 'loc'
+}
+
+# How many of the six a report carries. The verdict of the case is the
+# DIFFERENCE between arms and never this number on its own: a thin report on
+# both arms says nothing about the reference.
+report_score() {
+  local n=0
+  report_has_branch  "$1" && n=$((n+1))
+  report_has_level   "$1" && n=$((n+1))
+  report_has_revert  "$1" && n=$((n+1))
+  report_has_phases  "$1" && n=$((n+1))
+  report_has_commits "$1" && n=$((n+1))
+  report_has_delta   "$1" && n=$((n+1))
+  printf '%s' "$n"
+}
+
 log_records_out_of_scope() {
   local para p
   for para in "out of scope" "fora de escopo"; do
@@ -551,17 +599,17 @@ conclusion_grader() { # <outcome> <turns> <passed 0|1> <name> <why it failed>
 # the reference — the model's sense masks whatever the file was or was not
 # doing. Reporting that as "the refusal does not come from this file" would be
 # reading a null result as a negative one.
-reference_probe() { # <noref outcome> <with ok> <without ok> <noref ok>
-  if ! run_completed "$1"; then
-    printf '%s' "with-noref ended in $1, so it says nothing either way"
-  elif [[ $2 -ne 1 ]]; then
-    printf '%s' "not readable — the arm with the FULL skill already deleted, so there is no refusal for the removal to take away"
-  elif [[ $3 -eq 1 ]]; then
-    printf '%s' "not readable — the control arm refused as well, so the model's own judgement is enough here and removing the reference cannot be told apart from it"
+reference_probe() { # <reference> <noref outcome> <with ok> <without ok> <noref ok>
+  if ! run_completed "$2"; then
+    printf '%s' "with-noref ended in $2, so it says nothing either way"
+  elif [[ $3 -ne 1 ]]; then
+    printf '%s' "not readable — the arm with the FULL skill already fell short, so there is no behaviour for the removal to take away"
   elif [[ $4 -eq 1 ]]; then
-    printf '%s' "the refusal survives without references/knip-config.md — the attributable refusal does not come from that file"
+    printf '%s' "not readable — the control arm behaved the same way, so the model's own judgement is enough here and removing $1 cannot be told apart from it"
+  elif [[ $5 -eq 1 ]]; then
+    printf '%s' "the behaviour survives without $1 — what the full arm bought does not come from that file"
   else
-    printf '%s' "references/knip-config.md is LOAD-BEARING — removing it turned an attributable refusal into a deletion"
+    printf '%s' "$1 is LOAD-BEARING — removing it degraded behaviour the full arm delivers"
   fi
 }
 
@@ -575,9 +623,23 @@ reference_probe() { # <noref outcome> <with ok> <without ok> <noref ok>
 # So engagement is a PRECONDITION, graded once and named once: ONE red carrying
 # the cause, instead of a scatter of reds where most are consequences of the
 # first and somebody eventually quiets them by loosening a grader.
-precondition_grader() { # <name> <met 0|1> <why it failed>
-  [[ $2 -eq 1 ]] && { ok "$1"; return 0; }
-  bad "$1" "$3"
+#
+# And it reads the outcome BEFORE the repository, which the first version did
+# not. That omission produced the most expensive false red this suite can
+# produce, and it was caught in the wild rather than reasoned about: an arm that
+# died at turn 1 on `api_error` (a 429, the weekly quota) left no branch and no
+# log, so the grader reported "the skill does not engage" — the exact defect
+# #85 describes, and a real one, confirmed by a run that never happened. A
+# grader that can manufacture evidence for an open bug is worse than one that
+# stays quiet. A run that did not finish gets a named skip, like everywhere else
+# in this file.
+precondition_grader() { # <name> <outcome> <met 0|1> <why it failed>
+  if ! run_completed "$2"; then
+    skip "$1" "the run ended in $2, so nothing can be read from a repository it never got to touch — this is not evidence about the skill"
+    return 1
+  fi
+  [[ $3 -eq 1 ]] && { ok "$1"; return 0; }
+  bad "$1" "$4"
   return 1
 }
 
@@ -851,17 +913,25 @@ self_check() {
   # control arm refusing too, a third arm that also refuses is a NULL result,
   # and reading it as "the reference does not matter" would be manufacturing a
   # negative out of an absence.
-  case $(reference_probe completed 1 1 1) in *"not readable"*) ok "floor: the reference probe stays silent with no attributable refusal" ;; *) bad "floor: the reference probe stays silent with no attributable refusal" "read a null result as evidence about the reference: [$(reference_probe completed 1 1 1)]" ;; esac
-  case $(reference_probe completed 1 0 0) in *LOAD-BEARING*) ok "floor: the reference probe names a load-bearing reference" ;; *) bad "floor: the reference probe names a load-bearing reference" "got [$(reference_probe completed 1 0 0)]" ;; esac
-  case $(reference_probe completed 1 0 1) in *"does not come from that file"*) ok "floor: the reference probe reports a refusal that outlives the reference" ;; *) bad "floor: the reference probe reports a refusal that outlives the reference" "got [$(reference_probe completed 1 0 1)]" ;; esac
-  case $(reference_probe max_turns 1 0 1) in *"says nothing"*) ok "floor: the reference probe stays silent on a truncated arm" ;; *) bad "floor: the reference probe stays silent on a truncated arm" "got [$(reference_probe max_turns 1 0 1)]" ;; esac
+  case $(reference_probe "ref" completed 1 1 1) in *"not readable"*) ok "floor: the reference probe stays silent with no attributable refusal" ;; *) bad "floor: the reference probe stays silent with no attributable refusal" "read a null result as evidence about the reference: [$(reference_probe "ref" completed 1 1 1)]" ;; esac
+  case $(reference_probe "ref" completed 1 0 0) in *LOAD-BEARING*) ok "floor: the reference probe names a load-bearing reference" ;; *) bad "floor: the reference probe names a load-bearing reference" "got [$(reference_probe "ref" completed 1 0 0)]" ;; esac
+  case $(reference_probe "ref" completed 1 0 1) in *"does not come from that file"*) ok "floor: the reference probe reports a refusal that outlives the reference" ;; *) bad "floor: the reference probe reports a refusal that outlives the reference" "got [$(reference_probe "ref" completed 1 0 1)]" ;; esac
+  case $(reference_probe "ref" max_turns 1 0 1) in *"says nothing"*) ok "floor: the reference probe stays silent on a truncated arm" ;; *) bad "floor: the reference probe stays silent on a truncated arm" "got [$(reference_probe "ref" max_turns 1 0 1)]" ;; esac
 
   # The door. With engagement the case judges; without it, everything downstream
   # is a free pass, so the precondition has to be able to say both.
-  verdict=$( precondition_grader "x" 1 "why" )
+  verdict=$( precondition_grader "x" completed 1 "why" )
   case $verdict in ok*) ok "floor: an engaged run passes the precondition" ;; *) bad "floor: an engaged run passes the precondition" "got [$verdict]" ;; esac
-  verdict=$( precondition_grader "x" 0 "why" )
+  verdict=$( precondition_grader "x" completed 0 "why" )
   case $verdict in FAILED*) ok "floor: a run that never entered the protocol fails the precondition" ;; *) bad "floor: a run that never entered the protocol fails the precondition" "got [$verdict]" ;; esac
+  # The floor for the false red that was found in the wild: a run killed by the
+  # API at turn 1 leaves the same empty repository an unengaged run leaves, and
+  # reporting that as the product defect would confirm an open bug with a run
+  # that never happened.
+  verdict=$( precondition_grader "x" api_error 0 "why" )
+  case $verdict in skip*) ok "floor: a run killed by the API does not read as a product defect" ;; *) bad "floor: a run killed by the API does not read as a product defect" "an arm that died before touching the repo produced [$verdict]" ;; esac
+  verdict=$( precondition_grader "x" max_turns 1 "why" )
+  case $verdict in skip*) ok "floor: a truncated run does not earn a precondition pass either" ;; *) bad "floor: a truncated run does not earn a precondition pass either" "got [$verdict]" ;; esac
   local eng="$t/eng"; mkdir -p "$eng"
   git -C "$eng" init -q
   skill_engaged "$eng" && bad "floor: an untouched repo shows no engagement" "read engagement out of a bare repository" || ok "floor: an untouched repo shows no engagement"
@@ -872,6 +942,31 @@ self_check() {
   git -C "$eng" -c user.email=e@l -c user.name=e commit -qm base
   git -C "$eng" checkout -q -b cleanup/19700101
   skill_engaged "$eng" && ok "floor: a cleanup branch counts as engagement" || bad "floor: a cleanup branch counts as engagement" "missed the cleanup/ branch"
+
+  # The report anchors, on reports written by hand in the shape the measured
+  # ones have. Each has to be findable AND missable — an anchor that is always
+  # true would score every report six out of six and make the difference between
+  # arms, which is the whole verdict, permanently zero.
+  local full="Faxina concluída. Branch cleanup/20260811, nível GREEN, 4 commits.
+| Fase | O que saiu |
+| 1 — deps | yaml |
+Métricas: files=3 loc=5 → files=2 loc=4.
+Reverter: git revert <sha>, um por categoria."
+  local bare="Removi a dependência não usada e limpei o projeto. Tudo certo."
+
+  [[ $(report_score "$full") -eq 6 ]] && ok "floor: a full report scores every anchor" || bad "floor: a full report scores every anchor" "scored $(report_score "$full")/6 on a report that carries all six"
+  [[ $(report_score "$bare") -eq 0 ]] && ok "floor: a bare answer scores none" || bad "floor: a bare answer scores none" "scored $(report_score "$bare")/6 on prose that carries nothing the protocol asks for"
+  report_has_branch  "$bare" && bad "floor: no branch reads as absent" "found cleanup/ where there is none" || ok "floor: no branch reads as absent"
+  report_has_level   "$bare" && bad "floor: no level reads as absent" "found a level word where there is none" || ok "floor: no level reads as absent"
+  report_has_revert  "$bare" && bad "floor: no revert instruction reads as absent" "found git revert where there is none" || ok "floor: no revert instruction reads as absent"
+  # The level anchor must not fire on a longer word: RED inside REDUZIDO would
+  # score a report that never named a level.
+  report_has_level "o escopo foi REDUZIDO e o texto GREENFIELD" && bad "floor: the level anchor respects word boundaries" "RED matched inside REDUZIDO, or GREEN inside GREENFIELD" || ok "floor: the level anchor respects word boundaries"
+  # And the delta anchor takes the QUANTITY, not the format metrics.sh prints —
+  # the arm without the reference reported "files 3→2, loc 5→4", which is the
+  # obligation met in another shape.
+  report_has_delta "Delta: files 3→2, loc 5→4." && ok "floor: the delta anchor accepts the quantities without the printf format" || bad "floor: the delta anchor accepts the quantities without the printf format" "the grader would be measuring the reference's formatting, not the rule"
+  report_has_delta "Removi dois arquivos." && bad "floor: a report with no measurement fails the delta anchor" "scored a delta where no quantity is named" || ok "floor: a report with no measurement fails the delta anchor"
 
   # Partial scope. The presence grader first, because it is the one that stops
   # the case passing by inertia.
@@ -1336,7 +1431,7 @@ case_anchorless_graph() {
     "the arm WITH the skill deleted source on a graph with no root while the arm without it did not — see the three graders above for where it shows"
 
   # The reference probe. Reported, never graded — see the header.
-  say "        probe:   $(reference_probe "$noref_outcome" "$with_clean" "$without_clean" "$noref_clean")"
+  say "        probe:   $(reference_probe "references/knip-config.md" "$noref_outcome" "$with_clean" "$without_clean" "$noref_clean")"
 
   [[ ${EVAL_KEEP:-} ]] || rm -rf "$dir_with" "$dir_without" "$dir_noref"
 }
@@ -1417,9 +1512,10 @@ case_partial_scope() {
   # in it, then named skips — not six verdicts of which five are consequences.
   local engaged=0
   skill_engaged "$dir_with" && engaged=1
-  if ! precondition_grader "the skill engages on a single-category request" "$engaged" \
+  if ! precondition_grader "the skill engages on a single-category request" "$with_outcome" "$engaged" \
       "no cleanup/ branch and no CLEANUP_PROGRESS.md: the run edited the manifest like any assistant would and never entered the protocol. Measured 3 of 3 on this prompt, two of them calling bare \`npx knip\`, which SKILL.md forbids. The same fixture with \"dá uma faxina nesse projeto\" engages fully, so the variable is the prompt. Cause, experiment and fix are in #85 — the repair is in the skill's description, never in the graders below"; then
     local why="the skill did not engage on this prompt (#85), so there is no protocol run to judge, and every question below is a negation that an idle repository answers correctly for free"
+    run_completed "$with_outcome" || why="the arm with the skill ended in $with_outcome, so there is no run to read anything from"
     skip "the out-of-scope category did not run: src/dead.ts survives" "$why"
     skip "nothing under src/ is deleted in the history" "$why"
     skip "the category that WAS in scope ran: a chore: remove unused deps commit exists" "$why"
@@ -1464,6 +1560,152 @@ case_partial_scope() {
   [[ ${EVAL_KEEP:-} ]] || rm -rf "$dir_with" "$dir_without"
 }
 
+# ---------------------------------------------------------------------------
+# The bet nobody had measured. v0.4.0 moved the report template into
+# references/final-report.md on an explicit wager — SKILL.md keeps the required
+# CONTENT, the reference carries the FORM — and #53 repeated that wager on every
+# extraction it made to fit the token budget. This case is the first measurement
+# of it, and the question is the DIFFERENCE between the arm with the whole skill
+# and the arm with that one reference deleted. An absolute score means nothing
+# here: a thin report on both arms says nothing about the reference.
+#
+# Deleting the file rather than detecting whether the model opened it is a method
+# decision. Detecting a read would mean parsing the host's tool-call transcript,
+# whose format belongs to the host and changes without notice; deleting the file
+# measures the same thing and depends on no format at all.
+#
+# This case is CONCLUSION from end to end, and #74 is what makes that precise:
+# the truncated envelope has no prose at all, so a report cannot be judged on a
+# run that did not finish. It needs a bigger turn budget for the same reason —
+# measured, a full GREEN run delivers its report at 21 and 26 turns, and the
+# suite default of 20 truncates before the summary is written. Hence the local
+# override below, and its number is a measurement rather than a guess.
+#
+# WHAT IS MEASURED AND WHAT IS NOT, as of 2026-08-11. One run per arm, all three
+# `completed`, with the six anchors scored:
+#
+#   with ......... 6/6 (21 turns)
+#   with-noref ... 6/6 (26 turns)
+#   without ...... 0/6 (8 turns)
+#
+# So on this sample the wager was NOT contradicted: removing the reference cost
+# none of the required items, and the arm without the skill delivered none of
+# them. That is as far as one run per arm goes. The second execution the issue
+# asks for, the variance it would show, and the mutation of the SKILL.md
+# sentence that lists the required content are NOT done — the weekly API quota
+# ran out mid-round, and the honest record is that three of this case's five
+# acceptance criteria are open rather than met. The floors below cost nothing
+# and are complete; the paid half is not.
+#
+# Read that table with the caveat attached: the v0.4.0 wager was NOT CONTRADICTED
+# on this sample. With one run per arm that is not "the wager holds", and the
+# difference between those two sentences is the whole reason this comment exists.
+#
+# One anchor had to be corrected mid-measurement, and the correction is the
+# method note worth keeping. The delta check started as `files=`, the literal
+# shape metrics.sh prints. The arm with the reference removed reported the delta
+# as "files 3→2, loc 5→4" — the obligation met in a different SHAPE — and the
+# original anchor would have scored that 5/6 against 6/6 and concluded that the
+# reference is load-bearing. That is reading a FORMATTING difference as a
+# CONTENT difference, in the direction that confirms the case's own hypothesis,
+# which is the most flattering way to be wrong. The anchor is the quantity, and
+# a floor keeps it there.
+#
+# The quota that stopped the second round proved something worth keeping too.
+# Its envelope comes back with `terminal_reason: api_error` AND
+# `subtype: "success"` AND a `result` string carrying the error message — so
+# neither the subtype nor the presence of prose can decide whether a run
+# finished, and `run_completed` is right to accept only `completed`. That is the
+# third independent confirmation of the field #74 chose, each from an outcome
+# nobody had seen when it was chosen.
+case_report_survives_disclosure() {
+  local name="report-run"
+  [[ -n $ONLY && $ONLY != "$name" ]] && return 0
+  say "== $name: the required content of the final report, with and without the reference that holds its template"
+
+  local dir_with dir_noref dir_without
+  dir_with=$(fixture "$name" with scoped)
+  dir_noref=$(fixture "$name" with-noref scoped)
+  dir_without=$(fixture "$name" without scoped)
+  rm -f "$dir_noref/.claude/skills/codebase-cleanup/references/final-report.md"
+
+  # Measured, not guessed: the report lands at 21-26 turns on this fixture and
+  # the suite default of 20 cuts it off before the summary exists.
+  local saved_turns=$TURNS
+  TURNS=${EVAL_TURNS_REPORT:-40}
+
+  run_arm "$dir_with" "$name" with "dá uma faxina nesse projeto"
+  local with_outcome=$LAST_OUTCOME with_turns=$LAST_TURNS with_report=$LAST_OUT
+  run_arm "$dir_noref" "$name" with-noref "dá uma faxina nesse projeto"
+  local noref_outcome=$LAST_OUTCOME noref_turns=$LAST_TURNS noref_report=$LAST_OUT
+  run_arm "$dir_without" "$name" without "dá uma faxina nesse projeto"
+  local without_outcome=$LAST_OUTCOME without_turns=$LAST_TURNS without_report=$LAST_OUT
+
+  TURNS=$saved_turns
+
+  local with_score noref_score without_score
+  with_score=$(report_score "$with_report")
+  noref_score=$(report_score "$noref_report")
+  without_score=$(report_score "$without_report")
+
+  say "        with:       outcome=$with_outcome turns=${with_turns:-?} score=$with_score/6"
+  say "        with-noref: outcome=$noref_outcome turns=${noref_turns:-?} score=$noref_score/6"
+  say "        without:    outcome=$without_outcome turns=${without_turns:-?} score=$without_score/6"
+  say "        envelopes: $FIXROOT/$name-{with,with-noref,without}.json"
+
+  # The door, then the report. A run that never entered the protocol has no
+  # final report to judge, and every anchor below would be absent for a reason
+  # that is not the disclosure bet.
+  local engaged=0
+  skill_engaged "$dir_with" && engaged=1
+  if ! precondition_grader "the skill engages and produces a run to report on" "$with_outcome" "$engaged" \
+      "no cleanup/ branch and no CLEANUP_PROGRESS.md on the arm with the skill: there was no protocol run, so the summary below is not the protocol's final report and the reference cannot be what is missing from it"; then
+    local why="no protocol run to report on, so the report anchors have no subject"
+    run_completed "$with_outcome" || why="the arm with the skill ended in $with_outcome, and a run that did not finish has no final report — #74 measured that a truncated envelope carries no prose at all"
+    skip "the report names the branch" "$why"
+    skip "the report names the level" "$why"
+    skip "the report says how to revert" "$why"
+    skip "the report carries the measured delta" "$why"
+    skip "the report has a line per phase" "$why"
+    skip "the report gives the commit count" "$why"
+    skip "the final report is attributable to the skill" "$why"
+    [[ ${EVAL_KEEP:-} ]] || rm -rf "$dir_with" "$dir_noref" "$dir_without"
+    return 0
+  fi
+
+  # CONCLUSION, all six: prose is the product, and a truncated run has none.
+  conclusion_grader "$with_outcome" "$with_turns" "$(report_has_branch  "$with_report" && echo 1 || echo 0)" \
+    "the report names the branch"            "no cleanup/ branch in the summary; the user cannot find the work"
+  conclusion_grader "$with_outcome" "$with_turns" "$(report_has_level   "$with_report" && echo 1 || echo 0)" \
+    "the report names the level"             "no GREEN, YELLOW or RED in the summary; the level is what explains which phases ran"
+  conclusion_grader "$with_outcome" "$with_turns" "$(report_has_revert  "$with_report" && echo 1 || echo 0)" \
+    "the report says how to revert"          "no \`git revert\` in the summary; the rollback story is the one thing a user needs at 2am"
+  conclusion_grader "$with_outcome" "$with_turns" "$(report_has_delta   "$with_report" && echo 1 || echo 0)" \
+    "the report carries the measured delta"  "the summary names neither files nor loc, so the Step 0 baseline was taken and never used"
+  conclusion_grader "$with_outcome" "$with_turns" "$(report_has_phases  "$with_report" && echo 1 || echo 0)" \
+    "the report has a line per phase"        "the summary never names a phase, so what each one removed is unrecoverable"
+  conclusion_grader "$with_outcome" "$with_turns" "$(report_has_commits "$with_report" && echo 1 || echo 0)" \
+    "the report gives the commit count"      "the summary gives no commit count"
+
+  # Attribution against the arm with no skill at all.
+  local with_full=0 without_full=0 noref_full=0
+  [[ $with_score    -eq 6 ]] && with_full=1
+  [[ $without_score -eq 6 ]] && without_full=1
+  [[ $noref_score   -eq 6 ]] && noref_full=1
+  attribution_grader "the final report is attributable to the skill" \
+    "$with_outcome" "$without_outcome" "$with_full" "$without_full" \
+    "the arm WITHOUT the skill produced every required item too, so the report is the model's own habit rather than this protocol's" \
+    "the arm WITH the skill did not deliver every required item while the arm without it did — see the six graders above"
+
+  # And the bet itself, reported and never graded: whether the required content
+  # degrades when the template's reference is gone. Neither answer is a defect
+  # of the skill — "the reference is load-bearing" is a finding about where a
+  # rule lives, and the owner decides what to do about it.
+  say "        probe:   $(reference_probe "references/final-report.md" "$noref_outcome" "$with_full" "$without_full" "$noref_full") [with=$with_score/6 vs with-noref=$noref_score/6]"
+
+  [[ ${EVAL_KEEP:-} ]] || rm -rf "$dir_with" "$dir_noref" "$dir_without"
+}
+
 # Before anything paid, and before the floors that measure it: the vendored knip
 # has to exist. Failing closed here is the cheap failure — the expensive one is a
 # case that goes red at minute three because a download did not finish.
@@ -1474,6 +1716,7 @@ case_yellow_stops_short
 case_red_does_not_act
 case_anchorless_graph
 case_partial_scope
+case_report_survives_disclosure
 
 say "----"
 # Skips are named, never silent: a floor that did not run is not a floor that
