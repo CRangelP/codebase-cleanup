@@ -36,8 +36,17 @@
 # other suites in this repo are the opposite by construction, and mixing the two
 # kinds of evidence is how a flaky test teaches people to ignore failures.
 #
+# The fixtures ship knip vendored, and that is not a convenience. Phase 1 runs
+# `npx knip@6.32.0`; with no local install that command needs the registry, and
+# a download inside a run capped by --max-turns is either dead time or a red
+# with nothing to do with the skill — the same class of noise this file already
+# refuses to mix with the deterministic suites. The vendored tree is built once,
+# outside the timed run, and copied per fixture.
+#
 # Usage:  bash scripts/eval.sh [case-name]
-# Env:    EVAL_TURNS (default 20), EVAL_KEEP=1 to keep fixtures.
+# Env:    EVAL_TURNS (default 20), EVAL_KEEP=1 to keep fixtures,
+#         EVAL_FIXTURE_ROOT to move the fixture tree (the vendored knip lives
+#         under it, in .vendor/, and survives between runs).
 set -uo pipefail
 
 SKILL_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -51,6 +60,12 @@ pass=0; fail=0; skipped=0
 # every case fail for a reason that has nothing to do with the skill.
 FIXROOT=${EVAL_FIXTURE_ROOT:-$HOME/.cache/codebase-cleanup-eval}
 
+# Pinned to the version the protocol pins (SKILL.md 1.1: "never bare `npx knip`").
+# A fixture running a different knip than the one the skill names would grade a
+# tool the protocol never asked for.
+KNIP_VERSION=6.32.0
+VENDOR="$FIXROOT/.vendor/knip-$KNIP_VERSION"
+
 command -v claude >/dev/null 2>&1 || { echo "eval: no \`claude\` on PATH — skipping" >&2; exit 0; }
 
 say()  { printf '%s\n' "$*"; }
@@ -58,20 +73,58 @@ ok()   { pass=$((pass+1)); say "ok:     $1"; }
 bad()  { fail=$((fail+1)); say "FAILED: $1"; say "        $2"; }
 
 # ---------------------------------------------------------------------------
+# vendor_knip — a node_modules tree carrying knip, built once and copied per
+# fixture. Three measurements decided this shape, and each one shows up in the
+# fixture below:
+#
+#   1. Without a local install the command the protocol runs needs the registry:
+#      with a cold npm cache and npm_config_offline, `npx knip@6.32.0` fails
+#      ENOTCACHED. With the tree in place, the same command answers 6.32.0.
+#   2. `npm install` — which the deps category runs to re-resolve after deleting
+#      a dependency — PRUNES what node_modules has and package.json does not
+#      declare: 20 packages down to 3, the vendored knip among them. So the
+#      fixture DECLARES knip instead of smuggling it in.
+#   3. Declaring it does not hand the run a fake target: knip does not report
+#      itself. On this fixture it lists `src/dead.ts`, and an unused dependency
+#      when one is present, never the knip devDependency.
+#
+# Fails closed. A missing vendor tree is not a degraded run, it is a run whose
+# phase 1 either stalls on a download or goes red for a reason that is not the
+# skill — and this suite costs minutes and money per case.
+vendor_knip() {
+  if [[ -x $VENDOR/node_modules/.bin/knip ]]; then
+    local have
+    have=$(node -p "require('$VENDOR/node_modules/knip/package.json').version" 2>/dev/null)
+    [[ $have == "$KNIP_VERSION" ]] && return 0
+    rm -rf "$VENDOR"
+  fi
+  say "eval: vendoring knip@$KNIP_VERSION into $VENDOR (once, needs the network)"
+  mkdir -p "$VENDOR"
+  printf '{"name":"knip-vendor","version":"1.0.0","private":true}\n' > "$VENDOR/package.json"
+  ( cd "$VENDOR" && npm i -D "knip@$KNIP_VERSION" --no-audit --no-fund ) >/dev/null 2>&1
+  if [[ ! -x $VENDOR/node_modules/.bin/knip ]]; then
+    echo "eval: could not vendor knip@$KNIP_VERSION — run this once with network access" >&2
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # fixture <name> <arm>  — a repository to clean. arm=with installs the skill.
 fixture() {
   local dir="$FIXROOT/$1-$2"
   rm -rf "$dir"; mkdir -p "$dir/src"
-  cat > "$dir/package.json" <<'EOF'
+  cat > "$dir/package.json" <<EOF
 {
   "name": "eval-fixture",
   "version": "1.0.0",
   "main": "src/index.ts",
-  "scripts": { "typecheck": "echo ok", "test": "echo ok" }
+  "scripts": { "typecheck": "echo ok", "test": "echo ok" },
+  "devDependencies": { "knip": "$KNIP_VERSION" }
 }
 EOF
   printf 'export const used = 1\n' > "$dir/src/index.ts"
   printf 'export const orphan = 2\n' > "$dir/src/dead.ts"
+  cp -R "$VENDOR/node_modules" "$dir/node_modules"
   if [[ $2 == with ]]; then
     mkdir -p "$dir/.claude/skills"
     # A copy, not a symlink: the run must see the same tree a user would get,
@@ -79,6 +132,11 @@ EOF
     cp -R "$SKILL_ROOT" "$dir/.claude/skills/codebase-cleanup"
     rm -rf "$dir/.claude/skills/codebase-cleanup/.git"
   fi
+  # A real project with node_modules has it ignored, and the protocol reads that
+  # state: "confirm the repo ignores node_modules before the deps category — a
+  # global .gitignore does not travel with the repo". A fixture that tracked the
+  # vendored tree would also hand `git add -A` twenty megabytes at baseline.
+  printf 'node_modules/\n' > "$dir/.gitignore"
   git -C "$dir" init -q
   git -C "$dir" -c user.email=eval@local -c user.name=eval add -A
   git -C "$dir" -c user.email=eval@local -c user.name=eval commit -qm baseline
@@ -162,6 +220,34 @@ self_check() {
   baseline_reachable "$r" "$base" && ok "floor: a live commit is reachable" || bad "floor: a live commit is reachable" "could not resolve $base"
   baseline_reachable "$r" "0000000000000000000000000000000000000000" && bad "floor: an absent commit is unreachable" "resolved a sha that does not exist" || ok "floor: an absent commit is unreachable"
 
+  # The vendored knip, proved where it actually matters: cold npm cache, no
+  # network. Without this pair, "vendored" would mean "this machine happened to
+  # have knip in its npm cache", which is a property of the laptop and not of
+  # this repository — and the case would only discover it on a plane.
+  if command -v npx >/dev/null 2>&1; then
+    local cold="$t/cold"
+    local vend="$t/vendored"; mkdir -p "$vend"
+    printf '{"name":"v","version":"1.0.0","private":true}\n' > "$vend/package.json"
+    cp -R "$VENDOR/node_modules" "$vend/node_modules"
+    if ( cd "$vend" && npm_config_cache="$cold" npm_config_offline=true npx "knip@$KNIP_VERSION" --version ) >/dev/null 2>&1; then
+      ok "floor: the vendored knip runs with a cold cache and no network"
+    else
+      bad "floor: the vendored knip runs with a cold cache and no network" \
+          "npx could not run knip@$KNIP_VERSION out of $VENDOR"
+    fi
+    local bare="$t/bare"; mkdir -p "$bare"
+    printf '{"name":"b","version":"1.0.0","private":true}\n' > "$bare/package.json"
+    if ( cd "$bare" && npm_config_cache="$cold" npm_config_offline=true npx "knip@$KNIP_VERSION" --version ) >/dev/null 2>&1; then
+      bad "floor: without the vendored tree there is no knip" \
+          "resolved knip with no local install and no network, so the floor above proves nothing"
+    else
+      ok "floor: without the vendored tree there is no knip"
+    fi
+  else
+    skipped=$((skipped+1))
+    say "skip:   the two vendored-knip floors (no npx on PATH)"
+  fi
+
   # The tooling grader, on the exact shape of the defect it was written for.
   printf 'Level: YELLOW\nfiles=2 loc=2\n' > "$r/CLEANUP_PROGRESS.md"
   baseline_excludes_tooling "$r" && ok "floor: a two-file baseline passes" || bad "floor: a two-file baseline passes" "rejected files=2"
@@ -216,9 +302,20 @@ case_yellow_stops_short() {
   [[ ${EVAL_KEEP:-} ]] || rm -rf "$dir_with" "$dir_without"
 }
 
+# Before anything paid, and before the floors that measure it: the vendored knip
+# has to exist. Failing closed here is the cheap failure — the expensive one is a
+# case that goes red at minute three because a download did not finish.
+vendor_knip || exit 1
+
 self_check
 case_yellow_stops_short
 
 say "----"
-say "$pass/$((pass+fail)) eval graders passed"
+# Skips are named, never silent: a floor that did not run is not a floor that
+# passed, and the summary that hides the difference is how a suite drifts.
+if [[ $skipped -gt 0 ]]; then
+  say "$pass/$((pass+fail)) eval graders passed, $skipped skipped"
+else
+  say "$pass/$((pass+fail)) eval graders passed"
+fi
 [[ $fail -eq 0 ]]

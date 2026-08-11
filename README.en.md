@@ -184,6 +184,14 @@ bash scripts/coherence_test.sh  # docs and code saying the same thing
 bash scripts/mutation_test.sh   # would the suite above fail if the rule vanished?
 ```
 
+The first `eval.sh` run downloads `knip@6.32.0` once, into
+`~/.cache/codebase-cleanup-eval/.vendor/`, and copies that tree into every
+fixture. That is deliberate: phase 1 runs `npx knip@6.32.0`, and with no local
+copy that command needs the registry — a download inside a run capped by
+`--max-turns` is either dead time or a red that has nothing to do with the
+skill. With no network and no vendored tree the suite stops before spending the
+first minute of model time, instead of finding out mid-case.
+
 Each exits 0 when everything passed and prints the failing case when it does
 not; `test.sh` only chains the six and stops at the first red. None of them
 touches the repository you run it from: the gate suite uses
