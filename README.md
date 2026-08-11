@@ -157,6 +157,7 @@ codebase-cleanup/
     ├── eval.sh                      o que o modelo faz lendo a skill (fora do test.sh)
     ├── metrics_test.sh               casos do medidor, em repos sintéticos
     ├── coherence_test.sh             invariantes de coerência entre doc e código
+    ├── mutate.sh                     aplica uma mutação e prova que ela aplicou (STALE aborta)
     └── mutation_test.sh              muta regras de autoridade destrutiva; cada uma tem de reprovar
 ```
 
@@ -188,6 +189,15 @@ esse comando precisa do registry — um download dentro de uma run limitada por
 `--max-turns` é tempo morto ou um vermelho que nada tem a ver com a skill. Sem
 rede e sem a árvore, a suíte para antes de gastar o primeiro minuto de modelo,
 em vez de descobrir isso no meio do caso.
+
+Toda mutação feita à mão — para provar que um invariante morde, ou que um caso de
+eval reprova quando a regra some — passa pelo `mutate.sh`, que aborta quando a
+edição não mudou nada. A razão é assimétrica: a mutação cara é a que roda o
+modelo contra a cópia mutada, e o modo de falha dela é silencioso na pior
+direção — uma expressão que não casa faz a run acontecer contra o texto
+**original**, o verde volta, e ele se lê como "o caso não morde" quando nada foi
+mutado. O `mutation_test.sh` roda os pisos dessa guarda antes de tudo e para se
+eles falharem.
 
 Cada uma sai 0 quando tudo passou e imprime o caso que falhou quando não; o
 `test.sh` só encadeia as seis e para na primeira vermelha.

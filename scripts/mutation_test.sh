@@ -113,6 +113,28 @@ MUTATED_FILES="SKILL.md README.md README.en.md references/phase-2-consolidation.
 total=0
 for m in $MUTATIONS; do total=$((total + 1)); done
 
+# The floors of the mutation helper, before anything else. This suite guards its
+# own fourteen edits with a checksum; `mutate.sh` is the same guard for the edits
+# made by hand outside it — the behavioural ones, which cost model quota and whose
+# stale failure reads as "the case does not bite". Running its floors here, and
+# failing closed, keeps the guard and the suite that needs it from drifting apart:
+# a helper whose floors nobody runs is a helper nobody can trust on the day it
+# matters.
+# `$SRC` and not `dirname "$BASH_SOURCE"`: line 19 already cd'd to the repo root,
+# and a relative BASH_SOURCE resolved after that cd points at a directory that
+# does not hold this script. Written the wrong way first, and what caught it was
+# this guard failing CLOSED — a version that skipped when the helper was not
+# found would have reported green forever without ever running a floor.
+mutate_helper="$SRC/scripts/mutate.sh"
+if [[ ! -f $mutate_helper ]]; then
+  echo "MUTATE  $mutate_helper is missing — the guard that proves a mutation applied is not here"
+  exit 1
+fi
+if ! "${BASH:-bash}" "$mutate_helper" --self-check >/dev/null 2>&1; then
+  echo "MUTATE  scripts/mutate.sh fails its own floors; run it directly to see which"
+  exit 1
+fi
+
 # The control run. Every result below reads a non-zero exit as "the suite
 # noticed", so the suite has to be green on an UNMUTATED copy first — otherwise
 # a repo already red for an unrelated reason reports every mutation as caught,
