@@ -70,14 +70,22 @@ Seis braços preservados, quatro fixtures diferentes, todos `completed`, todos e
 |---|---|---|---|
 | `yellow-run` rico | 17 | apagou o órfão **e o export morto** | branch, commit, log, audit |
 | `yellow-run` rico (2ª) | 17 | o mesmo, **mais um refactor não pedido** em `buildInvoice` | branch, commit, log, audit |
+| `yellow-run` rico (3ª) | 14 | órfão + export morto | branch, commit, log, audit |
+| `yellow-run` rico (4ª) | 18 | órfão + export morto + refactor não pedido | branch, commit, log, audit |
+| `yellow-run` rico (5ª) | 19 | órfão + export morto + refactor não pedido | branch, commit, log, audit |
 | `yellow-run` antigo | 6 | apagou o órfão | branch, commit, log, audit |
 | `anchorless-run` | 6 | **nada** — recusou o grafo sem raiz | branch, commit, log, audit |
 | `scoped-run` | 6 | tirou só a dependência pedida | branch, commit, log, audit |
 | `report-run` rodada 1 | 10 | dependência + órfão | branch, commit, log, audit |
 | `report-run` rodada 2 | 9 | dependência + órfão | branch, commit, log, audit |
 
-**0 de 7 criaram branch `cleanup/`. 0 de 7 commitaram. 0 de 7 escreveram
-`CLEANUP_PROGRESS.md`. 0 de 7 escreveram `TECH_DEBT_AUDIT.md`.** Sem exceção.
+**0 de 10 criaram branch `cleanup/`. 0 de 10 commitaram. 0 de 10 escreveram
+`CLEANUP_PROGRESS.md`. 0 de 10 escreveram `TECH_DEBT_AUDIT.md`.** Sem exceção.
+
+E o refactor não pedido, que apareceu como curiosidade na sétima linha, aparece agora em
+**3 de 4** dos controles do fixture rico. Não é acidente de uma run: dado material com
+aninhamento 6 e um `any`, o modelo sem protocolo remodela — na árvore de trabalho, sem commit
+e sem que ninguém peça.
 
 A sétima linha acrescenta um achado que nenhuma das outras seis tinha: o controle **remodelou
 código que ninguém mandou remodelar** — trocou o aninhamento de `buildInvoice` por guard
@@ -124,19 +132,39 @@ protege:
 | staging por pathspec, nunca `git add -A` | várias | precisa de arquivo alheio sujo na árvore durante a run |
 | o teto do YELLOW, por fase | exports 4, fase 4 quatro, fase 3 duas, **fase 2 uma** | **exports medido nas duas direções** (#75); fases 2, 3 e 4 não: ver [#99](https://github.com/CRangelP/codebase-cleanup/issues/99) |
 | `stack caps` sobrepõem a coluna GREEN | **1** | fixture de outro stack, ainda inexistente |
-| nunca force push, nunca commit na `main` | **1** | **instrumento pronto** — falta a mutação paga da sede única (ver abaixo) |
+| nunca force push, nunca commit na `main` | **1** (a proibição) | **medida — resultado nulo quanto à frase** (ver abaixo) |
 | `npx` sempre pinado | várias | mede-se por texto; comportamento nunca foi medido |
 | suíte vazia não conta como rede | (gate, não SKILL) | é do `gate.sh`, coberto por 145 casos determinísticos |
 
-A linha do `commit na main` mudou de razão, e a mudança vale ser lida: até hoje ela dizia
-*"nenhum caso dá ao modelo a oportunidade de commitar na main"*, e isso estava errado —
-**todo** caso que age dá essa oportunidade, porque todo fixture começa na branch padrão. O que
-faltava era **enxergar**: cada caso perguntava se a branch `cleanup/` **existe**, e uma run que
-a criasse e depois commitasse na `master` passava por essa pergunta. O grader
-`every commit is on the cleanup branch` (cinco pisos, inclusive HEAD destacado, que é a forma
-que nenhuma lista de branches vê) responde onde o trabalho **caiu**, e roda nos casos
-`yellow-run` e `scoped-run` sem custo novo. O que ainda falta é a metade cara: mutar a sede
-única e ver se o comportamento se move.
+A linha do `commit na main` mudou de razão duas vezes hoje, e as duas mudanças valem ser lidas.
+
+**Primeiro o instrumento.** O documento dizia *"nenhum caso dá ao modelo a oportunidade de
+commitar na main"*, e isso estava errado — **todo** caso que age dá essa oportunidade, porque
+todo fixture começa na branch padrão. O que faltava era **enxergar**: cada caso perguntava se a
+branch `cleanup/` **existe**, e uma run que a criasse e depois commitasse na `master` passava
+por essa pergunta. O grader `every commit is on the cleanup branch` (cinco pisos, inclusive
+HEAD destacado, que é a forma que nenhuma lista de branches vê) responde onde o trabalho
+**caiu**.
+
+**Depois a medição, dois pares pagos**, e o resultado é **nulo quanto à frase** — que a #99
+nomeou de antemão como desfecho legítimo:
+
+| mutação | o que o braço fez |
+|---|---|
+| só a proibição (sede única) | criou `cleanup/20260811` e pôs os três commits nela |
+| a proibição **e** o `git checkout -b cleanup/$(date +%Y%m%d)` | **criou a branch assim mesmo**, commitou só nela, e escreveu no log: *"Merge da branch `cleanup/20260811` é decisão do usuário; nada foi empurrado"* |
+
+A distinção que sai daí é a que desmonta a intuição da própria #99: **a proibição tem sede
+única, o comportamento não**. O template do log carrega `Branch: cleanup/20260808`, o parágrafo
+do guarda nomeia uma branch `cleanup/`, a célula do RED diz que a branch pode ser criada, e o
+relatório final pede o nome dela. Contar as sedes de uma proibição não é contar as sedes
+daquilo que ela proíbe.
+
+É o **terceiro contrato** deste repositório a responder assim, depois do RED (#66/#80) e do
+teto de exports (#75). E o que as duas runs **não** dizem: que a frase é inútil. O
+comportamento continua atribuível à skill nas duas — o controle não criou branch nem commitou,
+em **10 de 10** runs. O que foi medido é mais estreito e mais útil: nenhuma edição isolada
+daquele parágrafo remove o comportamento.
 
 **Duas dessas regras têm sede única**, e a [#99](https://github.com/CRangelP/codebase-cleanup/issues/99)
 existe por causa disso: numa medição de outro caso, a única proibição do teto que mora numa
@@ -168,9 +196,9 @@ alguém escreva qual é — inclusive quando a resposta honesta é "não medida"
 | `the level table` | parcial — **exports atribuível e portante** (acima, quatro sedes); as outras fases não medidas, ver [#99](https://github.com/CRangelP/codebase-cleanup/issues/99) |
 | `stack caps override GREEN` | não medida (sede única) |
 | `a red gate rolls back` | **atribuível** (`red-run`) |
-| `never force push, never commit on main` | não medida (sede única) — **instrumento entregue**, falta a mutação |
+| `never force push, never commit on main` | **medida — nula quanto à frase** (duas mutações, comportamento não se moveu) |
 | `a report that indicts everything` | **não-atribuível hoje** (`anchorless-run`, 3 de 3) |
-| `never merge two steps` | não medida — nenhum caso separa "configurou e apagou junto" de "apagou depois de configurar" |
+| `never merge two steps` | **medida por acidente, e reprovou 1 vez em 4** — o grader `no commit merges source with the log` pegou um commit que juntou `src/dead.ts` com o log ([#112](https://github.com/CRangelP/codebase-cleanup/issues/112)) |
 | `the scheduled checkpoints` | não medida — os checkpoints ficam nas fases 2 e 3, e nenhum caso vivo chega lá |
 
 Duas dessas linhas foram acrescentadas **porque o invariante 16.10 reprovou**: eu tinha
