@@ -945,6 +945,31 @@ check "SKILL.md description stays at or under 1000 characters" \
       "$([[ -n $desc && $desc_len -le 1000 ]] && echo 0 || echo 1)" \
       "description is ${desc_len} characters (limit 1000)"
 
+# The description is the door, and #85 measured a run where the protocol's own
+# example of partial scope did not open it: with `remove só as dependências não
+# usadas` as the prompt — the phrase the "Partial run by category" paragraph
+# quotes — three runs out of three produced no cleanup branch, no progress log
+# and no commit, and two of them ran bare `npx knip`, which the protocol forbids
+# by name. The description granted "one of the four phases" while the protocol
+# legislates categories, so the example the rule writes fell outside the door the
+# description opens. A rule reachable only through a prompt the rule does not use
+# is a rule nobody reaches.
+#
+# The expectation is derived from the protocol instead of hardcoded here: this
+# reads whatever example the paragraph quotes, so moving the example moves the
+# invariant with it. The description budget is what makes this bite — at 1000
+# characters with the description already near the cap, trimming it is the
+# cheapest way to silently drop this coverage again.
+scope_example=$(perl -0ne 'print $1 if /Partial run by category.*?e\.g\. "([^"]+)"/s' SKILL.md 2>/dev/null)
+check "the partial-scope rule quotes an example" \
+      "$([[ -n $scope_example ]] && echo 0 || echo 1)" \
+      "no 'e.g. \"...\"' found in the Partial run by category paragraph; without it the
+next check has no subject and would pass on an empty string"
+check "the description covers the example the partial-scope rule quotes" \
+      "$(printf '%s' "$desc" | grep -q -F -- "$scope_example" && echo 0 || echo 1)" \
+      "the rule teaches partial scope with [$scope_example] and the description does not
+carry it, so the protocol legislates a request that never reaches the skill (#85)"
+
 # 11. The guard blocks what the READMEs say it blocks. -----------------------
 # The guard is the plugin half of five rules the skill states in prose, and a
 # table that drifts from the script is worse than no table: a reader plans
