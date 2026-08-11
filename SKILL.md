@@ -153,17 +153,12 @@ in the final report that the work started from a detached HEAD, so the user
 knows where the branch came from.
 
 With a clean tree and a repo, run the baseline gate with
-`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` and classify. Installed as a
-plugin, `CLAUDE_PLUGIN_ROOT` holds the absolute path of this plugin's
-directory, so the call resolves from whatever directory the run happens to be
-in; installed as a plain skill the variable is unset and `:-.` falls back to
-the path relative to this file, which is what it always was. Either way the
-script accepts the project directory as an argument and defaults to the
-current one. The
-script detects the stack from the root manifest — `package.json`, `go.mod`,
-`Cargo.toml`, `pyproject.toml`/`setup.cfg`, `pom.xml`/`build.gradle`,
-`Gemfile`, `sln`/`csproj`/`fsproj` — and runs typecheck and tests for each one
-it finds (compiling counts as typecheck).
+`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` and classify. The script takes the
+project directory as an argument and defaults to the current one, and detects
+the stack from the root manifest, running typecheck and tests for each one it
+finds. Which manifests it recognises, how it picks the npm script to run, and
+why 124 and 137 are reserved are in `references/gate.md` — read it when a
+result surprises you, not before.
 
 Classify by the `[gate] checks=...` line, which lists what actually ran, and
 not by the exit code alone: GREEN requires `typecheck` and `test` in the list;
@@ -181,11 +176,8 @@ disables). In the exit-3 cases, finish the gate by hand before classifying.
 nothing about the code: treat it as red (rollback, record what timed out in
 `CLEANUP_PROGRESS.md`) and never promote it to GREEN. On the Step 0 baseline,
 exit 4 means the safety net could not be measured — report it and do not run
-autonomously. Exit code 124 is reserved for the watchdog, exactly as in GNU
-timeout: a check that legitimately exits 124 is read as a timeout. So is 137
-(128+SIGKILL) while the watchdog runs with `-k`, because that is what the
-kill-after escalation produces against a check that ignores TERM — reading it
-as a plain failure would report a hung check as a broken one.
+autonomously.
+
 
 | Signal | Level | Behavior |
 |---|---|---|
@@ -223,36 +215,6 @@ none, so `checks=typecheck,test` can be describing two different stacks. The
 gate refuses to announce GREEN there and says why (`a detected stack has no
 countable suite`). Only the user promotes a cap, by pointing at the suite that
 lives somewhere the gate does not look; the skill never promotes itself.
-
-**Which npm script the gate reads.** For typecheck it takes the first of
-`typecheck`, `type-check`, `check-types` the manifest defines, and stops there.
-`tsc` is not on that list by name alone: as a script name it usually means an
-emitting compile, and the output would land beside the sources. Exception: when
-the script *value* carries `--noEmit` as a real shell word (comments stripped),
-`tsc` counts as typecheck — a trailing `# use --noEmit in CI` does not. The
-reverse is still uncovered: a script *named* `typecheck` whose body is
-`tsc -p .` with no `--noEmit` emits just the same, and the gate cannot tell. If
-the manifest has one, read it before phase 1.
-
-For the suite it takes `test`; failing that, a lone `test:*` script, since a
-repo that declares one slice and no whole is declaring its suite. Two or more
-slices and no `test` count as nothing — half a net classified GREEN would
-unlock dead-export deletion on code the other half covers — and a slice
-declared with an empty command still counts as one of them. The exact npm-init
-placeholder (`echo "Error: no test specified" && exit 1`) is recognised by
-value and reported as `'test' not counted` with `npm init placeholder` — YELLOW,
-not RED. A watch-mode slice never runs at all, because it does not exit:
-`watch`, `ui` and `debug` are matched as whole segments of the name, so
-`test:watch:all` is caught and `test:watchdog` is not. Not running one and not
-counting one are separate questions. `watch` and `debug` name a mode of the
-suite — the same tests, started so they never stop — so a `test:watch` beside a
-lone `test:unit` does not split anything and the real slice is still the suite.
-`ui` is not a mode word: `vitest --ui` does not exit either, but `test:ui` is
-just as often a scope of its own, so it is never run *and* never leaves the
-count — `test:unit` next to `test:ui` is two slices, not one. All of these print
-the `'test' not counted` line naming the slices, and so does a manifest that
-declares no test script at all. A split suite is **not** promotable by hand: it
-is in the manifest, only divided, so run every slice before deciding.
 
 **A baseline that already fails is RED, not YELLOW.** Exit 1 says a check
 broke, and a broken baseline leaves no way to tell what the cleanup broke from

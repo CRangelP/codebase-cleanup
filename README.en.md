@@ -129,6 +129,7 @@ codebase-cleanup/
 ├── hooks/
 │   └── hooks.json                    registers the guard on the PreToolUse event
 ├── references/
+│   ├── gate.md                       the gate contract: exit codes, watchdog, scripts
 │   ├── audit.md                      phase 1.4 audit protocol
 │   ├── knip-config.md                knip configuration without pitfalls
 │   ├── duplication.md                duplicate functions and the churn rule
