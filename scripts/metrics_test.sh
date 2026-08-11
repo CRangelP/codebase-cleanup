@@ -231,6 +231,21 @@ fn_of 90 > "$ignored/dist/bundle.js"
 fn_of 70 > "$ignored/.git/hook.js"
 metric_is "node_modules and dist are not sources" "$ignored" files 1
 metric_is "excluded trees do not move maxfn" "$ignored" maxfn 3
+
+# The tool measuring itself. A skill installed per project lives in
+# `.claude/skills/<name>/`, and that is a documented install route, not an exotic
+# one — so the first thing the pipeline measures would be its own 3.000 lines of
+# protocol and scripts. Measured on a real run: `files=12 loc=3270`, with the
+# longest function reported as `gate.sh:329`, in a fixture whose entire source
+# was two files of one line. A baseline that counts the tool has no relationship
+# to the repository being cleaned, and every delta computed against it is noise.
+# `.agents/` and `.cursor/` are here for the same reason: same idea, other hosts.
+mkdir -p "$ignored/.claude/skills/thing" "$ignored/.agents" "$ignored/.cursor"
+fn_of 90 > "$ignored/.claude/skills/thing/helper.js"
+fn_of 70 > "$ignored/.agents/agent.ts"
+fn_of 60 > "$ignored/.cursor/rule.js"
+metric_is "agent tooling directories are not sources" "$ignored" files 1
+metric_is "a skill installed in the repo does not inflate maxfn" "$ignored" maxfn 3
 metric_is "excluded trees do not move fn_over_50" "$ignored" fn_over_50 0
 
 # --- the property the whole script exists for: two runs must diff to nothing --------

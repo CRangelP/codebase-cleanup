@@ -420,6 +420,18 @@ Never `git add -A` or `git add .`. Step 0's dirty-tree stop is still the
 precondition that nothing of the user's was already pending; pathspecs are
 what keep a draft or local `.env` that appears mid-run out of the commit.
 
+**Never touch the agent tooling directories.** `.claude/`, `.agents/` and
+`.cursor/` hold instructions, skills and hooks — the tools working on the repo,
+not the code of the repo. This skill can be installed *inside* the project it is
+cleaning (`.claude/skills/codebase-cleanup/`), which is a documented route, so
+"unused file" there can mean the protocol you are executing. Measured on a real
+run before this rule existed: the Step 0 baseline reported `files=12 loc=3270`
+with the longest function at `gate.sh:329`, in a repository whose entire source
+was two files of one line each. A baseline that counts the tool has no relation
+to the repository being cleaned, and every delta measured against it is noise.
+They are out of scope for deletion, for moves and for measurement — say so in
+the report if the user asks about them, and never propose them as targets.
+
 **Artifact hygiene (exclude + close).** Before the first category, put
 `knip-report.json` and `knip-report.json.tmp` in the repo's exclude file —
 and, before the first coverage run in phase 4, the coverage artifacts of the

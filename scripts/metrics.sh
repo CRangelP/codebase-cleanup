@@ -201,7 +201,8 @@ while IFS= read -r -d '' f; do
   fi
 done < <(find . \
   \( -name .git -o -name node_modules -o -name vendor -o -name dist -o -name build \
-     -o -name target -o -name __pycache__ -o -name .venv -o -name venv \) -prune \
+     -o -name target -o -name __pycache__ -o -name .venv -o -name venv \
+     -o -name .claude -o -name .agents -o -name .cursor \) -prune \
   -o -type f -print0)
 
 if [[ $files -eq 0 ]]; then
