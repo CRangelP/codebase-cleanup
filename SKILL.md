@@ -153,17 +153,12 @@ in the final report that the work started from a detached HEAD, so the user
 knows where the branch came from.
 
 With a clean tree and a repo, run the baseline gate with
-`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` and classify. Installed as a
-plugin, `CLAUDE_PLUGIN_ROOT` holds the absolute path of this plugin's
-directory, so the call resolves from whatever directory the run happens to be
-in; installed as a plain skill the variable is unset and `:-.` falls back to
-the path relative to this file, which is what it always was. Either way the
-script accepts the project directory as an argument and defaults to the
-current one. The
-script detects the stack from the root manifest — `package.json`, `go.mod`,
-`Cargo.toml`, `pyproject.toml`/`setup.cfg`, `pom.xml`/`build.gradle`,
-`Gemfile`, `sln`/`csproj`/`fsproj` — and runs typecheck and tests for each one
-it finds (compiling counts as typecheck).
+`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` and classify. The script takes the
+project directory as an argument and defaults to the current one, and detects
+the stack from the root manifest, running typecheck and tests for each one it
+finds. Which manifests it recognises, how it picks the npm script to run, and
+why 124 and 137 are reserved are in `references/gate.md` — read it when a
+result surprises you, not before.
 
 Classify by the `[gate] checks=...` line, which lists what actually ran, and
 not by the exit code alone: GREEN requires `typecheck` and `test` in the list;
@@ -181,11 +176,8 @@ disables). In the exit-3 cases, finish the gate by hand before classifying.
 nothing about the code: treat it as red (rollback, record what timed out in
 `CLEANUP_PROGRESS.md`) and never promote it to GREEN. On the Step 0 baseline,
 exit 4 means the safety net could not be measured — report it and do not run
-autonomously. Exit code 124 is reserved for the watchdog, exactly as in GNU
-timeout: a check that legitimately exits 124 is read as a timeout. So is 137
-(128+SIGKILL) while the watchdog runs with `-k`, because that is what the
-kill-after escalation produces against a check that ignores TERM — reading it
-as a plain failure would report a hung check as a broken one.
+autonomously.
+
 
 | Signal | Level | Behavior |
 |---|---|---|
@@ -223,36 +215,6 @@ none, so `checks=typecheck,test` can be describing two different stacks. The
 gate refuses to announce GREEN there and says why (`a detected stack has no
 countable suite`). Only the user promotes a cap, by pointing at the suite that
 lives somewhere the gate does not look; the skill never promotes itself.
-
-**Which npm script the gate reads.** For typecheck it takes the first of
-`typecheck`, `type-check`, `check-types` the manifest defines, and stops there.
-`tsc` is not on that list by name alone: as a script name it usually means an
-emitting compile, and the output would land beside the sources. Exception: when
-the script *value* carries `--noEmit` as a real shell word (comments stripped),
-`tsc` counts as typecheck — a trailing `# use --noEmit in CI` does not. The
-reverse is still uncovered: a script *named* `typecheck` whose body is
-`tsc -p .` with no `--noEmit` emits just the same, and the gate cannot tell. If
-the manifest has one, read it before phase 1.
-
-For the suite it takes `test`; failing that, a lone `test:*` script, since a
-repo that declares one slice and no whole is declaring its suite. Two or more
-slices and no `test` count as nothing — half a net classified GREEN would
-unlock dead-export deletion on code the other half covers — and a slice
-declared with an empty command still counts as one of them. The exact npm-init
-placeholder (`echo "Error: no test specified" && exit 1`) is recognised by
-value and reported as `'test' not counted` with `npm init placeholder` — YELLOW,
-not RED. A watch-mode slice never runs at all, because it does not exit:
-`watch`, `ui` and `debug` are matched as whole segments of the name, so
-`test:watch:all` is caught and `test:watchdog` is not. Not running one and not
-counting one are separate questions. `watch` and `debug` name a mode of the
-suite — the same tests, started so they never stop — so a `test:watch` beside a
-lone `test:unit` does not split anything and the real slice is still the suite.
-`ui` is not a mode word: `vitest --ui` does not exit either, but `test:ui` is
-just as often a scope of its own, so it is never run *and* never leaves the
-count — `test:unit` next to `test:ui` is two slices, not one. All of these print
-the `'test' not counted` line naming the slices, and so does a manifest that
-declares no test script at all. A split suite is **not** promotable by hand: it
-is in the manifest, only divided, so run every slice before deciding.
 
 **A baseline that already fails is RED, not YELLOW.** Exit 1 says a check
 broke, and a broken baseline leaves no way to tell what the cleanup broke from
@@ -470,23 +432,18 @@ Otherwise every category would be tempted to commit the report the previous
 one was read from, and the user reverting `chore: remove unused deps` would
 get a tool artifact back along with the dependencies.
 
-That exclude only reaches **untracked** paths. If a previous run of this skill
-already committed `knip-report.json`, git keeps seeing it no matter what the
-exclude says, and the regeneration below puts a fresh diff on disk. Check with
+That exclude only reaches **untracked** paths. If a previous run already
+committed `knip-report.json`, git keeps seeing it whatever the exclude says, and
+the regeneration below puts a fresh diff on disk. Check with
 `git status --porcelain` after writing the exclude lines; if the report still
-shows up, find out whose it is first — `git log -1 --format=%s --
-knip-report.json`. A previous run of this skill left `chore:` there and the
-file is a tool artifact: untrack it in a commit of its own before the first
-category (`git rm --cached knip-report.json`, then stage that pathspec only —
-`chore: untrack knip report`). Anything else means the user tracks it on
-purpose: leave it tracked, say so in the report, and do **not** pathspec-add
-it into category commits. Do not fold that untrack into another category. On
-the way out (final report / close), delete only report files that are tool
-artifacts from this run (untracked, or untracked earlier via
-`chore: untrack knip report`) — never delete a `knip-report.json` the user
-tracks on purpose. Drop from the exclude file only the lines you added —
-leave anything that was already there, it is the user's — because the exclude
-makes a leftover invisible to `git status` and nobody would find it later.
+shows up, **find out whose it is before touching it**. A tool artifact left by
+an earlier run of this skill gets untracked in a commit of its own, before the
+first category. Anything else is the user's: leave it tracked, say so in the
+report, and never pathspec-add it into a category commit. On the way out, delete
+only report files that are artifacts of this run — never a `knip-report.json`
+the user tracks on purpose. Drop from the exclude only the lines you added,
+because the exclude makes a leftover invisible to `git status` and nobody would
+find it later. `references/knip-config.md` has the commands.
 
 Also confirm the repo ignores `node_modules` before the deps category — a
 global `.gitignore` does not travel with the repo — and add it to
@@ -796,52 +753,13 @@ the user tracks it on purpose, leave the tracked file alone; drop from
 `TECH_DEBT_AUDIT.md` committed unless the user asked to remove them — they are
 the durable record, not tool noise. Say in the summary what was cleaned.
 
-When wrapping up (or when interrupted), deliver:
-
-```markdown
-## Cleanup — summary
-Branch: `cleanup/YYYYMMDD` · Level: GREEN · N commits
-
-| Phase | Result |
-|---|---|
-| 1 — dead code | 7 deps, 23 files, 41 exports removed |
-| 1.5 — duplicate functions | 6 pairs found, 2 real (churn), 4 left alone |
-| 2 — consolidation | 3 modules → 1 (`src/billing/`) |
-| 3 — structure | 4 folders reorganized, 2 cycles broken |
-| 4 — local reshaping | 5 tier A operations, 1 tier B; 2 targets skipped (uncovered) |
-
-### Quality delta
-Run the measurer again and diff it against the Step 0 baseline:
-
-```bash
-"${CLAUDE_PLUGIN_ROOT:-.}/scripts/metrics.sh" . > /tmp/metrics-after.txt
-diff /tmp/metrics-before.txt /tmp/metrics-after.txt
-```
-
-`[metrics] maxfn 214 → 61 · fn_over_50 9 → 4 · maxnest 7 → 4 (approx) · loose_types 31 → 31`
-Evidence, not a target: nothing here is optimized for its own sake. Report the
-lines that moved and say which phase moved them; a line that did not move is
-not worth a row. No baseline (the run started before it was taken, or the file
-is gone) means no delta section — an unanchored "after" is a number pretending
-to be a comparison.
-
-### Revert anything
-`git revert <sha>` — commits are atomic per category.
-
-### Failed / not done
-- dead exports: typecheck broke in `src/api/routes.ts` (dynamic import)
-- orphan files: out of scope — user asked deps only
-
-### Pending your decision
-- (nothing)
-```
-
-The phase 1 line counts what each category actually removed, tallied per commit
-from the report that category ran on — not the numbers of the first report,
-which stopped describing the repo the moment the first commit landed. The last
-regeneration settles the rest: whatever it still lists is what survived, and it
-belongs under "Failed / not done", along with any category that was skipped
-(level cap or user scope).
+When wrapping up (or when interrupted), deliver a summary carrying: the branch,
+the level and the commit count; one row per phase with what that phase actually
+removed; the quality delta against the Step 0 baseline, measured by running
+`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/metrics.sh"` again and diffing it; how to
+revert (`git revert <sha>` — commits are atomic per category); what failed or
+was left undone, and why; and what is pending the user's decision. The template
+and the rules for filling each part are in `references/final-report.md`.
 
 If the level was RED, the report is diagnosis only: list what you would do and
 what needs to exist or be fixed (tests, typecheck, a baseline that passes) to

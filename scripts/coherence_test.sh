@@ -1725,6 +1725,71 @@ do
 green count that does not name its own scope reads as coverage it does not have"
 done
 
+# 21. Progressive disclosure: nothing was extracted into a file nobody opens. --
+# Moving text out of SKILL.md only pays off if the text is still reachable. A
+# reference that no file names is not "deferred", it is deleted with extra steps
+# — and the deletion is invisible, because the suite that checked the rule as
+# TEXT goes on finding it in a file the model will never be told to open.
+#
+# Reachability is transitive on purpose: phase-4-refactor.md names the
+# refactoring catalog, and that is a legitimate way for the catalog to be found.
+# The fixed point starts at SKILL.md, which is the only file the host loads on
+# its own.
+reachable="SKILL.md"
+changed=1
+while [[ $changed -eq 1 ]]; do
+  changed=0
+  for f in $reachable; do
+    [[ -f $f ]] || continue
+    for r in $(grep -o -E 'references/[A-Za-z0-9_-]+\.md' "$f" 2>/dev/null | sort -u); do
+      case " $reachable " in
+        *" $r "*) ;;
+        *) reachable="$reachable $r"; changed=1 ;;
+      esac
+    done
+  done
+done
+
+for r in references/*.md; do
+  case " $reachable " in
+    *" $r "*) pass "$r is reachable from SKILL.md" ;;
+    *)        fail "$r is reachable from SKILL.md" \
+                   "no file the model is told to read names it, so its content left
+SKILL.md and arrived nowhere — reachable set: $reachable" ;;
+  esac
+done
+
+# Floor for the walk above: a fixed point that stops at the first file would
+# report every transitively-reached reference as an orphan, and one that scanned
+# the whole directory would report nothing as an orphan ever. Both are silent.
+check "the reachability walk is transitive, not one level deep" \
+      "$([[ " $reachable " == *" references/refactoring-catalog.md "* ]] && echo 0 || echo 1)" \
+      "the catalog is named by references/phase-4-refactor.md and not by SKILL.md;
+if the walk cannot reach it, it is checking one level and calling it a graph"
+check "the reachability walk excludes what nobody names" \
+      "$(printf '%s\n' $reachable | grep -qx 'references/NOTHING.md' && echo 1 || echo 0)" \
+      "a walk that reports an inexistent file as reachable is matching loosely"
+
+# The extractions of this release, each one asserted on both sides: the rule that
+# decides stayed in SKILL.md, and the procedure that executes arrived intact.
+# Asserting only one side is how an extraction quietly becomes a deletion.
+while IFS='|' read -r label skill_side ref_file ref_side; do
+  [[ -n $label ]] || continue
+  check "[$label] the deciding rule stayed in SKILL.md" \
+        "$(grep -q -F -- "$skill_side" SKILL.md && echo 0 || echo 1)" \
+        "SKILL.md no longer carries [$skill_side] — that clause decides an action at
+dispatch time and cannot wait for a file the model may not open"
+  check "[$label] the procedure arrived in $ref_file" \
+        "$(grep -q -F -- "$ref_side" "$ref_file" 2>/dev/null && echo 0 || echo 1)" \
+        "$ref_file does not carry [$ref_side] — it was removed from SKILL.md, so if
+it is not here it is nowhere"
+done <<'EXTRACTIONS'
+gate contract|Exit 4 is an inconclusive gate|references/gate.md|Exit code 124 is reserved for the watchdog
+npm script detection|Classify by the `[gate] checks=...` line|references/gate.md|as a real shell word
+final report|Close hygiene first|references/final-report.md|## Cleanup — summary
+tracked knip report|never a `knip-report.json`|references/knip-config.md|git rm --cached knip-report.json
+EXTRACTIONS
+
 echo "----"
 echo "$((total-failures))/$total invariants held"
 [[ $failures -eq 0 ]]

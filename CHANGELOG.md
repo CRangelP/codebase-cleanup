@@ -9,6 +9,56 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.4.0] — 2026-08-10
+
+Fecha a [#53](https://github.com/CRangelP/codebase-cleanup/issues/53). Disclosure progressiva no
+`SKILL.md`, pelo critério que a #44 deixou depois de refutar o próprio: não é tamanho, é **momento
+de leitura**.
+
+### Alterado
+
+- **`SKILL.md`: 45.672 → 41.241 bytes** (851 → 770 linhas), cerca de 1.550 tokens a menos em cada
+  invocação. Todo byte do arquivo é pago em toda invocação, inclusive nas que nunca chegam na fase
+  que aquele texto descreve; os `references/*.md` só são lidos quando o modelo decide abrir.
+
+  Cada bloco extraído responde, no commit que o move, **em que momento da run ele é lido**:
+
+  - **o contrato do gate** → `references/gate.md` (novo). Por que `${CLAUDE_PLUGIN_ROOT:-.}`
+    resolve nos dois modos de instalação, a lista de manifestos reconhecidos, a detecção de qual
+    script npm conta como typecheck e como suíte, e por que 124 e 137 são reservados. Nada disso
+    muda uma ação no disparo — o script decide, o modelo lê o resultado.
+  - **o modelo do relatório final** → `references/final-report.md` (novo). Lido no fechamento, e
+    boa parte das invocações nunca chega lá.
+  - **o `knip-report.json` que uma run anterior deixou rastreado** → `references/knip-config.md`.
+    Caso condicional, com gatilho detectável (`git status --porcelain` depois do exclude).
+
+  Fica no `SKILL.md` tudo que decide uma ação: classificar pelo `checks=` e não pelo exit code,
+  exit 4 inconclusivo, a higiene de fechamento inteira, e cada regra sobre o que a skill pode
+  destruir. A aposta da disclosure progressiva fica explícita: o `SKILL.md` mantém o **conteúdo**
+  obrigatório do relatório, a reference carrega a **forma**. O contrário seria apostar que o modelo
+  abre um arquivo antes de omitir alguma coisa do usuário.
+
+- **Folga da regra mais apertada da seção 17** (stack caps): 1.264 → 1.929 bytes. A extração do
+  meio do arquivo puxa para cima tudo o que vem depois.
+
+### Adicionado
+
+- **Seção 21: uma extração que ninguém consegue abrir é uma deleção com passos extras.** O
+  invariante percorre o grafo de referências a partir do `SKILL.md` — transitivamente, porque a
+  `phase-4-refactor.md` apontar o catálogo é um jeito legítimo do catálogo ser achado — e reprova
+  qualquer `references/*.md` que nenhum arquivo alcançável nomeia.
+
+  Sem ele, mover texto e apagar o ponteiro passaria verde: a suíte que checava a regra como
+  **texto** continuaria achando o texto num arquivo que o modelo nunca vai abrir.
+
+  Cada extração é asserida **dos dois lados** — a regra que decide continua no `SKILL.md`, o
+  procedimento chegou inteiro no destino. Mutações M13 (o ponteiro some) e M14 (o conteúdo some).
+
+- **Os dois READMEs publicam o par de números** e o critério que o produziu. Um número de bytes sem
+  o de antes não diz nada.
+
+451 invariantes, 14 mutações, 47 casos do guarda.
+
 ## [0.3.7] — 2026-08-10
 
 ### Corrigido

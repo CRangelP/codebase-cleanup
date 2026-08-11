@@ -45,6 +45,11 @@ apply() {
     # The doc leg of the same regression: SKILL.md kept teaching the old form in the
     # detached-HEAD paragraph, and the first version of the invariant walked past
     # it because the text named the flag without `rev-parse` in front.
+    # The two ways an extraction goes wrong. M13: the pointer disappears and the
+    # reference becomes a file nobody is told to open — the content left SKILL.md
+    # and arrived nowhere. M14: the pointer survives but the content does not.
+    M13) perl -0pi -e 's/are in `references\/gate\.md` — read it when a\nresult surprises you, not before\./are documented elsewhere./' SKILL.md ;;
+    M14) perl -0pi -e 's/Exit code 124 is reserved for the watchdog/Exit code 124 belongs to the watchdog/' references/gate.md ;;
     M12) perl -0pi -e 's/`git branch --show-current` prints nothing, and `--verify HEAD`\nsucceeded — that pair is the whole test/`--abbrev-ref HEAD` prints `HEAD`/' SKILL.md ;;
     M11) perl -0pi -e 's/git branch --show-current 2>\/dev\/null/git rev-parse --abbrev-ref HEAD 2>\/dev\/null/' scripts/guard.sh ;;
     M10) perl -0pi -e 'BEGIN{$/=undef} s/(## Rules that apply to the whole pipeline.*?)(## Step 0 — Calibrate autonomy)/$2/s; ' SKILL.md
@@ -66,6 +71,8 @@ desc() {
     M10) echo "the pipeline rules move back to the end of SKILL.md, past the compaction cut" ;;
     M11) echo "the guard reads the branch through rev-parse --abbrev-ref again" ;;
     M12) echo "SKILL.md teaches detached-HEAD detection through --abbrev-ref again" ;;
+    M13) echo "SKILL.md stops pointing at references/gate.md, orphaning it" ;;
+    M14) echo "the extracted watchdog contract disappears from references/gate.md" ;;
   esac
 }
 
@@ -87,6 +94,8 @@ expect() {
     M10) echo "[a red gate rolls back] is inside the budget that survives a compaction" ;;
     M11) echo "guard.sh reads no branch name through rev-parse --abbrev-ref" ;;
     M12) echo "no doc offers --abbrev-ref as the way to read the branch" ;;
+    M13) echo "references/gate.md is reachable from SKILL.md" ;;
+    M14) echo "[gate contract] the procedure arrived in references/gate.md" ;;
   esac
 }
 
@@ -96,11 +105,11 @@ copy_repo() {
   rm -rf "$1/.git"
 }
 
-MUTATIONS="M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 M11 M12"
+MUTATIONS="M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 M11 M12 M13 M14"
 # Every file any mutation edits. The STALE guard below compares this set before
 # and after: a file missing from it makes its own mutations report "changed
 # nothing" forever, which is the stale-by-construction case the guard exists for.
-MUTATED_FILES="SKILL.md README.md README.en.md references/phase-2-consolidation.md scripts/guard.sh"
+MUTATED_FILES="SKILL.md README.md README.en.md references/phase-2-consolidation.md references/gate.md scripts/guard.sh"
 total=0
 for m in $MUTATIONS; do total=$((total + 1)); done
 
