@@ -578,6 +578,13 @@ at RED nothing is committed and the pair table goes into the final report
 instead. Update `CLEANUP_PROGRESS.md`. Step 1.5 closes phase 1: **tell the
 user to run `/clear` before phase 2.**
 
+**No pairs is a result, and it gets committed too.** "No duplicate pairs among
+the N files that survived phase 1" is what this step found, and the next session
+reads it to know the question was asked and answered rather than skipped. Do not
+treat an empty pair table as "not applicable" and move on: the commit is the only
+durable mark that phase 1 reached its end, and a judgement that lives in the chat
+is gone with the session.
+
 ---
 
 # PHASE 2 — Consolidate modules
