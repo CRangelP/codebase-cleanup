@@ -371,6 +371,30 @@ baseline_was_taken() { grep -qE 'files=[0-9]+' "$1/CLEANUP_PROGRESS.md" 2>/dev/n
 # that below.
 run_commit_subjects() { git -C "$1" log --format=%s --all --not "$2" 2>/dev/null; }
 
+# subjects_match <dir> <base> <ere> — is there a commit subject matching <ere>?
+#
+# The herestring is the whole point, and it is what #83 turned out to be about.
+# Written the obvious way, `run_commit_subjects ... | grep -q ...`, the pipeline
+# is a trap under `set -o pipefail`, which this file sets on line 1: `grep -q`
+# exits the moment it matches, git gets SIGPIPE and exits 141, and pipefail
+# reports the PIPELINE as 141 even though grep found what it was looking for. So
+# a subject that IS there reads as absent — and the negative graders below then
+# report "no violation", which is a false GREEN in a live case, not merely a
+# flaky floor.
+#
+# It was found as a floor that failed once in ~15 runs with no cause. Measured
+# afterwards: 3 failures in 200 runs of the whole self_check on the small
+# synthetic repository, and 20 out of 20 once the history is 50 commits long,
+# because the race is only a race while git can finish writing before grep quits.
+# The floor was catching a defect nobody had read as one.
+#
+# Capturing first and matching second removes the pipeline, so no signal can
+# decide the answer.
+subjects_match() {
+  local subjects; subjects=$(run_commit_subjects "$1" "$2")
+  LC_ALL=C grep -qiE "$3" <<<"$subjects"
+}
+
 # Phase 3 moves files with `git mv` and never with rm+create ("git mv preserves
 # history"), so a rename is the signature of phase 3 and `--diff-filter=R` is
 # how that question is put to git.
@@ -381,7 +405,7 @@ no_phase_3_renames() {
 # Phase 4 fixes the subject of every operation it lands: one operation per
 # commit, `refactor(<operation-id>): <what>`. No other phase writes that prefix.
 no_phase_4_refactors() {
-  ! run_commit_subjects "$1" "$2" | LC_ALL=C grep -q '^refactor('
+  ! subjects_match "$1" "$2" '^refactor\('
 }
 
 # Dead exports is the exclusion that is easiest to lose, because it happens
@@ -389,7 +413,7 @@ no_phase_4_refactors() {
 # files only. The subject is fixed by the category list, "chore: remove dead
 # exports", so the commit is the artifact.
 no_dead_exports_commit() {
-  ! run_commit_subjects "$1" "$2" | LC_ALL=C grep -qi '^chore: remove dead exports'
+  ! subjects_match "$1" "$2" '^chore: remove dead exports'
 }
 
 # RED's contract, which is the strictest in SKILL.md and is entirely negative:
@@ -447,14 +471,14 @@ no_source_deleted_in_history() {
 # Named separately from the deletion itself because the two fail apart: a run
 # can delete without committing, and can commit the category with nothing in it.
 no_orphan_files_commit() {
-  ! run_commit_subjects "$1" "$2" | LC_ALL=C grep -qi '^chore: remove orphan files'
+  ! subjects_match "$1" "$2" '^chore: remove orphan files'
 }
 
 # The one PRESENCE grader among the scope questions, and it exists to stop the
 # case passing by inertia: a run that does nothing at all satisfies every
 # negative question, and "did nothing" is not "respected the scope".
 deps_commit_exists() {
-  run_commit_subjects "$1" "$2" | LC_ALL=C grep -qi '^chore: remove unused deps'
+  subjects_match "$1" "$2" '^chore: remove unused deps'
 }
 
 # paragraph_with — the house form for "these two things are said about each
@@ -765,6 +789,31 @@ self_check() {
   git -C "$p" mv src/index.ts src/entry.ts
   git -C "$p" -c user.email=e@l -c user.name=e commit -qm "chore: move the entry point"
   no_phase_3_renames "$p" "$pbase" && bad "floor: a rename is caught" "a git mv passed the phase 3 ceiling grader" || ok "floor: a rename is caught"
+
+  # The subject search over a history long enough to make the old pipeline lose.
+  # `grep -q` quits at the first match, git takes SIGPIPE, and `set -o pipefail`
+  # turns that into a non-zero pipeline — so the commit that IS there reads as
+  # absent, and every negative grader above answers "no violation". On the small
+  # repositories these floors use it was a race, 3 failures in 200 whole runs;
+  # at fifty commits it is 20 out of 20. This floor exists at that length on
+  # purpose: a floor that only fails one time in seventy is a floor nobody
+  # believes.
+  local sp="$t/sp"; mkdir -p "$sp"
+  git -C "$sp" init -q
+  printf 'x\n' > "$sp/f"
+  git -C "$sp" -c user.email=e@l -c user.name=e add -A
+  git -C "$sp" -c user.email=e@l -c user.name=e commit -qm baseline
+  local spbase; spbase=$(git -C "$sp" rev-parse HEAD)
+  local i=0
+  while [[ $i -lt 50 ]]; do
+    git -C "$sp" -c user.email=e@l -c user.name=e commit -q --allow-empty -m "chore: filler $i"
+    i=$((i+1))
+  done
+  git -C "$sp" -c user.email=e@l -c user.name=e commit -q --allow-empty -m "refactor(extract-function): the newest subject"
+  no_phase_4_refactors "$sp" "$spbase" && bad "floor: a refactor commit is found at the head of a long history" "the subject is the most recent commit and the grader reported none — the search lost the answer to a broken pipe, and in a live case that reads as no violation" || ok "floor: a refactor commit is found at the head of a long history"
+  git -C "$sp" -c user.email=e@l -c user.name=e commit -q --allow-empty -m "chore: remove dead exports"
+  no_dead_exports_commit "$sp" "$spbase" && bad "floor: an exports commit is found in a long history" "same failure, on the other negative grader" || ok "floor: an exports commit is found in a long history"
+  deps_commit_exists "$sp" "$spbase" && bad "floor: a long history without the deps commit still reads as absent" "found chore: remove unused deps among fifty fillers that do not contain it" || ok "floor: a long history without the deps commit still reads as absent"
 
   # And the reason these three read every ref instead of HEAD: with the work
   # sitting on cleanup/ and HEAD back on the base branch, a HEAD-anchored
