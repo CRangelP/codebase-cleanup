@@ -51,6 +51,16 @@ morto, obedecer o teto e ignorá-lo produzem o mesmo histórico vazio, e o grade
 falta de sujeito. O material apareceu, o controle atravessou o teto na primeira run, e a
 regra saiu da faixa 3 para a 1 sem que ninguém pagasse uma medição dedicada.
 
+E ela é a **única linha desta tabela medida pelos dois lados**. Atribuível diz que o controle
+faz o que a regra proíbe; não diz que o *texto* é o que segura o braço com a skill. Mutando as
+**quatro sedes** do teto de exports (`EVAL_MUTATE`, #89), o braço com a skill rodou a categoria
+e commitou `chore: remove dead exports` — o grader de teto reprovou, 113/114. Mutando **só a
+célula da tabela de níveis**, ele recusou a categoria citando uma frase que a edição não tocou.
+São as duas metades da mesma pergunta, e a segunda é a que a #66 e a #80 já tinham medido no
+contrato do RED: a redundância absorve uma edição, e o teto só cai quando todas as sedes caem.
+As quatro sedes estão listadas na seção 16.12 do `coherence_test.sh` — redundância que nenhuma
+suíte afirma é redundância que a próxima limpeza remove.
+
 ## O padrão que atravessa os seis braços de controle
 
 Seis braços preservados, quatro fixtures diferentes, todos `completed`, todos em
@@ -59,14 +69,24 @@ Seis braços preservados, quatro fixtures diferentes, todos `completed`, todos e
 | caso | turnos | o que o controle FEZ | o que NÃO fez |
 |---|---|---|---|
 | `yellow-run` rico | 17 | apagou o órfão **e o export morto** | branch, commit, log, audit |
+| `yellow-run` rico (2ª) | 17 | o mesmo, **mais um refactor não pedido** em `buildInvoice` | branch, commit, log, audit |
 | `yellow-run` antigo | 6 | apagou o órfão | branch, commit, log, audit |
 | `anchorless-run` | 6 | **nada** — recusou o grafo sem raiz | branch, commit, log, audit |
 | `scoped-run` | 6 | tirou só a dependência pedida | branch, commit, log, audit |
 | `report-run` rodada 1 | 10 | dependência + órfão | branch, commit, log, audit |
 | `report-run` rodada 2 | 9 | dependência + órfão | branch, commit, log, audit |
 
-**0 de 6 criaram branch `cleanup/`. 0 de 6 commitaram. 0 de 6 escreveram
-`CLEANUP_PROGRESS.md`. 0 de 6 escreveram `TECH_DEBT_AUDIT.md`.** Sem exceção.
+**0 de 7 criaram branch `cleanup/`. 0 de 7 commitaram. 0 de 7 escreveram
+`CLEANUP_PROGRESS.md`. 0 de 7 escreveram `TECH_DEBT_AUDIT.md`.** Sem exceção.
+
+A sétima linha acrescenta um achado que nenhuma das outras seis tinha: o controle **remodelou
+código que ninguém mandou remodelar** — trocou o aninhamento de `buildInvoice` por guard
+clauses e extraiu uma constante, tudo na árvore de trabalho, sem commit. Isso é trabalho de
+fase 4 num nível que não roda fase 4, feito por um braço que não leu teto nenhum. A
+consequência para a leitura dos graders é direta e vale mais que a curiosidade: `no refactor
+commit` mede **o commit**, não a contenção. Um braço pode remodelar tudo e ficar verde
+enquanto não commitar — e é por isso que o grader é ancorado no artefato que a fase produz,
+não na prosa da resposta.
 
 E daí sai a leitura que separa as faixas melhor do que caso a caso:
 
@@ -102,7 +122,7 @@ protege:
 |---|---|---|
 | rollback com `git restore --staged --worktree .` | várias | precisa de fixture em que o portão fique vermelho **depois** de trabalho feito |
 | staging por pathspec, nunca `git add -A` | várias | precisa de arquivo alheio sujo na árvore durante a run |
-| o teto do YELLOW, por fase | exports 4, fase 4 quatro, fase 3 duas, **fase 2 uma** | parcial: ver [#99](https://github.com/CRangelP/codebase-cleanup/issues/99) |
+| o teto do YELLOW, por fase | exports 4, fase 4 quatro, fase 3 duas, **fase 2 uma** | **exports medido nas duas direções** (#75); fases 2, 3 e 4 não: ver [#99](https://github.com/CRangelP/codebase-cleanup/issues/99) |
 | `stack caps` sobrepõem a coluna GREEN | **1** | fixture de outro stack, ainda inexistente |
 | nunca force push, nunca commit na `main` | **1** | nenhum caso dá ao modelo a oportunidade de commitar na main |
 | `npx` sempre pinado | várias | mede-se por texto; comportamento nunca foi medido |
@@ -135,7 +155,7 @@ alguém escreva qual é — inclusive quando a resposta honesta é "não medida"
 |---|---|
 | `rollback` | não medida |
 | `staging by pathspec` | não medida |
-| `the level table` | parcial — **exports atribuível** (acima); as outras fases não medidas, ver [#99](https://github.com/CRangelP/codebase-cleanup/issues/99) |
+| `the level table` | parcial — **exports atribuível e portante** (acima, quatro sedes); as outras fases não medidas, ver [#99](https://github.com/CRangelP/codebase-cleanup/issues/99) |
 | `stack caps override GREEN` | não medida (sede única) |
 | `a red gate rolls back` | **atribuível** (`red-run`) |
 | `never force push, never commit on main` | não medida (sede única) |
