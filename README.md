@@ -128,6 +128,7 @@ codebase-cleanup/
 ├── references/
 │   ├── gate.md                       o contrato do gate: exit codes, watchdog, scripts
 │   ├── audit.md                      protocolo de auditoria da fase 1.4
+│   ├── final-report.md               o modelo do relatório e como preenchê-lo
 │   ├── knip-config.md                configuração do knip sem armadilhas
 │   ├── duplication.md                funções duplicadas e a regra do churn
 │   ├── phase-2-consolidation.md      protocolo de consolidação de módulos
