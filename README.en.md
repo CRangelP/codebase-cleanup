@@ -157,6 +157,7 @@ codebase-cleanup/
     ├── gate_test.sh                  gate contract tests (toolchain stubs)
     ├── guard_test.sh                 what the guard blocks and what it lets through
     ├── rollback_test.sh              executable proof of the rollback protocol
+    ├── eval.sh                      what the model does reading the skill (not in test.sh)
     ├── metrics_test.sh               measurer cases, on synthetic repos
     ├── coherence_test.sh             coherence invariants between docs and code
     └── mutation_test.sh              mutates destructive-authority rules; each must fail
@@ -176,6 +177,9 @@ bash scripts/gate_test.sh       # gate contract: exit codes, the checks= line, P
 bash scripts/guard_test.sh      # what the guard blocks, and what it lets through
 bash scripts/rollback_test.sh   # what `git restore` brings back and what it destroys
 bash scripts/metrics_test.sh    # the quality measurer, on synthetic repos
+
+# not in test.sh: runs the real model, costs minutes and money
+bash scripts/eval.sh            # what the model does reading the skill
 bash scripts/coherence_test.sh  # docs and code saying the same thing
 bash scripts/mutation_test.sh   # would the suite above fail if the rule vanished?
 ```
@@ -202,7 +206,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 142/142 cases, 47/47 guard cases, 5/5 properties,
-# 35/35 metrics cases, 451/451 invariants, 14/14 mutations caught
+# 37/37 metrics cases, 463/463 invariants, 14/14 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK

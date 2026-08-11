@@ -1805,6 +1805,41 @@ final report|Close hygiene first|references/final-report.md|## Cleanup — summa
 tracked knip report|never a `knip-report.json`|references/knip-config.md|git rm --cached knip-report.json
 EXTRACTIONS
 
+# 22. The tool is not the codebase. ----------------------------------------
+# `.claude/skills/<name>/` is a documented install route for this very skill, so
+# a run can be pointed at a repository that contains a copy of the protocol it is
+# executing. Measured before the rule existed: the Step 0 baseline came back
+# `files=12 loc=3270`, longest function `gate.sh:329`, on a fixture whose source
+# was two one-line files. Two different failures live there — a baseline that
+# describes the tool instead of the repo, so every delta is noise; and a phase 1
+# that can propose deleting the skill as an unused file.
+#
+# The measurement side is asserted in metrics_test.sh, which prunes those trees
+# on a fixture. Here the claim is that the PROTOCOL says it, because the model is
+# what decides what to delete, and a find(1) flag never reaches that decision.
+tool_para=$(paragraph_with SKILL.md 'agent tooling directories')
+check "SKILL.md carries the rule about agent tooling directories" \
+      "$([[ -n ${tool_para// /} ]] && echo 0 || echo 1)" \
+      "no paragraph mentions the agent tooling directories; without it, a skill
+installed inside the repo it cleans is just another unused file"
+for d in '.claude/' '.agents/' '.cursor/'; do
+  check "the rule names $d" \
+        "$(printf '%s' "$tool_para" | grep -q -F -- "$d" && echo 0 || echo 1)" \
+        "the paragraph does not name $d — naming two of the three reads as a list
+that happens to omit one, not as a rule about tooling"
+done
+check "the rule covers measurement, not only deletion" \
+      "$(printf '%s' "$tool_para" | grep -q -F -- 'measurement' && echo 0 || echo 1)" \
+      "the paragraph forbids deleting but says nothing about measuring, and the
+first thing that broke was the baseline, before anything was deleted"
+
+# metrics.sh has to agree, in the code that walks the tree.
+for d in .claude .agents .cursor; do
+  check "metrics.sh prunes $d" \
+        "$(bash_body < scripts/metrics.sh | grep -q -F -- "-name $d" && echo 0 || echo 1)" \
+        "the find(1) walk does not prune $d, so the baseline counts the tooling"
+done
+
 echo "----"
 echo "$((total-failures))/$total invariants held"
 [[ $failures -eq 0 ]]
