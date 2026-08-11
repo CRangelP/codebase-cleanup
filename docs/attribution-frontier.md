@@ -199,7 +199,7 @@ alguém escreva qual é — inclusive quando a resposta honesta é "não medida"
 | `never force push, never commit on main` | **medida — nula quanto à frase** (duas mutações, comportamento não se moveu) |
 | `a report that indicts everything` | **não-atribuível hoje** (`anchorless-run`, 3 de 3) |
 | `never merge two steps` | **medida por acidente, e reprovou 1 vez em 4** — o grader `no commit merges source with the log` pegou um commit que juntou `src/dead.ts` com o log ([#112](https://github.com/CRangelP/codebase-cleanup/issues/112)) |
-| `the scheduled checkpoints` | não medida — os checkpoints ficam nas fases 2 e 3, e nenhum caso vivo chega lá |
+| `the scheduled checkpoints` | não medida — os checkpoints ficam nas fases 2 e 3, e nenhum caso vivo chega lá; **sob mutação** (M1, 2 runs) a fase 2 registrou o survey vazio 2 de 2 e o commitou 1 de 2 ([#109](https://github.com/CRangelP/codebase-cleanup/issues/109)) |
 
 Duas dessas linhas foram acrescentadas **porque o invariante 16.10 reprovou**: eu tinha
 escrito o índice à mão e esquecido as duas. É o comportamento pretendido — o documento não
