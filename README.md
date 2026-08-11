@@ -132,7 +132,8 @@ codebase-cleanup/
 │   ├── cleanup-phase-4-survey.md     fila de remodelagem (só leitura)
 │   └── cleanup-phase-4-impl.md       aplica tier A e o tier B aprovado
 ├── docs/
-│   └── plugin-spec-research.md       o que é limite do host, conselho e hábito
+│   ├── plugin-spec-research.md       o que é limite do host, conselho e hábito
+│   └── attribution-frontier.md       o que a skill compra e o que o modelo já traz
 ├── hooks/
 │   └── hooks.json                    registra o guarda no evento PreToolUse
 ├── references/

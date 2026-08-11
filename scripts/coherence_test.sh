@@ -1693,6 +1693,33 @@ check "phase 4 keeps the catalogued-operation form that keeps the two apart" \
       "phase 4's subject changed shape; if it can now be written as
 refactor(consolidate) the phase 2 mark stops being a mark"
 
+# 16.10 The attribution ledger stays in step with the instrument (#82). The
+# document in docs/ records which rules are measured attributable, which are
+# measured non-attributable TODAY, and which were never measured — and the third
+# band is the point of it. A ledger nobody keeps current is worse than none: it
+# would report a frontier that has moved, and this repository ships a skill whose
+# job is deleting what looks dead.
+#
+# So the two lists that can grow behind its back are checked against it. A new
+# eval case measures a control arm and must land in some band; a new
+# destructive-authority rule must be placed too, even if the placement is "not
+# measured". Neither check judges WHICH band — that is a reading, not a string —
+# and a wrong band is a lie no grep can catch. What they prevent is the silent
+# omission, which is the failure mode a document like this actually has.
+LEDGER=docs/attribution-frontier.md
+check "the attribution ledger carries its own warning" \
+      "$(LC_ALL=C grep -qF -- 'não é uma regra' "$LEDGER" && echo 0 || echo 1)" \
+      "the header that says a non-attributable rule is not a useless rule is gone;
+without it this file is a list of deletion candidates, which is the opposite of
+what #82 asked for"
+for c in $(LC_ALL=C grep -oE 'local name="[a-z-]+"' scripts/eval.sh | sed 's/.*"\(.*\)"/\1/'); do
+  check "the ledger places the eval case [$c]" \
+        "$(LC_ALL=C grep -qF -- "\`$c\`" "$LEDGER" && echo 0 || echo 1)" \
+        "$c measures a control arm and appears in no band of $LEDGER — a case that
+measures attribution and is not written down is exactly the omission this check
+exists for"
+done
+
 # 17. What decides destructive authority survives a compaction. -------------
 # Section 16 proved these rules cannot be deleted in silence. This one answers a
 # question that no amount of invariants about the TEXT can: is the text still in
@@ -1756,8 +1783,15 @@ check "byte offset finder is empty for a string that is not there" \
 # One entry per rule that decides what the skill may destroy. Every one of them
 # is already asserted somewhere else in this file as TEXT; here the claim is
 # about POSITION, and the two together are what make the rule reliable.
+AUTH_LABELS=""
 while IFS='|' read -r label needle; do
   [[ -n $label ]] || continue
+  # Collected here rather than re-parsed later: a second reader of this heredoc
+  # would have to match its delimiter from outside, and the first version of
+  # that check grabbed the closing line and everything after it. The list has
+  # one producer.
+  AUTH_LABELS="$AUTH_LABELS$label
+"
   off=$(byte_offset SKILL.md "$needle")
   # Floor: an anchor that no longer matches would report an empty offset, and
   # `[[ "" -lt 15000 ]]` is true in bash. The rule would pass by disappearing.
@@ -1782,6 +1816,19 @@ a report that indicts everything|A report that indicts everything
 never merge two steps|Never merge two steps
 the scheduled checkpoints|two scheduled checkpoints
 AUTHORITY_RULES
+
+# The ledger of #82 has to place every one of them. A rule that decides what may
+# be destroyed and is absent from that document makes the survey read as complete
+# when it is not — and "not measured" is a legitimate placement there, so this
+# never pressures anyone into inventing evidence.
+while IFS= read -r albl; do
+  [[ -n $albl ]] || continue
+  check "the attribution ledger places the authority rule [$albl]" \
+        "$(LC_ALL=C grep -qF -- "\`$albl\`" docs/attribution-frontier.md && echo 0 || echo 1)" \
+        "the rule labelled [$albl] appears in no band of docs/attribution-frontier.md"
+done <<AUTH_LABELS_EOF
+$AUTH_LABELS
+AUTH_LABELS_EOF
 
 # 18. The unborn HEAD, in the two places that missed it. ---------------------
 # Measured on a `git init` with nothing else: --is-inside-work-tree says true,
