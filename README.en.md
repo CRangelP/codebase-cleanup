@@ -192,7 +192,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 142/142 cases, 47/47 guard cases, 5/5 properties,
-# 35/35 metrics cases, 420/420 invariants, 12/12 mutations caught
+# 35/35 metrics cases, 451/451 invariants, 14/14 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -215,6 +215,34 @@ phase 1.4 audit protocol lives in `references/audit.md`, and the phase 2
 consolidation vocabulary in `references/phase-2-consolidation.md`.
 Installing the skills named in the credits changes nothing at runtime; they
 are sources, not dependencies.
+
+### What `SKILL.md` carries, and what it defers
+
+Every byte of `SKILL.md` is paid on **every** invocation: it enters the context
+whole when the skill fires, including on invocations that never reach the phase
+that text describes. The `references/*.md` are read only when the model decides
+to open one. That is the only lever there is, and it has a price: what goes down
+into a reference may not be read.
+
+So the criterion is not size, it is **when the text is read**. What decides an
+action stays in `SKILL.md` — the levels, the checkpoints, the rollback, and
+every rule about what the skill may destroy. What goes down is what you only
+consult after a result surprises you: the gate's internal mechanics, the final
+report template, the procedure for a `knip-report.json` a previous run left
+tracked.
+
+The v0.4.0 extraction removed 4,431 bytes: **45,672 → 41,241** (851 → 770
+lines), roughly 1,550 fewer tokens per invocation. The number alone says
+nothing — the pair says something, and the reduction is a result, not a target.
+Nothing was removed "to make it smaller": a block whose reading question had no
+clear answer stayed where it was.
+
+Two things keep that arithmetic honest. Section 21 of `coherence_test.sh` walks
+the reference graph from `SKILL.md` and fails any file nobody points at — an
+orphaned reference is not deferred content, it is deleted content with extra
+steps. And every extraction is asserted on **both sides**: the rule that decides
+is still in `SKILL.md`, the procedure arrived intact at its destination.
+Asserting only one side is how an extraction quietly becomes a deletion.
 
 ## Usage
 

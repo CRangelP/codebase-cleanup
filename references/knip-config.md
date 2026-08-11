@@ -227,3 +227,31 @@ ignore case.
 **`treatConfigHintsAsErrors: true`** is good for CI once the config has
 stabilized — it stops anyone from changing the build and leaving the graph
 full of holes unnoticed.
+
+## When a previous run left `knip-report.json` tracked
+
+`SKILL.md` carries the rule — find out whose the file is before touching it, and
+never delete or untrack one the user keeps on purpose. This is how you find out,
+and what to do once you know.
+
+```bash
+git log -1 --format=%s -- knip-report.json
+```
+
+A `chore:` subject from an earlier run of this skill means the file is a tool
+artifact that got committed by mistake. Untrack it in a commit of its own,
+before the first category, staging that pathspec and nothing else:
+
+```bash
+git rm --cached knip-report.json
+git add -- knip-report.json
+git commit -m "chore: untrack knip report"
+```
+
+Do not fold that untrack into a category commit. The categories are the unit the
+user reverts, and a revert that also puts a tool artifact back is a revert that
+did something the user did not ask for.
+
+Any other subject means the user tracks the report on purpose — a repo that
+commits its own analysis output is a legitimate choice. Leave the tracked file
+alone, note it in the final report, and keep it out of every category commit.

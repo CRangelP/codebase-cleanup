@@ -189,7 +189,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 142/142 casos, 47/47 casos do guarda, 5/5 propriedades,
-# 35/35 casos de métrica, 420/420 invariantes, 12/12 mutações pegas
+# 35/35 casos de métrica, 451/451 invariantes, 14/14 mutações pegas
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -212,6 +212,34 @@ o vocabulário de consolidação da fase 2 em
 `references/phase-2-consolidation.md`. Instalar as skills citadas nos
 créditos não muda o comportamento em runtime; elas são fonte, não
 dependência.
+
+### O que o `SKILL.md` carrega, e o que ele adia
+
+Todo byte do `SKILL.md` é pago em **toda** invocação: ele entra inteiro no
+contexto quando a skill dispara, inclusive nas invocações que nunca chegam na
+fase que aquele texto descreve. Os `references/*.md` só são lidos quando o
+modelo decide abrir um. É a única alavanca que existe, e ela tem um preço: o
+que desce para uma reference pode não ser lido.
+
+Por isso o critério não é tamanho, é **momento de leitura**. Fica no `SKILL.md`
+tudo que decide uma ação — os níveis, os checkpoints, o rollback, e cada regra
+sobre o que a skill pode destruir. Desce o que só se consulta depois de um
+resultado surpreender: a mecânica interna do gate, o modelo do relatório final,
+o procedimento para um `knip-report.json` que uma run anterior deixou
+rastreado.
+
+A extração da v0.4.0 tirou 4.431 bytes: **45.672 → 41.241** (851 → 770 linhas),
+cerca de 1.550 tokens a menos por invocação. O número sozinho não diz nada — o
+par diz, e a redução é resultado, não meta. Nada saiu "para ficar menor": bloco
+cuja pergunta de leitura não tinha resposta clara ficou onde estava.
+
+Duas coisas garantem que a conta não seja uma mentira. A seção 21 do
+`coherence_test.sh` percorre o grafo de referências a partir do `SKILL.md` e
+reprova qualquer arquivo que ninguém aponta — uma reference órfã não é conteúdo
+adiado, é conteúdo apagado com passos extras. E cada extração é asserida **dos
+dois lados**: a regra que decide continua no `SKILL.md`, o procedimento chegou
+inteiro no destino. Afirmar só um dos lados é como uma extração vira deleção
+silenciosa.
 
 ## Uso
 

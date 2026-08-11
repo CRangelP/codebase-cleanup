@@ -432,23 +432,18 @@ Otherwise every category would be tempted to commit the report the previous
 one was read from, and the user reverting `chore: remove unused deps` would
 get a tool artifact back along with the dependencies.
 
-That exclude only reaches **untracked** paths. If a previous run of this skill
-already committed `knip-report.json`, git keeps seeing it no matter what the
-exclude says, and the regeneration below puts a fresh diff on disk. Check with
+That exclude only reaches **untracked** paths. If a previous run already
+committed `knip-report.json`, git keeps seeing it whatever the exclude says, and
+the regeneration below puts a fresh diff on disk. Check with
 `git status --porcelain` after writing the exclude lines; if the report still
-shows up, find out whose it is first — `git log -1 --format=%s --
-knip-report.json`. A previous run of this skill left `chore:` there and the
-file is a tool artifact: untrack it in a commit of its own before the first
-category (`git rm --cached knip-report.json`, then stage that pathspec only —
-`chore: untrack knip report`). Anything else means the user tracks it on
-purpose: leave it tracked, say so in the report, and do **not** pathspec-add
-it into category commits. Do not fold that untrack into another category. On
-the way out (final report / close), delete only report files that are tool
-artifacts from this run (untracked, or untracked earlier via
-`chore: untrack knip report`) — never delete a `knip-report.json` the user
-tracks on purpose. Drop from the exclude file only the lines you added —
-leave anything that was already there, it is the user's — because the exclude
-makes a leftover invisible to `git status` and nobody would find it later.
+shows up, **find out whose it is before touching it**. A tool artifact left by
+an earlier run of this skill gets untracked in a commit of its own, before the
+first category. Anything else is the user's: leave it tracked, say so in the
+report, and never pathspec-add it into a category commit. On the way out, delete
+only report files that are artifacts of this run — never a `knip-report.json`
+the user tracks on purpose. Drop from the exclude only the lines you added,
+because the exclude makes a leftover invisible to `git status` and nobody would
+find it later. `references/knip-config.md` has the commands.
 
 Also confirm the repo ignores `node_modules` before the deps category — a
 global `.gitignore` does not travel with the repo — and add it to
