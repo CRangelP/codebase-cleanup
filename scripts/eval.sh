@@ -61,18 +61,48 @@
 # refuses to mix with the deterministic suites. The vendored tree is built once,
 # outside the timed run, and copied per fixture.
 #
+# Proving a case BITES is a mutation, and until #89 it was done by hand: copy the
+# whole repository somewhere, edit SKILL.md with `perl -0pi`, grep the copy to
+# check the edit landed, run the copy's own eval.sh. Two failure modes, both
+# observed here. An expression that matches nothing runs the model against the
+# ORIGINAL text and comes back green — read as "the case does not bite" when
+# nothing was ever mutated, at the price of a paid run. And running a copy of
+# this file from /tmp resolves SKILL_ROOT to `/`, which is the incident the
+# guard inside fixture() exists for.
+#
+# EVAL_MUTATE removes the copy and the habit. The expression is applied to the
+# INSTALLED copy inside each fixture — never to this repository — through
+# scripts/mutate.sh, which aborts when the edit changes nothing. So the suite
+# refuses to spend model time on an unmutated arm instead of reporting a green
+# about a mutation that never happened.
+#
+#   EVAL_MUTATE='s/\Q<the sentence>\E/<the replacement>/' bash scripts/eval.sh yellow-run
+#
+# It only touches arms that carry the skill: the control arm has no copy to
+# mutate, and that asymmetry is the point — the difference between the arms is
+# what a mutated run measures. Every application is echoed with the case and the
+# arm it landed on, and the diff with it, because a mutated run whose output
+# reads like a clean one is evidence nobody can date afterwards — and because a
+# greedy expression that swallows a section also moves the checksum, so "it
+# changed" and "it changed what I meant" have to be two different readings.
+#
 # Usage:  bash scripts/eval.sh [case-name]
 # Env:    EVAL_TURNS (default 20), EVAL_KEEP=1 to keep fixtures,
 #         EVAL_FIXTURE_ROOT to move the fixture tree (the vendored knip lives
 #         under it, in .vendor/, and survives between runs). The result envelope
 #         of each arm is left in <case>-<arm>.json there, and it outlives
 #         EVAL_KEEP=0 — evidence that vanishes with the fixture is the defect
-#         #74 fixed.
+#         #74 fixed. EVAL_MUTATE='<perl -0pi expression>' mutates the installed
+#         copy of the skill in every arm that has one, through scripts/mutate.sh,
+#         and EVAL_MUTATE_FILE (default SKILL.md, relative to the installed copy)
+#         moves that edit to a reference instead.
 set -uo pipefail
 
 SKILL_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 TURNS=${EVAL_TURNS:-20}
 ONLY=${1:-}
+MUTATE=${EVAL_MUTATE:-}
+MUTATE_FILE=${EVAL_MUTATE_FILE:-SKILL.md}
 pass=0; fail=0; skipped=0
 
 # Fixtures live under $HOME and not in $TMPDIR: a project-scoped skill in
@@ -112,6 +142,56 @@ json_field() {
 }
 
 run_completed() { [[ $1 == completed ]]; }
+
+# mutate_installed <fixture dir> <arm> — EVAL_MUTATE against the copy of the
+# skill this arm will read, and nothing else. Three properties, each one a
+# defect first.
+#
+# It edits the COPY. The mutation this suite needs is "what would the model do
+# if the rule were not there", and the old way of asking it — mutate the working
+# tree, or a whole clone of it, and remember to put it back — puts the answer
+# and the repository on the same file. A mutation that outlives the run is a
+# repository nobody can trust afterwards.
+#
+# It goes through mutate.sh. The guard there is the reason: an expression that
+# matches nothing leaves the copy byte-identical, the arm runs against the
+# ORIGINAL text, and the green that comes back reads as "the case does not
+# bite". That is a false conclusion bought with a paid run, and it is the exact
+# accident #89 was opened about.
+#
+# It writes to stderr. `fixture` prints the directory it built on stdout and the
+# callers capture it, so a single line of chatter on stdout would become part of
+# the path and every case would run in a directory that does not exist.
+mutate_installed() { # <dir> <arm>
+  local dir=$1 arm=$2 target out rc
+  target="$dir/.claude/skills/codebase-cleanup/$MUTATE_FILE"
+  out=$("$SKILL_ROOT/scripts/mutate.sh" "$target" "$MUTATE" 2>&1); rc=$?
+  printf '%s\n' "$out" | sed "s|^|        [$arm] |" >&2
+  return $rc
+}
+
+# And the same edit, tried once against a throwaway copy of the file before any
+# fixture exists. This is where the abort can still be an abort: `fixture` runs
+# inside a command substitution, so an `exit` there kills the subshell and the
+# suite carries on with an empty path. Here the process is the suite, and a
+# mutation that matches nothing stops it before the first minute of model time
+# is spent.
+mutation_preflight() {
+  [[ -n $MUTATE ]] || return 0
+  local t rc
+  t=$(mktemp -d) || return 1
+  mkdir -p "$t/.claude/skills/codebase-cleanup/$(dirname "$MUTATE_FILE")"
+  if ! cp "$SKILL_ROOT/$MUTATE_FILE" "$t/.claude/skills/codebase-cleanup/$MUTATE_FILE" 2>/dev/null; then
+    say "eval: EVAL_MUTATE_FILE=$MUTATE_FILE does not exist in $SKILL_ROOT"
+    rm -rf "$t"; return 1
+  fi
+  say "== EVAL_MUTATE is set: every arm carrying the skill reads a MUTATED $MUTATE_FILE"
+  say "        expr: $MUTATE"
+  mutate_installed "$t" preflight; rc=$?
+  rm -rf "$t"
+  [[ $rc -eq 0 ]] || say "eval: the expression changed nothing, so every arm would run against the ORIGINAL text — refusing to spend model time on it"
+  return $rc
+}
 
 # ---------------------------------------------------------------------------
 # vendor_knip — a node_modules tree carrying knip, built once and copied per
@@ -345,6 +425,20 @@ EOF
     # reference being load-bearing. Measured, not imagined — that run is what
     # sent this comment here.
     [[ $2 == with-noref ]] && rm -f "$dir/.claude/skills/codebase-cleanup/${NOREF:-references/knip-config.md}"
+    # The mutation, if the run asked for one, and BEFORE the baseline commit so
+    # the arm starts on a clean tree — a copy edited afterwards is a tracked
+    # file modified and uncommitted, Step 0 refuses to start on a dirty tree,
+    # and the arm would then measure that refusal instead of the rule.
+    #
+    # `mutation_preflight` already proved this expression applies, so a failure
+    # here is a surprise and not the ordinary case: the fixture is destroyed
+    # rather than handed over, because a fixture whose mutation did not land is
+    # exactly the arm whose green means nothing.
+    if [[ -n $MUTATE ]] && ! mutate_installed "$dir" "$1-$2"; then
+      echo "eval: the mutation did not apply to $dir — refusing to hand over an arm that would run against the original text" >&2
+      rm -rf "$dir"
+      return 1
+    fi
   fi
   # A real project with node_modules has it ignored, and the protocol reads that
   # state: "confirm the repo ignores node_modules before the deps category — a
@@ -399,6 +493,17 @@ EOF
 # turn-by-turn log, that is the flag, and this is the number.
 run_arm() {
   local dir=$1 name=$2 arm=$3 prompt=$4
+  # A fixture that was never built must not become a run. `fixture` returns its
+  # path on stdout, so any failure inside it hands the caller an EMPTY string —
+  # and `cd ""` succeeds and stays put, which would point the model at whatever
+  # directory the suite was started from. That is this repository. Measured, not
+  # feared: `( cd "" && pwd )` prints the current directory and exits 0.
+  if [[ -z $dir || ! -f $dir/package.json ]]; then
+    LAST_JSON=; LAST_ERR=; LAST_RC=2; LAST_TURNS=; LAST_OUT=
+    LAST_OUTCOME=no_fixture
+    say "        [$name/$arm] no fixture to run in — the arm is skipped, not run in the current directory"
+    return 1
+  fi
   LAST_JSON="$FIXROOT/$name-$arm.json"
   LAST_ERR="$FIXROOT/$name-$arm.err"
   ( cd "$dir" && claude -p "$prompt" --max-turns "$TURNS" --output-format json ) >"$LAST_JSON" 2>"$LAST_ERR"
@@ -997,6 +1102,63 @@ self_check() {
   [[ -e $nrskill/references/final-report.md ]] && bad "floor: the named reference is the one removed" "the arm still carries the file the case asked to strip" || ok "floor: the named reference is the one removed"
   [[ -e $nrskill/references/knip-config.md ]] && ok "floor: the other references survive the strip" || bad "floor: the other references survive the strip" "a second reference went missing, so the arm is not the controlled manipulation it claims to be"
   [[ -z $(git -C "$nrdir" status --porcelain 2>/dev/null) ]] && ok "floor: the with-noref arm starts on a clean tree" || bad "floor: the with-noref arm starts on a clean tree" "the strip happened after the baseline commit, so the run sees a tracked file deleted and uncommitted and Step 0 aborts before the protocol starts"
+
+  # EVAL_MUTATE, on the four properties that decide whether it is a mechanism or
+  # a decoration (#89). The whole point of routing the expensive mutation through
+  # mutate.sh is that a stale edit must STOP the suite instead of buying a green
+  # about a mutation that never happened — so a floor that only checked the happy
+  # path would be the same vacuous coverage this file keeps finding in itself.
+  local mroot="$t/mutroot"; mkdir -p "$mroot"
+  local saved_mut=$MUTATE saved_mfile=$MUTATE_FILE saved_mfixroot=$FIXROOT
+  local mdir mskill repo_before repo_after
+  repo_before=$(cksum < "$SKILL_ROOT/SKILL.md")
+
+  # 1. An expression that matches nothing is refused BEFORE any fixture exists.
+  MUTATE='s/\Qthis sentence is not in SKILL.md\E/x/'
+  mutation_preflight >/dev/null 2>&1 \
+    && bad "floor: a stale EVAL_MUTATE stops the suite before it spends model time" "the preflight accepted an expression that changes nothing, and every arm would then run against the original text" \
+    || ok "floor: a stale EVAL_MUTATE stops the suite before it spends model time"
+
+  # 2. And an expression that applies is accepted, so the guard is not simply
+  #    refusing everything — a preflight that always aborts is no preflight.
+  MUTATE='s/\QGoal:\E/Objective:/'
+  mutation_preflight >/dev/null 2>&1 \
+    && ok "floor: an EVAL_MUTATE that applies passes the preflight" \
+    || bad "floor: an EVAL_MUTATE that applies passes the preflight" "the preflight refused an expression whose target is in SKILL.md, so no mutated run can ever start"
+
+  # 3. The edit reaches the copy the model reads.
+  FIXROOT=$mroot
+  mdir=$(fixture floor-mutate with)
+  FIXROOT=$saved_mfixroot
+  mskill="$mdir/.claude/skills/codebase-cleanup/SKILL.md"
+  [[ -n $mdir ]] && LC_ALL=C grep -q 'Objective:' "$mskill" 2>/dev/null \
+    && ok "floor: EVAL_MUTATE reaches the installed copy the arm reads" \
+    || bad "floor: EVAL_MUTATE reaches the installed copy the arm reads" "the fixture was built from the unmutated text, which is the arm whose green means nothing"
+  [[ -n $mdir && -z $(git -C "$mdir" status --porcelain 2>/dev/null) ]] \
+    && ok "floor: a mutated arm still starts on a clean tree" \
+    || bad "floor: a mutated arm still starts on a clean tree" "the mutation landed after the baseline commit, so Step 0 aborts on a dirty tree and the arm measures that instead of the rule"
+
+  # 4. And it never touches this repository. The old procedure edited a copy of
+  #    the whole repo and put it back by hand; a mutation that outlives the run
+  #    is the defect that procedure kept one mistake away.
+  repo_after=$(cksum < "$SKILL_ROOT/SKILL.md")
+  [[ $repo_before == "$repo_after" ]] \
+    && ok "floor: a mutated run leaves this repository's SKILL.md untouched" \
+    || bad "floor: a mutated run leaves this repository's SKILL.md untouched" "the mutation was applied to the source and not to the copy — the working tree now carries an edit nobody asked to keep"
+
+  MUTATE=$saved_mut; MUTATE_FILE=$saved_mfile
+  rm -rf "$mroot"
+
+  # The empty-fixture guard in run_arm, which is what keeps any of the failures
+  # above from becoming a model run in the wrong directory: `fixture` reports a
+  # failure by returning nothing, `cd ""` succeeds, and the arm would then run
+  # against the repository the suite was started from.
+  run_arm "" floor-empty with "dá uma faxina nesse projeto" >/dev/null 2>&1 \
+    && bad "floor: an arm with no fixture is refused, not run in the current directory" "run_arm accepted an empty path — the next thing it does is start the model" \
+    || ok "floor: an arm with no fixture is refused, not run in the current directory"
+  [[ $LAST_OUTCOME == no_fixture ]] \
+    && ok "floor: the refused arm reports its own outcome instead of a grader's red" \
+    || bad "floor: the refused arm reports its own outcome instead of a grader's red" "LAST_OUTCOME=$LAST_OUTCOME, so a missing fixture would read as a run that behaved badly"
 
   # The subject search over a history long enough to make the old pipeline lose.
   # `grep -q` quits at the first match, git takes SIGPIPE, and `set -o pipefail`
@@ -2030,6 +2192,11 @@ case_report_survives_disclosure() {
 # has to exist. Failing closed here is the cheap failure — the expensive one is a
 # case that goes red at minute three because a download did not finish.
 vendor_knip || exit 1
+
+# And, when the run asks for a mutation, the proof that the edit applies — also
+# before anything paid. Exit 2 and not 1: this is the suite refusing to measure,
+# which is a different answer from a grader reporting red.
+mutation_preflight || exit 2
 
 self_check
 case_yellow_stops_short
