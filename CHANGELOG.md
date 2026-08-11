@@ -9,6 +9,33 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.4.1] — 2026-08-10
+
+### Corrigido
+
+- **O ganho da v0.4.0 estava publicado por derivação, e a medição do host discorda em 11%.**
+  Com o plugin instalado e atualizado, `claude plugin details codebase-cleanup` dá:
+
+  ```
+  v0.3.5   44.801 bytes   ~15,7k on-invoke   (~370 always-on)
+  v0.4.0   41.241 bytes   ~14,3k on-invoke   (~370 always-on)
+  ```
+
+  **~1.400 tokens a menos por invocação**, não os ~1.550 que os READMEs anunciavam. A conta
+  antiga aplicava a taxa média do arquivo (2,85 bytes/token) ao trecho removido — e o trecho
+  removido é feito de comandos, tabelas e blocos de código, que custam ~2,54 bytes por token,
+  bem mais denso que a prosa que ficou.
+
+  **Taxa média não estima corte específico.** Os dois números ficam publicados com as bases de
+  bytes que cada um tem, inclusive o crescimento intermediário do arquivo pelos consertos da
+  #55 — esconder isso faria a extração parecer maior do que foi.
+
+  O `SURVIVAL_BUDGET` continua em 14.000 e agora o comentário diz por quê: a taxa nova implica
+  teto de 14.420, e a margem cobre justamente o erro que esta medição expôs — a taxa é média do
+  arquivo inteiro, e o que precisa caber é a **cabeça** dele, que é mais densa que a média.
+
+451 invariantes, 14 mutações, 47 casos do guarda.
+
 ## [0.4.0] — 2026-08-10
 
 Fecha a [#53](https://github.com/CRangelP/codebase-cleanup/issues/53). Disclosure progressiva no

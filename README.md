@@ -228,10 +228,28 @@ resultado surpreender: a mecânica interna do gate, o modelo do relatório final
 o procedimento para um `knip-report.json` que uma run anterior deixou
 rastreado.
 
-A extração da v0.4.0 tirou 4.431 bytes: **45.672 → 41.241** (851 → 770 linhas),
-cerca de 1.550 tokens a menos por invocação. O número sozinho não diz nada — o
-par diz, e a redução é resultado, não meta. Nada saiu "para ficar menor": bloco
-cuja pergunta de leitura não tinha resposta clara ficou onde estava.
+A extração da v0.4.0 tirou 4.431 bytes: **45.672 → 41.241** (851 → 770 linhas).
+Em tokens, que é a unidade que se paga, medido pelo host com
+`claude plugin details codebase-cleanup`:
+
+```
+v0.3.5   44.801 bytes   ~15,7k on-invoke     (~370 always-on)
+v0.4.0   41.241 bytes   ~14,3k on-invoke     (~370 always-on)
+```
+
+**~1.400 tokens a menos em cada invocação.** As duas medições têm bases de bytes
+diferentes de propósito: entre uma e outra o arquivo *cresceu* com os consertos
+da #55, e esconder isso deixaria a extração parecer maior do que foi.
+
+Vale registrar o erro da conta que antecedeu a medição. Estimando pela taxa
+média do arquivo (2,85 bytes/token) o ganho projetado era ~1.550 tokens, 11%
+acima do real. O texto extraído — comandos, tabelas, blocos de código — custa
+cerca de 2,54 bytes por token, bem mais denso que a prosa que ficou. **Taxa
+média não estima corte específico**, e a régua que vale é a do host.
+
+O número sozinho não diz nada — o par diz, e a redução é resultado, não meta.
+Nada saiu "para ficar menor": bloco cuja pergunta de leitura não tinha resposta
+clara ficou onde estava.
 
 Duas coisas garantem que a conta não seja uma mentira. A seção 21 do
 `coherence_test.sh` percorre o grafo de referências a partir do `SKILL.md` e
