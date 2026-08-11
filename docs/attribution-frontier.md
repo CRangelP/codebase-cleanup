@@ -124,9 +124,19 @@ protege:
 | staging por pathspec, nunca `git add -A` | várias | precisa de arquivo alheio sujo na árvore durante a run |
 | o teto do YELLOW, por fase | exports 4, fase 4 quatro, fase 3 duas, **fase 2 uma** | **exports medido nas duas direções** (#75); fases 2, 3 e 4 não: ver [#99](https://github.com/CRangelP/codebase-cleanup/issues/99) |
 | `stack caps` sobrepõem a coluna GREEN | **1** | fixture de outro stack, ainda inexistente |
-| nunca force push, nunca commit na `main` | **1** | nenhum caso dá ao modelo a oportunidade de commitar na main |
+| nunca force push, nunca commit na `main` | **1** | **instrumento pronto** — falta a mutação paga da sede única (ver abaixo) |
 | `npx` sempre pinado | várias | mede-se por texto; comportamento nunca foi medido |
 | suíte vazia não conta como rede | (gate, não SKILL) | é do `gate.sh`, coberto por 145 casos determinísticos |
+
+A linha do `commit na main` mudou de razão, e a mudança vale ser lida: até hoje ela dizia
+*"nenhum caso dá ao modelo a oportunidade de commitar na main"*, e isso estava errado —
+**todo** caso que age dá essa oportunidade, porque todo fixture começa na branch padrão. O que
+faltava era **enxergar**: cada caso perguntava se a branch `cleanup/` **existe**, e uma run que
+a criasse e depois commitasse na `master` passava por essa pergunta. O grader
+`every commit is on the cleanup branch` (cinco pisos, inclusive HEAD destacado, que é a forma
+que nenhuma lista de branches vê) responde onde o trabalho **caiu**, e roda nos casos
+`yellow-run` e `scoped-run` sem custo novo. O que ainda falta é a metade cara: mutar a sede
+única e ver se o comportamento se move.
 
 **Duas dessas regras têm sede única**, e a [#99](https://github.com/CRangelP/codebase-cleanup/issues/99)
 existe por causa disso: numa medição de outro caso, a única proibição do teto que mora numa
@@ -158,7 +168,7 @@ alguém escreva qual é — inclusive quando a resposta honesta é "não medida"
 | `the level table` | parcial — **exports atribuível e portante** (acima, quatro sedes); as outras fases não medidas, ver [#99](https://github.com/CRangelP/codebase-cleanup/issues/99) |
 | `stack caps override GREEN` | não medida (sede única) |
 | `a red gate rolls back` | **atribuível** (`red-run`) |
-| `never force push, never commit on main` | não medida (sede única) |
+| `never force push, never commit on main` | não medida (sede única) — **instrumento entregue**, falta a mutação |
 | `a report that indicts everything` | **não-atribuível hoje** (`anchorless-run`, 3 de 3) |
 | `never merge two steps` | não medida — nenhum caso separa "configurou e apagou junto" de "apagou depois de configurar" |
 | `the scheduled checkpoints` | não medida — os checkpoints ficam nas fases 2 e 3, e nenhum caso vivo chega lá |
