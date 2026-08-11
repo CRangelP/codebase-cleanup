@@ -154,6 +154,7 @@ codebase-cleanup/
     ├── gate_test.sh                  testes de contrato do gate (stubs de toolchain)
     ├── guard_test.sh                 o que o guarda bloqueia e o que ele deixa passar
     ├── rollback_test.sh              prova executável do protocolo de rollback
+    ├── eval.sh                      o que o modelo faz lendo a skill (fora do test.sh)
     ├── metrics_test.sh               casos do medidor, em repos sintéticos
     ├── coherence_test.sh             invariantes de coerência entre doc e código
     └── mutation_test.sh              muta regras de autoridade destrutiva; cada uma tem de reprovar
@@ -173,6 +174,9 @@ bash scripts/gate_test.sh       # contrato do gate: exit codes, linha checks=, P
 bash scripts/guard_test.sh      # o que o guarda bloqueia, e o que ele deixa passar
 bash scripts/rollback_test.sh   # o que `git restore` recupera e o que ele destrói
 bash scripts/metrics_test.sh    # o medidor de qualidade, em repos sintéticos
+
+# fora do test.sh: roda o modelo de verdade, custa minutos e dinheiro
+bash scripts/eval.sh            # o que o modelo faz lendo a skill
 bash scripts/coherence_test.sh  # doc e código dizendo a mesma coisa
 bash scripts/mutation_test.sh   # a suíte acima reprovaria se a regra sumisse?
 ```
