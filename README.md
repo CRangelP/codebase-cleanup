@@ -55,7 +55,17 @@ do `PreToolUse`:
 /plugin install codebase-cleanup@codebase-cleanup
 ```
 
-Atualizar depois é `/plugin update codebase-cleanup@codebase-cleanup`. Para um
+Atualizar depois é `/plugin update codebase-cleanup@codebase-cleanup`.
+
+**O escopo da instalação decide onde a skill existe, e o `list` não deixa isso
+óbvio.** Instalado de dentro de um projeto, o plugin fica com escopo `local` e
+amarrado àquele diretório — em qualquer outro, `claude plugin list` continua
+dizendo `enabled`, `claude plugin details` continua contando `Skills (1)`, e o
+modelo não vê skill nenhuma. Para valer em todos os projetos, instale com
+`--scope user`; para conferir onde ele está de fato ativo, o que responde é o
+`projectPath` em `~/.claude/plugins/installed_plugins.json`.
+
+Para um
 time, declare no `.claude/settings.json` do repositório:
 
 ```json
@@ -413,9 +423,21 @@ Uma coisa esses 47 casos não alcançam, e vale saber qual: eles montam o JSON d
 hook à mão e chamam o script, então provam o **comportamento do guarda** — não a
 entrega. Que o `matcher` do `hooks.json` realmente encaminhe a chamada, e que o
 exit 2 chegue ao modelo com o stderr junto, foi conferido à mão com o plugin
-instalado, e não por suíte. É a única perna do contrato que nenhuma delas cobre,
-e a distinção importa: um guarda que bloqueia sem entregar a razão vira um erro
-opaco, e um modelo que não lê a razão reformula o comando até passar.
+instalado, e não por suíte.
+
+Como isso é a única perna do contrato que nenhuma suíte cobre, aqui está a
+medição, feita num repositório descartável, dentro de uma branch `cleanup/`,
+pedindo ao modelo exatamente o comando proibido:
+
+> Bloqueado pelo hook […] do codebase-cleanup: `git add -A` (staging de
+> árvore inteira) é proibido durante cleanup, para não engolir arquivo alheio no
+> commit da categoria. Não vou contornar por outro caminho — bloqueio que
+> disparou é decisão final. […] Para stage por pathspec: `git add -- novo.ts`
+
+As três coisas que importam estão ali: o bloqueio chegou, a **razão** chegou
+junto, e o modelo ofereceu a forma correta em vez de procurar um contorno. É o
+que a distinção protege — um guarda que bloqueia sem entregar a razão vira um
+erro opaco, e um modelo que não lê a razão reformula o comando até passar.
 
 ## Limites conhecidos
 
