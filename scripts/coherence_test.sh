@@ -1693,6 +1693,43 @@ check "phase 4 keeps the catalogued-operation form that keeps the two apart" \
       "phase 4's subject changed shape; if it can now be written as
 refactor(consolidate) the phase 2 mark stops being a mark"
 
+# 16.11 The expensive mutation goes through the guard (#89). Proving that an eval
+# case bites means running the model against a mutated copy of the skill, and the
+# way that fails is silent and expensive: an expression that matches nothing
+# leaves the copy identical, the arm runs against the ORIGINAL text, and the
+# green comes back reading as "the case does not bite". It happened once with a
+# cheap text mutation and was caught only because a checksum was compared by
+# hand; the same accident on an eval case costs a paid run and inverts a
+# conclusion.
+#
+# So the route is asserted, not trusted. `eval.sh` has to hand the edit to
+# `mutate.sh` — the one place that compares checksums and aborts — and it must
+# not keep a `perl -0pi` path of its own beside it, because a second route is a
+# route with no guard.
+#
+# The call is read with the comment LINES dropped and not with `bash_body`,
+# which collapses quoted text to a single space: the path lives inside a quoted
+# string, so the body scanner cannot see it by construction. Dropping the
+# comments is what this check needs — the prose above must not be able to
+# satisfy it. The negative check is the opposite case and uses `bash_body`,
+# because `perl -0pi` appears in the comments of this very file.
+check "eval.sh routes its mutation through mutate.sh" \
+      "$(sed 's/^[[:space:]]*#.*$//' scripts/eval.sh | grep -q -F -- 'scripts/mutate.sh' && echo 0 || echo 1)" \
+      "the mutation of the installed copy stopped going through the guard; a stale
+expression then produces a green about a mutation that never happened, which is
+what #89 was opened about"
+check "eval.sh keeps no unguarded mutation path of its own" \
+      "$(bash_body < scripts/eval.sh | grep -q -E 'perl +-0[a-z]*i' && echo 1 || echo 0)" \
+      "eval.sh edits a file in place with perl again — a second route to the same
+edit is a route with no checksum behind it"
+for f in README.md README.en.md; do
+  check "$f documents the mutated-arm switch" \
+        "$(LC_ALL=C grep -q -F -- 'EVAL_MUTATE' "$f" && echo 0 || echo 1)" \
+        "the mechanism exists and no README names it, so the next person proving a
+case bites copies the repository and edits it by hand — which is the procedure
+whose two failure modes #89 measured"
+done
+
 # 16.10 The attribution ledger stays in step with the instrument (#82). The
 # document in docs/ records which rules are measured attributable, which are
 # measured non-attributable TODAY, and which were never measured — and the third

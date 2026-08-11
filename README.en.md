@@ -203,6 +203,19 @@ against the **original** text, the green comes back, and it reads as "the case
 does not bite" when nothing was ever mutated. `mutation_test.sh` runs that
 guard's floors first and stops if they fail.
 
+On the eval side the mutation is no longer made by hand:
+
+```bash
+EVAL_MUTATE='s/\Q<the sentence>\E/<the replacement>/' bash scripts/eval.sh yellow-run
+```
+
+The expression is applied to the copy **installed inside the fixture**, never to
+this repository, and through the same `mutate.sh`. An expression that matches
+nothing stops the suite **before** the first minute of model time, instead of
+returning a green about a mutation that never happened. The old procedure — copy
+the whole repository, edit, check by `grep`, run the copy — carried both failure
+modes: the edit that does not apply, and the copy's `SKILL_ROOT` resolving to `/`.
+
 `14/14 mutations caught` claims the **suite** notices the edit — not that the
 model's **behavior** would change. Those are different questions, and when both
 were finally measured on the same contract they disagreed: rewriting the RED

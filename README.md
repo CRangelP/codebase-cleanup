@@ -200,6 +200,19 @@ direção — uma expressão que não casa faz a run acontecer contra o texto
 mutado. O `mutation_test.sh` roda os pisos dessa guarda antes de tudo e para se
 eles falharem.
 
+Do lado do eval a mutação deixou de ser à mão:
+
+```bash
+EVAL_MUTATE='s/\Q<a frase>\E/<a troca>/' bash scripts/eval.sh yellow-run
+```
+
+A expressão é aplicada à cópia **instalada dentro do fixture**, nunca a este
+repositório, e passa pelo mesmo `mutate.sh`. Uma expressão que não casa para a
+suíte **antes** do primeiro minuto de modelo, em vez de devolver um verde sobre
+uma mutação que nunca existiu. O procedimento antigo — copiar o repositório
+inteiro, editar, conferir por `grep`, rodar a cópia — tinha os dois modos de
+falha: a edição que não aplica e o `SKILL_ROOT` da cópia resolvendo para `/`.
+
 `14/14 mutações pegas` afirma que a **suíte** percebe a edição — não que o
 **comportamento** do modelo mudaria. São perguntas diferentes, e quando as duas
 foram medidas no mesmo contrato deram respostas opostas: reescrever sozinha a
