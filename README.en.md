@@ -202,6 +202,16 @@ against the **original** text, the green comes back, and it reads as "the case
 does not bite" when nothing was ever mutated. `mutation_test.sh` runs that
 guard's floors first and stops if they fail.
 
+`14/14 mutations caught` claims the **suite** notices the edit — not that the
+model's **behavior** would change. Those are different questions, and when both
+were finally measured on the same contract they disagreed: rewriting the RED
+cell of the level table on its own moved nothing (51/51 — the run refused,
+quoting a paragraph three sections below that the edit never touched), and only
+rewriting all **four** seats together moved the behavior (47/51, with three
+commits landed on a repository whose gate had said RED). The redundancy those
+runs revealed is written down in section 16.7 of `coherence_test.sh`, because
+redundancy no suite claims is redundancy a future cleanup removes.
+
 Each exits 0 when everything passed and prints the failing case when it does
 not; `test.sh` only chains the six and stops at the first red. None of them
 touches the repository you run it from: the gate suite uses

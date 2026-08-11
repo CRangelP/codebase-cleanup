@@ -1606,6 +1606,46 @@ check "that rule does not lean on the hint count" \
 rule reads as 'handle the hints', which the fixture in #81 satisfies while
 reporting the entire project as dead"
 
+# 16.7 The four seats of the RED contract (#80). Measured with the live model in
+# #66, same fixture, same contract, two mutations:
+#
+#   - the level table's RED cell alone (the one line the issue asked for):
+#     51/51 — the run REFUSED, quoting almost verbatim the paragraph that
+#     survived the edit ("a broken baseline leaves no way to tell what the
+#     cleanup broke from what was already broken");
+#   - the same cell plus the three paragraphs below: 47/51 — the run created a
+#     cleanup branch, deleted the orphan and landed three commits on a repository
+#     whose gate had said RED, writing in its own log "No usable gate exists, so
+#     every commit below is made without green evidence".
+#
+# So the behavior does not hang on the cell that section 16.1 already guards; it
+# hangs on the redundancy. And of the four seats, only the cell was asserted
+# anywhere in this suite — deleting the other three, the ones that demonstrably
+# carried the refusal, left every suite green. Redundancy that no suite claims is
+# redundancy a future cleanup removes, and this repository ships a skill whose
+# job is removing duplication.
+#
+# Named seats, not a count: a count of four is satisfied by any four matches,
+# including four copies of the weakest one. Whoever reduces this on purpose
+# rewrites the list and says why — which is the whole point of making it explicit.
+#
+# No budget check here, unlike section 17: the fourth seat is the final report
+# and lives past byte 40.000 by construction. That is a real limit of this
+# redundancy, not an oversight — a compacted run keeps the first three.
+while IFS='|' read -r label needle; do
+  [[ -n $label ]] || continue
+  check "SKILL.md keeps the RED seat [$label]" \
+        "$(LC_ALL=C grep -qF -- "$needle" SKILL.md && echo 0 || echo 1)" \
+        "anchor not found: [$needle] — #66 measured that the RED contract needs
+all four of these to change behavior, and the level table cell alone did not.
+Reworded on purpose? Rewrite the anchor. Removed on purpose? Say why here."
+done <<'RED_SEATS'
+level table cell|Diagnoses only. Does not delete, does not move, does not commit.
+a failing baseline is RED not YELLOW|A baseline that already fails is RED, not YELLOW.
+step 0.1 writes nothing at RED|**At RED, skip this step.**
+the final report commits nothing at RED|No `CLEANUP_PROGRESS.md` commit on RED.
+RED_SEATS
+
 # 17. What decides destructive authority survives a compaction. -------------
 # Section 16 proved these rules cannot be deleted in silence. This one answers a
 # question that no amount of invariants about the TEXT can: is the text still in

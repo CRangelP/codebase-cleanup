@@ -199,6 +199,17 @@ direção — uma expressão que não casa faz a run acontecer contra o texto
 mutado. O `mutation_test.sh` roda os pisos dessa guarda antes de tudo e para se
 eles falharem.
 
+`14/14 mutações pegas` afirma que a **suíte** percebe a edição — não que o
+**comportamento** do modelo mudaria. São perguntas diferentes, e quando as duas
+foram medidas no mesmo contrato deram respostas opostas: reescrever sozinha a
+célula do RED na tabela de níveis não mudou nada (51/51 — a run recusou citando
+um parágrafo três seções abaixo que a edição não tocou), e só reescrevendo as
+**quatro** sedes juntas o comportamento se moveu (47/51, com três commits
+assentados num repositório cujo portão dissera RED). A redundância que aquelas
+runs revelaram está escrita na seção 16.7 do `coherence_test.sh`, porque
+redundância que nenhuma suíte afirma é redundância que uma limpeza futura
+remove.
+
 Cada uma sai 0 quando tudo passou e imprime o caso que falhou quando não; o
 `test.sh` só encadeia as seis e para na primeira vermelha.
 Nenhuma das quatro toca o repositório em que você a rodou: o gate usa stubs de

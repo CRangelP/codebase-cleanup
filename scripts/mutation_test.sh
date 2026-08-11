@@ -12,6 +12,25 @@
 # byte: it reads like an improvement and quietly widens what the skill is
 # allowed to destroy. Every one of them must make coherence_test.sh FAIL.
 #
+# What "14/14 caught" claims, and what it does not (#80). These are TEXT
+# mutations: they prove the SUITE notices the edit. They say nothing about
+# whether the model's BEHAVIOR would change, which is a different, stochastic and
+# far more expensive question — and the two answers came out different when both
+# were finally measured on the same contract.
+#
+# In #66, on the RED contract, with the live model judging: rewriting the level
+# table's RED cell ALONE scored 51/51 — the run refused anyway, quoting almost
+# verbatim a paragraph three sections below that the edit had not touched. Only
+# when the same cell AND its three other seats were rewritten together did the
+# behavior move: 47/51, with the run landing three commits on a repository whose
+# gate had said RED.
+#
+# Two of the mutations here (M1 and M6) are single-cell edits of exactly that
+# shape. They are correct as they stand — the claim they support is "the suite
+# bites" — but a reader who takes them for behavioral evidence is reading a
+# guarantee this file never offered. Section 16.7 of coherence_test.sh is where
+# the redundancy those runs revealed is written down and held.
+#
 # Runs on a throwaway copy. Nothing here touches the working tree.
 # Usage: mutation_test.sh   (exit 0 = every mutation is caught)
 set -u
