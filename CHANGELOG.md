@@ -9,6 +9,79 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.9.0] — 2026-08-11
+
+Quatro decisões de texto normativo tomadas com medição, e um terceiro mecanismo do mesmo defeito
+de nível: o gate anunciava **GREEN sobre um repositório JS sem nenhum arquivo de teste**.
+
+### Corrigido
+
+- **Script de teste que não é runner fazia um repo sem testes chegar a GREEN**
+  ([#103](https://github.com/CRangelP/codebase-cleanup/issues/103)). Todo detector de suíte vazia
+  da fase JS lê **o que um runner imprime** — `No test files found`, `tests 0`. Um script que não é
+  runner não imprime nada disso: `echo ok`, `true`, `exit 0`, ou um lint no lugar do teste. Sai 0,
+  nenhum marcador aparece, a suíte conta como executada.
+
+  Go, Rust e Ruby já carregam a guarda por arquivo há versões, cada um com a mesma frase no
+  comentário: *"counting that as a test is how a suiteless repo gets classified GREEN"*. **JS era o
+  único stack julgando só pela saída** — e a tabela de níveis enuncia a regra em termos de
+  ARQUIVO, "no test file in the stack".
+
+  A guarda erra para o lado seguro: repositório cujos testes moram fora dos padrões conhecidos é
+  **rebaixado** a YELLOW com a razão impressa. O limite virou caso, não nota de rodapé —
+  `js-placeholder-with-file` fixa que `test: echo ok` **com** arquivo de teste presente continua
+  GREEN, porque regra por arquivo responde *"existe suíte aqui"* e não *"este comando a executou"*.
+
+  Medido no fixture do eval deste próprio repositório, o do caso chamado `yellow-run`.
+
+### Alterado — texto normativo do `SKILL.md`
+
+- **A regra contra apagar um projeto inteiro saiu da reference**
+  ([#81](https://github.com/CRangelP/codebase-cleanup/issues/81)). A única frase do repositório que
+  nomeava o pior resultado possível do protocolo morava em `references/knip-config.md`, atrás da
+  disclosure progressiva. Fixture sem `main`, sem config de teste e sem plugin devolve **dois
+  arquivos não usados e zero configuration hints**: todas as cláusulas da fase 1 ficam satisfeitas e
+  a 1.3 manda apagar.
+
+  A regra nova é ancorada no que a run consegue ver sem abrir nada — a FORMA do achado, não a
+  contagem de hints — e mora no byte 6.190, dentro dos 14.000 que sobrevivem a uma compactação. A
+  fase 1 começa no 18.005: escrevê-la lá seria escrevê-la fora do contexto da única espécie de run
+  que esta skill tem.
+
+- **A 1.5 commita o survey mesmo sem par** ([#77](https://github.com/CRangelP/codebase-cleanup/issues/77)).
+  Duas runs completadas commitaram o audit 2 de 2 e o survey 0 de 2, uma delas registrando "não
+  aplicável (1 arquivo restante)". O julgamento é prosa razoável; o custo é estrutural, porque esse
+  commit é a única marca durável de que a fase 1 terminou. Depois da cláusula: **2 de 2**.
+
+- **A fase 2 ganhou assunto de commit** ([#71](https://github.com/CRangelP/codebase-cleanup/issues/71)):
+  `refactor(consolidate): <what>`. Era a única fase sem assinatura durável — a 1 se acha pelos
+  `chore: remove …`, a 3 pelos renames, a 4 por `refactor(<operation-id>)`. `refactor` e não
+  `chore` porque consolidar mexe em fonte; escopo `consolidate` e nunca um operation-id catalogado,
+  que é o que mantém as duas fases distinguíveis. Um type novo (`consolidate(...)`) seria mais
+  limpo de distinguir e foi recusado: fora do conjunto padrão do commitlint, ele é rejeitado por
+  hook no repositório do usuário, e a resposta do protocolo a hook que barra comando é abortar.
+
+### Adicionado
+
+- **As quatro sedes do contrato do RED viraram invariante**
+  ([#80](https://github.com/CRangelP/codebase-cleanup/issues/80)), por sedes NOMEADAS e não por
+  contagem — um contador de quatro é satisfeito por quatro cópias da mais fraca. Das quatro, só a
+  célula da tabela tinha invariante: apagar as três que a #66 mediu como as que seguraram a recusa
+  deixava tudo verde.
+
+  Junto, a distinção que faltava: `14/14 mutações pegas` afirma que a **suíte** percebe a edição,
+  não que o **comportamento** mudaria. Duas das quatorze são edições de célula única, da forma
+  medida como inerte.
+
+- **Variância do `report-disclosure`** ([#69](https://github.com/CRangelP/codebase-cleanup/issues/69)):
+  `with` 6/6 e 6/6, `with-noref` 6/6 e 6/6, `without` **0/6 e 0/6** — a maior diferença já medida
+  nesta suíte entre ter e não ter o protocolo. O empate entre os dois primeiros diz que o conteúdo
+  não degradou sem a reference e é **calado sobre a forma**, que este caso não mede.
+
+- **A #85 fechou com amostra**: `scoped-run` engajando **5 de 5** contra 0 de 3 antes do conserto.
+
+- 145 casos de gate (era 143), **481 invariantes** (eram 469), 97 pisos do eval (eram 88).
+
 ## [0.8.0] — 2026-08-11
 
 Um piso do eval reprovando 1 vez em 15 puxou um fio que terminou num defeito do **gate**: com
