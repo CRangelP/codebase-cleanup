@@ -42,6 +42,10 @@ apply() {
     # The regression this one names cost two mechanisms at once, and neither
     # complained: on an unborn HEAD the call exits 128, `|| return 1` reads it as
     # "no repo", and the guard sleeps on a cleanup/ branch.
+    # The doc leg of the same regression: SKILL.md kept teaching the old form in the
+    # detached-HEAD paragraph, and the first version of the invariant walked past
+    # it because the text named the flag without `rev-parse` in front.
+    M12) perl -0pi -e 's/`git branch --show-current` prints nothing, and `--verify HEAD`\nsucceeded — that pair is the whole test/`--abbrev-ref HEAD` prints `HEAD`/' SKILL.md ;;
     M11) perl -0pi -e 's/git branch --show-current 2>\/dev\/null/git rev-parse --abbrev-ref HEAD 2>\/dev\/null/' scripts/guard.sh ;;
     M10) perl -0pi -e 'BEGIN{$/=undef} s/(## Rules that apply to the whole pipeline.*?)(## Step 0 — Calibrate autonomy)/$2/s; ' SKILL.md
          perl -0pi -e 'BEGIN{$/=undef} s/(## Final report)/## Rules that apply to the whole pipeline\n\n**`\/clear` between phases.** Not optional.\n\n**Never merge two steps.** The separation is what prevents that.\n\n**A red gate means rollback, not repair.** Revert, record, move on.\n\n**Never force push, never commit on main.** All the work lives on the cleanup branch.\n\n$1/s' SKILL.md ;;
@@ -61,6 +65,7 @@ desc() {
     M9) echo "the empty-suite rule for Rust drops out of both READMEs" ;;
     M10) echo "the pipeline rules move back to the end of SKILL.md, past the compaction cut" ;;
     M11) echo "the guard reads the branch through rev-parse --abbrev-ref again" ;;
+    M12) echo "SKILL.md teaches detached-HEAD detection through --abbrev-ref again" ;;
   esac
 }
 
@@ -81,6 +86,7 @@ expect() {
     M9) echo "the empty-suite paragraph of README.md names [Rust]" ;;
     M10) echo "[a red gate rolls back] is inside the budget that survives a compaction" ;;
     M11) echo "guard.sh reads no branch name through rev-parse --abbrev-ref" ;;
+    M12) echo "no doc offers --abbrev-ref as the way to read the branch" ;;
   esac
 }
 
@@ -90,7 +96,7 @@ copy_repo() {
   rm -rf "$1/.git"
 }
 
-MUTATIONS="M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 M11"
+MUTATIONS="M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 M11 M12"
 # Every file any mutation edits. The STALE guard below compares this set before
 # and after: a file missing from it makes its own mutations report "changed
 # nothing" forever, which is the stale-by-construction case the guard exists for.
