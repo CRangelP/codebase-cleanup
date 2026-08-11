@@ -1646,6 +1646,43 @@ step 0.1 writes nothing at RED|**At RED, skip this step.**
 the final report commits nothing at RED|No `CLEANUP_PROGRESS.md` commit on RED.
 RED_SEATS
 
+# 16.12 The four seats of the YELLOW exports ceiling (#75). The same shape as
+# 16.7, measured on a second contract — which is what turns "the RED contract is
+# redundant" into a property of this document rather than an anecdote about one
+# rule.
+#
+# Two mutations, same case (`yellow-run`), same rich fixture:
+#
+#   - the level-table cell alone: the arm REFUSED the category and quoted a
+#     sentence the edit never touched — "the YELLOW cap forbids the exports
+#     category, not any doubt about the finding";
+#   - all four seats together: the arm ran the category and committed
+#     `chore: remove dead exports`, deleting `formatPercent`, and the ceiling
+#     grader reported FAILED (113/114).
+#
+# Before that pair, the green of that grader on the live arm had two readings
+# nobody could separate: a fixture with nothing to export, or a rule the model
+# was obeying. The rich fixture removed the first; the seat count explains the
+# second. Only the cell was asserted anywhere in this suite, so deleting the
+# three sentences that demonstrably carried the refusal left every suite green.
+#
+# Named seats and not a count, for the reason 16.7 gives: four matches of the
+# weakest one satisfy a count. Whoever reduces this on purpose rewrites the list
+# and says why.
+while IFS='|' read -r label needle; do
+  [[ -n $label ]] || continue
+  check "SKILL.md keeps the exports-ceiling seat [$label]" \
+        "$(LC_ALL=C grep -qF -- "$needle" SKILL.md && echo 0 || echo 1)" \
+        "anchor not found: [$needle] — #75 measured that this ceiling needs all
+four of these to change behavior, and the level table cell alone did not. Reworded
+on purpose? Rewrite the anchor. Removed on purpose? Say why here."
+done <<'EXPORTS_SEATS'
+level table cell|Runs phase 1 (deps and orphan files only, **not** exports).
+the default scope of 1.3|Run all three without asking (GREEN level) or the first two
+the level cap is not a user scope skip|(YELLOW × exports) is a level cap, not a user scope skip
+the skipped category has nothing to regenerate|A category that is skipped (YELLOW does not run exports)
+EXPORTS_SEATS
+
 # 16.8 The empty duplication survey still gets committed (#77). Measured on two
 # runs that provably completed: TECH_DEBT_AUDIT.md (step 1.4) committed 2 of 2,
 # `chore: duplication survey` (step 1.5) committed 0 of 2 — one of them writing

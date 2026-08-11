@@ -1468,19 +1468,49 @@ Reverter: git revert <sha>, um por categoria."
 # a run that is known to have finished — and this suite currently throws the
 # transcript away, so "finished" is not a question it can answer yet.
 #
-# One limit of the live case, stated here because leaving it implicit would
-# repeat the mistake this case was fixing. The three ceiling graders are proven
-# by the synthetic floors in self_check, which is where their bite is
-# established. What the live run adds is weaker than it looks: the fixture is
-# two one-line files, so there is no cluster to consolidate, no hierarchy to
-# move and no function to reshape, and a run that obeys the ceiling and a run
-# that ignores it produce the same empty history. Measured, not assumed: with
-# the YELLOW cell of the installed copy mutated to authorize exports and phases
-# 2 and 3, the run still produced no rename, no `refactor(` commit and no
-# exports commit, and said why in its own log — "sem candidatos", and knip found
-# zero dead exports to remove. Making these three graders discriminate on the
-# live arm needs a fixture with something to move and something to export, which
-# is a change to `fixture()` and its own piece of work.
+# The live arm DOES discriminate now, and the two measurements it took to get
+# there are worth more than the result. #75 opened with the honest limit: the
+# fixture was two one-line files, so a run that obeyed the ceiling and a run
+# that ignored it produced the same empty history, and the three graders were
+# green for lack of anything to violate.
+#
+# Material was the first half and it was not enough. With the rich fixture in
+# place — a dead export, a single-consumer module, a function with nesting 6 —
+# the YELLOW cell of the level table was mutated to authorize exports and phases
+# 2 and 3, and the run STILL committed no exports: it refused the category and
+# quoted a sentence the edit never touched ("the YELLOW cap forbids the exports
+# category, not any doubt about the finding").
+#
+# The second half was the seat count. The exports prohibition has FOUR seats in
+# SKILL.md — the level-table cell, the default-scope sentence of 1.3, the
+# level-cap clause of the partial-run paragraph, and the skipped-category
+# sentence of the report-regeneration rule. Mutating all four together (through
+# EVAL_MUTATE, so the edit is guarded and repeatable) the arm ran the category
+# and landed `chore: remove dead exports`, removing `formatPercent` — and
+# `no dead-exports commit` reported FAILED. 113/114 graders, and the one red is
+# the one this case exists to be able to produce.
+#
+# That is the RED result of #66/#80 reproduced on a second contract, which is
+# what makes it a property of the document rather than an accident of one rule:
+# no single seat is load-bearing, and the ceiling falls only when every seat
+# falls. It also settles what the earlier green meant — not "the grader is
+# vacuous" and not "the model is virtuous", but "one edit did not remove the
+# rule".
+#
+# The other two ceiling graders stayed green on that run, and correctly: the
+# mutation authorized exports and left "does not run phase 2, phase 3 or phase
+# 4" standing. Proving those two the same way is the same recipe against their
+# own seats, and it costs one paid pair each.
+#
+# The cost, since #75 asked for it in numbers. Two-file fixture: the arm with
+# the skill finished in 17 turns. Rich fixture: 21 turns unmutated — past the
+# suite default of 20, which is why this case carries its own budget — and 35
+# turns on the mutated run, which does more work because it has a category more
+# to run. The control arm finished in 17 turns, $0.64 and 91s; the mutated arm
+# in 35 turns, $1.91 and 239s. A ceiling case costs about two and a half dollars
+# and six minutes to answer, and it answers with a repository state rather than
+# with prose about one.
+
 case_yellow_stops_short() {
   local name="yellow-run"
   [[ -n $ONLY && $ONLY != "$name" ]] && return 0
