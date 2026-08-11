@@ -326,9 +326,19 @@ log_names_level()    { grep -qiE 'YELLOW' "$1/CLEANUP_PROGRESS.md" 2>/dev/null; 
 # A commit that carries both a source change and the progress log is two steps
 # merged into one, and the protocol's whole revert story depends on them being
 # separate: reverting a category must not take the log with it.
+#
+# `--all --not <base>` and not `<base>..HEAD`, for the reason #70 was opened
+# about: this function decides by walking a list, and an EMPTY list walks
+# cleanly to `return 0`. So the one shape a real run produces — the work
+# committed on `cleanup/` with HEAD left on the base branch — made the range
+# empty, the loop never ran, and the answer came back "atomic" because there
+# was nothing to look at. Green by absence is not the claim this grader makes.
+# The phase-ceiling graders were written this way from the start; this one is
+# older than that lesson, and the floor below is the one that proves the
+# difference.
 commits_are_atomic() {
   local sha
-  for sha in $(git -C "$1" log --format=%H "$2..HEAD" 2>/dev/null); do
+  for sha in $(git -C "$1" log --format=%H --all --not "$2" 2>/dev/null); do
     local files; files=$(git -C "$1" show --name-only --format= "$sha")
     if printf '%s\n' "$files" | grep -q '^src/' && printf '%s\n' "$files" | grep -q 'CLEANUP_PROGRESS.md'; then
       return 1
@@ -722,6 +732,45 @@ self_check() {
   git -C "$r" -c user.email=e@l -c user.name=e add -A
   git -C "$r" -c user.email=e@l -c user.name=e commit -qm "source and log together"
   commits_are_atomic "$r" "$base" && bad "floor: a merged commit is caught" "a commit carrying src/ and the log together passed" || ok "floor: a merged commit is caught"
+  # The same violation, hidden the way a real run hides it: the merged commit
+  # lives on the cleanup branch and HEAD is back on the base branch. Before #70
+  # this passed — `<base>..HEAD` was empty, the loop never ran, and the function
+  # returned 0. Green because there were no commits to look at, which is not the
+  # same claim as green because the commits are atomic.
+  local m="$t/m"; mkdir -p "$m/src"
+  git -C "$m" init -q
+  printf 'x\n' > "$m/src/index.ts"
+  git -C "$m" -c user.email=e@l -c user.name=e add -A
+  git -C "$m" -c user.email=e@l -c user.name=e commit -qm base
+  local mbase; mbase=$(git -C "$m" rev-parse HEAD)
+  git -C "$m" checkout -q -b cleanup/19700101
+  printf 'y\n' >> "$m/src/index.ts"; printf 'log\n' > "$m/CLEANUP_PROGRESS.md"
+  git -C "$m" -c user.email=e@l -c user.name=e add -A
+  git -C "$m" -c user.email=e@l -c user.name=e commit -qm "source and log together"
+  git -C "$m" checkout -q -
+  commits_are_atomic "$m" "$mbase" && bad "floor: a merged commit on the cleanup branch is caught with HEAD elsewhere" "the merged commit sat on cleanup/ and the grader read the empty <base>..HEAD range as atomic" || ok "floor: a merged commit on the cleanup branch is caught with HEAD elsewhere"
+  # And the other half, so the fix cannot be "always return 1": the same shape
+  # with SEPARATE commits still has to read as atomic.
+  git -C "$m" checkout -q cleanup/19700101
+  printf 'z\n' >> "$m/src/index.ts"
+  git -C "$m" -c user.email=e@l -c user.name=e commit -q -am "source only"
+  printf 'more\n' >> "$m/CLEANUP_PROGRESS.md"
+  git -C "$m" -c user.email=e@l -c user.name=e commit -q -am "log only"
+  git -C "$m" checkout -q -
+  local m2="$t/m2"; mkdir -p "$m2/src"
+  git -C "$m2" init -q
+  printf 'x\n' > "$m2/src/index.ts"
+  git -C "$m2" -c user.email=e@l -c user.name=e add -A
+  git -C "$m2" -c user.email=e@l -c user.name=e commit -qm base
+  local m2base; m2base=$(git -C "$m2" rev-parse HEAD)
+  git -C "$m2" checkout -q -b cleanup/19700101
+  printf 'y\n' >> "$m2/src/index.ts"
+  git -C "$m2" -c user.email=e@l -c user.name=e commit -q -am "source only"
+  printf 'log\n' > "$m2/CLEANUP_PROGRESS.md"
+  git -C "$m2" -c user.email=e@l -c user.name=e add -A
+  git -C "$m2" -c user.email=e@l -c user.name=e commit -qm "log only"
+  git -C "$m2" checkout -q -
+  commits_are_atomic "$m2" "$m2base" && ok "floor: separate commits on the cleanup branch still read as atomic with HEAD elsewhere" || bad "floor: separate commits on the cleanup branch still read as atomic with HEAD elsewhere" "the widened range flagged two clean commits, so the fix is stricter than the rule"
 
   baseline_reachable "$r" "$base" && ok "floor: a live commit is reachable" || bad "floor: a live commit is reachable" "could not resolve $base"
   baseline_reachable "$r" "0000000000000000000000000000000000000000" && bad "floor: an absent commit is unreachable" "resolved a sha that does not exist" || ok "floor: an absent commit is unreachable"
