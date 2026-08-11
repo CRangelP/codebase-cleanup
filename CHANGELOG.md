@@ -9,6 +9,61 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.8.0] — 2026-08-11
+
+Um piso do eval reprovando 1 vez em 15 puxou um fio que terminou num defeito do **gate**: com
+saída grande, ele podia anunciar GREEN sobre uma suíte que nunca rodou.
+
+### Corrigido
+
+- **`grep -q` sob `pipefail` devolve 141 quando a saída é grande, e o que está lá lê como
+  ausente** ([#94](https://github.com/CRangelP/codebase-cleanup/issues/94)). O matcher sai no
+  instante em que encontra, o produtor leva SIGPIPE, e o `pipefail` reporta o status do produtor.
+
+  Medido: 809 KB de saída com o marcador na primeira linha — `grep -c` acha, `grep -q` faz o `if`
+  ser falso. Com 19 bytes funciona. A fronteira é o buffer do pipe (64 KB no macOS), e é por isso
+  que os 142 casos do `gate_test.sh` passavam com o defeito de pé: as fixtures deles têm centenas
+  de bytes.
+
+  Cinco sítios no `js_script`, e `$ev` é a saída inteira dos testes. Dois decidem a detecção de
+  suíte vazia: com saída grande o marcador some, o teste conta como executado, e o gate anuncia
+  **GREEN** — o nível que libera deleção de exports mortos — sobre um repositório onde nenhum teste
+  rodou. É o defeito do milestone 5 por outro mecanismo. Um quinto sítio é o `awk` que sai cedo, e
+  ali o erro vai para o outro lado: falha real lida como suíte vazia, YELLOW onde devia ser RED.
+
+  A prova veio antes do conserto: `js-pwnt-loud` é o mesmo caso do `js-pwnt` com ~800 KB de saída
+  ordinária depois do marcador, e reprovava. Os dois ficam lado a lado — o silencioso passa nas
+  duas versões do código, e só o barulhento os distingue.
+
+- **O mesmo defeito no `eval.sh`** ([#83](https://github.com/CRangelP/codebase-cleanup/issues/83)),
+  que é onde ele apareceu. Três graders negativos respondiam "nenhuma violação" quando o histórico
+  era grande — num piso isso é vermelho, num caso vivo seria **verde falso escondendo violação
+  real**. Investigado com números em vez de impressão: piso isolado 200×, zero anomalias;
+  `self_check` completo 200×, 3 reprovações; o mesmo comando com 50 commits, 20 de 20. O defeito
+  depende do tamanho da saída, e o repositório sintético minúsculo era o pior lugar para vê-lo.
+
+- **`commits_are_atomic` ficava verde por ausência**
+  ([#70](https://github.com/CRangelP/codebase-cleanup/issues/70)) quando a run terminava com o
+  `HEAD` fora da branch de limpeza: o intervalo `base..HEAD` vinha vazio e o laço não rodava. Era o
+  último grader com o defeito que os outros já tinham perdido.
+
+### Adicionado
+
+- **`scripts/mutate.sh`: a guarda de STALE para a mutação feita à mão**
+  ([#89](https://github.com/CRangelP/codebase-cleanup/issues/89)). O `mutation_test.sh` protege as
+  suas quatorze edições com checksum desde a #37; fora dali não havia nada — e é fora dali que mora
+  a mutação cara, a que roda o modelo contra a cópia mutada. Uma expressão que não casa faz a run
+  acontecer contra o texto **original**, o verde volta, e ele se lê como "o caso não morde".
+
+  Aconteceu: ao escrever o invariante da #85, a primeira mutação de verificação foi stale e a suíte
+  respondeu 465/465. Só apareceu porque o checksum foi conferido à mão.
+
+  A ferramenta reporta **o que** mudou, não só que mudou — expressão gulosa também move o checksum.
+  Seis pisos próprios, rodados pelo `mutation_test.sh` antes de tudo, falhando fechado. Estreou em
+  serviço na #94.
+
+- **Pisos do eval: de 83 para 88**, e o caso `js-pwnt-loud` no `gate_test.sh` (143 casos).
+
 ## [0.7.0] — 2026-08-11
 
 Os cinco casos de comportamento que faltavam entraram, e o primeiro deles achou um defeito no
