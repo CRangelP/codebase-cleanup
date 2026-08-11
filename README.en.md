@@ -135,7 +135,8 @@ codebase-cleanup/
 │   ├── cleanup-phase-4-survey.md     reshaping queue (read-only)
 │   └── cleanup-phase-4-impl.md       applies tier A and the approved tier B
 ├── docs/
-│   └── plugin-spec-research.md       host limits, official advice and mere habit
+│   ├── plugin-spec-research.md       host limits, official advice and mere habit
+│   └── attribution-frontier.md       what the skill buys and what the model already brings
 ├── hooks/
 │   └── hooks.json                    registers the guard on the PreToolUse event
 ├── references/
