@@ -235,18 +235,39 @@ EOF
   fi
   cp -R "$VENDOR/node_modules" "$dir/node_modules"
   if [[ $2 == with || $2 == with-noref ]]; then
+    # Fails closed, and the reason is not hypothetical. SKILL_ROOT is derived
+    # from `${BASH_SOURCE[0]}/..`, so a copy of this file run from somewhere
+    # else resolves it to that directory's parent — from /tmp it resolves to
+    # `/`, and the line below then copies the whole filesystem into a fixture.
+    # Observed while mutating a copy in /tmp: `cp -R` walked /usr, /bin, /etc
+    # and /Library before the permission errors made it obvious. A wrong
+    # SKILL_ROOT is never a degraded run, so this refuses instead of guessing.
+    [[ -f $SKILL_ROOT/SKILL.md ]] || {
+      echo "eval: SKILL_ROOT=$SKILL_ROOT has no SKILL.md — refusing to copy it into a fixture" >&2
+      return 1
+    }
     mkdir -p "$dir/.claude/skills"
     # A copy, not a symlink: the run must see the same tree a user would get,
     # and .git is dropped so the fixture's own history stays readable.
     cp -R "$SKILL_ROOT" "$dir/.claude/skills/codebase-cleanup"
     rm -rf "$dir/.claude/skills/codebase-cleanup/.git"
-    # The third arm: the whole skill, minus one reference. It answers a question
-    # no other arm can — whether a rule that lives behind progressive disclosure
-    # reaches behaviour at all. What it removes is the CONTENT; SKILL.md still
-    # points at the file, so the run can see that the pointer leads nowhere.
-    # That is a weaker manipulation than "the rule was never written", and the
-    # difference matters when reading the result.
-    [[ $2 == with-noref ]] && rm -f "$dir/.claude/skills/codebase-cleanup/references/knip-config.md"
+    # The third arm: the whole skill, minus ONE reference, named by the case in
+    # $NOREF. It answers a question no other arm can — whether a rule that lives
+    # behind progressive disclosure reaches behaviour at all. What it removes is
+    # the CONTENT; SKILL.md still points at the file, so the run can see that the
+    # pointer leads nowhere. That is a weaker manipulation than "the rule was
+    # never written", and the difference matters when reading the result.
+    #
+    # It is parameterised, and it happens HERE, before the baseline commit, for
+    # two reasons that were both defects first. A hardcoded file made the second
+    # case strip TWO references — its own and the one this line used to name —
+    # so the arm was not the controlled manipulation it claimed to be. And a
+    # case that deleted the file after fixture() returned left a tracked file
+    # deleted and uncommitted, which is a DIRTY TREE: Step 0 then refused to
+    # start, the arm scored 1/6 in four turns, and the probe read that as the
+    # reference being load-bearing. Measured, not imagined — that run is what
+    # sent this comment here.
+    [[ $2 == with-noref ]] && rm -f "$dir/.claude/skills/codebase-cleanup/${NOREF:-references/knip-config.md}"
   fi
   # A real project with node_modules has it ignored, and the protocol reads that
   # state: "confirm the repo ignores node_modules before the deps category — a
@@ -838,6 +859,28 @@ self_check() {
   git -C "$p" mv src/index.ts src/entry.ts
   git -C "$p" -c user.email=e@l -c user.name=e commit -qm "chore: move the entry point"
   no_phase_3_renames "$p" "$pbase" && bad "floor: a rename is caught" "a git mv passed the phase 3 ceiling grader" || ok "floor: a rename is caught"
+
+  # The with-noref arm, on the three properties that were all defects first.
+  # It has to remove exactly the reference the case names, keep the others, and
+  # leave a CLEAN tree — a tracked file deleted after the baseline commit is an
+  # uncommitted deletion, Step 0 refuses to start on a dirty tree, and the arm
+  # then scores near zero for a reason that has nothing to do with disclosure.
+  local nrroot="$t/fixroot"; mkdir -p "$nrroot"
+  local saved_fixroot=$FIXROOT
+  FIXROOT=$nrroot
+  NOREF=references/final-report.md
+  local nrdir; nrdir=$(fixture floor-noref with-noref scoped)
+  NOREF=
+  FIXROOT=$saved_fixroot
+  # And the guard that keeps a wrong SKILL_ROOT from copying the filesystem.
+  ( SKILL_ROOT="$t/not-a-skill"; mkdir -p "$SKILL_ROOT"; FIXROOT="$nrroot"; fixture floor-guard with scoped ) >/dev/null 2>&1 \
+    && bad "floor: the fixture refuses a SKILL_ROOT with no SKILL.md" "it built a fixture out of a directory that is not this skill — from /tmp that directory is /" \
+    || ok "floor: the fixture refuses a SKILL_ROOT with no SKILL.md"
+
+  local nrskill="$nrdir/.claude/skills/codebase-cleanup"
+  [[ -e $nrskill/references/final-report.md ]] && bad "floor: the named reference is the one removed" "the arm still carries the file the case asked to strip" || ok "floor: the named reference is the one removed"
+  [[ -e $nrskill/references/knip-config.md ]] && ok "floor: the other references survive the strip" || bad "floor: the other references survive the strip" "a second reference went missing, so the arm is not the controlled manipulation it claims to be"
+  [[ -z $(git -C "$nrdir" status --porcelain 2>/dev/null) ]] && ok "floor: the with-noref arm starts on a clean tree" || bad "floor: the with-noref arm starts on a clean tree" "the strip happened after the baseline commit, so the run sees a tracked file deleted and uncommitted and Step 0 aborts before the protocol starts"
 
   # The subject search over a history long enough to make the old pipeline lose.
   # `grep -q` quits at the first match, git takes SIGPIPE, and `set -o pipefail`
@@ -1679,21 +1722,41 @@ case_partial_scope() {
 # suite default of 20 truncates before the summary is written. Hence the local
 # override below, and its number is a measurement rather than a guess.
 #
-# WHAT IS MEASURED AND WHAT IS NOT, as of 2026-08-11. One run per arm, all three
-# `completed`, with the six anchors scored:
+# WHAT IS MEASURED AND WHAT IS NOT, as of 2026-08-11. Two executions of all
+# three arms, six numbers, every arm `completed`:
 #
-#   with ......... 6/6 (21 turns)
-#   with-noref ... 6/6 (26 turns)
-#   without ...... 0/6 (8 turns)
+#              round 1        round 2
+#   with ......... 6/6 (21t)  6/6 (23t)
+#   with-noref ... 6/6 (26t)  6/6 (27t)
+#   without ...... 0/6  (8t)  0/6  (9t)
 #
-# So on this sample the wager was NOT contradicted: removing the reference cost
-# none of the required items, and the arm without the skill delivered none of
-# them. That is as far as one run per arm goes. The second execution the issue
-# asks for, the variance it would show, and the mutation of the SKILL.md
-# sentence that lists the required content are NOT done — the weekly API quota
-# ran out mid-round, and the honest record is that three of this case's five
-# acceptance criteria are open rather than met. The floors below cost nothing
-# and are complete; the paid half is not.
+# The variance is nil on this instrument: the same score on both rounds for
+# every arm, with turn counts moving by two. So the two claims this supports are
+# narrow and worth separating.
+#
+# The report IS attributable to the skill. The control arm scored zero twice —
+# it does not name the branch, the level, the delta or how to revert, because
+# nothing asked it to. That is the widest gap this suite has measured between an
+# arm with the protocol and an arm without it.
+#
+# The required CONTENT survives without references/final-report.md, twice. That
+# is not the same sentence as "the reference does not matter", and the
+# difference is the instrument: these six anchors ask whether each required item
+# is NAMED, and the reference is what carries the FORM — the template, the
+# ordering, how each part is filled. A tie at 6/6 says the content did not
+# degrade; it says nothing about form, which this case does not measure. Note
+# the arms are not identical prose: round 2 came back at 1066 characters with
+# the reference and 940 without, both carrying all six items.
+#
+# This is a different kind of tie from the one in the anchorless case. There the
+# control arm complied too, so there was no attributable behaviour for the
+# removal to take away, and the probe correctly reads `not readable`. Here the
+# control is at zero, so the behaviour IS attributable and the removal really
+# did not cost any of it. The limit is the resolution of the anchors, not the
+# absence of a subject.
+#
+# Still open, and the honest record: the mutation of the SKILL.md sentence that
+# lists the required content.
 #
 # Read that table with the caveat attached: the v0.4.0 wager was NOT CONTRADICTED
 # on this sample. With one run per arm that is not "the wager holds", and the
@@ -1723,9 +1786,12 @@ case_report_survives_disclosure() {
 
   local dir_with dir_noref dir_without
   dir_with=$(fixture "$name" with scoped)
+  # The reference this case removes, named before the fixture is built so the
+  # deletion is inside the baseline commit and the tree the run sees is clean.
+  NOREF=references/final-report.md
   dir_noref=$(fixture "$name" with-noref scoped)
+  NOREF=
   dir_without=$(fixture "$name" without scoped)
-  rm -f "$dir_noref/.claude/skills/codebase-cleanup/references/final-report.md"
 
   # Measured, not guessed: the report lands at 21-26 turns on this fixture and
   # the suite default of 20 cuts it off before the summary exists.
@@ -1800,6 +1866,7 @@ case_report_survives_disclosure() {
   # of the skill — "the reference is load-bearing" is a finding about where a
   # rule lives, and the owner decides what to do about it.
   say "        probe:   $(reference_probe "references/final-report.md" "$noref_outcome" "$with_full" "$without_full" "$noref_full") [with=$with_score/6 vs with-noref=$noref_score/6]"
+  say "                 read that as CONTENT only: these anchors ask whether each required item is named, and the reference carries the form"
 
   [[ ${EVAL_KEEP:-} ]] || rm -rf "$dir_with" "$dir_noref" "$dir_without"
 }
