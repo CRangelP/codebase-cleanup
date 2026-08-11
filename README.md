@@ -203,7 +203,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 142/142 casos, 47/47 casos do guarda, 5/5 propriedades,
-# 35/35 casos de métrica, 451/451 invariantes, 14/14 mutações pegas
+# 37/37 casos de métrica, 463/463 invariantes, 14/14 mutações pegas
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`

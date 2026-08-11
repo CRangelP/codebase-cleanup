@@ -206,7 +206,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 142/142 cases, 47/47 guard cases, 5/5 properties,
-# 35/35 metrics cases, 451/451 invariants, 14/14 mutations caught
+# 37/37 metrics cases, 463/463 invariants, 14/14 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK

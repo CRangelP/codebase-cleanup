@@ -9,6 +9,51 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.5.0] — 2026-08-10
+
+Fecha a [#63](https://github.com/CRangelP/codebase-cleanup/issues/63). A primeira suíte deste
+repositório que prova o **produto** — o que um modelo faz quando lê o `SKILL.md` — e o defeito que
+ela encontrou na primeira execução.
+
+### Adicionado
+
+- **`scripts/eval.sh`: o comportamento do modelo, julgado pelo estado do repositório.** As outras
+  seis suítes provam texto, scripts, e que os dois reprovam quando devem. Nenhuma toca o que o
+  usuário compra.
+
+  Os graders são determinísticos — pelo mesmo motivo que o protocolo recusa julgamento de LLM na
+  fase 1.5: juiz que aceita qualquer coisa é pior que juiz nenhum. Existe branch de limpeza? O log
+  nomeia o nível? O entry point sobreviveu? O commit anterior ainda é alcançável? Algum commit
+  fundiu fonte com o log?
+
+  **Todo caso roda duas vezes, com e sem a skill.** Grader que passa nos dois braços mede o bom
+  senso do modelo, não a skill — a mesma regra que o `mutation_test.sh` aplica desde a #37.
+
+  Doze pisos sintéticos rodam antes, de graça. Um deles já pagou por si: pegou o grader de
+  alcançabilidade aprovando um sha de quarenta zeros, porque `rev-parse --verify` devolve qualquer
+  string bem-formada sem checar o objeto.
+
+  **Fora do `scripts/test.sh`** de propósito, e o cabeçalho avisa que estes graders são
+  estocásticos: vermelho isolado aqui é pergunta, não veredito.
+
+### Corrigido
+
+- **A skill media a si mesma quando instalada dentro do projeto.** Achado pela primeira execução
+  do eval, num fixture com a skill em `.claude/skills/` — rota documentada, não caso exótico. O
+  baseline do Step 0 voltou `files=12 loc=3270`, com a maior função em
+  `.claude/skills/.../gate.sh:329`, num repositório cujo código-fonte eram dois arquivos de uma
+  linha.
+
+  Todo delta calculado contra esse baseline é ruído, e o delta é a única evidência de melhoria que
+  o relatório final apresenta.
+
+  O `find` do `metrics.sh` agora poda `.claude`, `.agents` e `.cursor`. Mas poda conserta medição,
+  não decisão: quem escolhe o que deletar é o modelo, e uma flag de `find` nunca chega até ele. O
+  `SKILL.md` ganhou a regra — esses diretórios estão fora de escopo para **deleção, movimentação e
+  medição** — e a seção 22 exige as duas metades, porque foi a medição que quebrou primeiro.
+
+463 invariantes, 14 mutações, 47 casos do guarda, 37 de métricas, 12 pisos do eval.
+
 ## [0.4.2] — 2026-08-10
 
 ### Adicionado
