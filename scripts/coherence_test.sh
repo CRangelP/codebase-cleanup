@@ -1170,12 +1170,28 @@ js_script_body() { # gate.sh's js_script() body, whole-line comments dropped
   ' scripts/gate.sh 2>/dev/null | grep -v '^[[:space:]]*#'
 }
 
-# The classification points: a shell pipeline whose sink is a matcher — grep -q
-# (a decision), grep -v (the epilogue filter that builds ev) or awk. Anything
-# else piped from the capture (strip_ansi itself) is normalization, not a
-# verdict, and is not one of these.
+# The classification points: anything that feeds the capture into a matcher —
+# grep -q (a decision), grep -v (the epilogue filter that builds ev) or awk.
+# Anything else piped from the capture (strip_ansi itself) is normalization, not
+# a verdict, and is not one of these.
+#
+# TWO shapes are counted, and the second one is not style. A pipeline into an
+# early-exiting matcher is a bug under this file's `set -o pipefail`: `grep -q`
+# stops at the first match, the producer takes SIGPIPE and exits 141, and the
+# PIPELINE reports 141 — so a marker that IS in the output reads as absent
+# (#94). Measured: 809 KB of output with the marker on the first line, `grep -c`
+# finds it and `grep -q` reads false; under 64 KB, the pipe buffer hides the
+# whole thing, which is why 142 fixtures of a few hundred bytes each passed with
+# the defect standing. The herestring form has no producer to kill.
+#
+# Both shapes are counted here because the invariant is about WHAT is read, not
+# about how it is fed: a detector born reading `$out` instead of the normalized
+# capture is blind to color, and its fixtures would all pass because test
+# fixtures are written without color. Anyone converting a herestring back into a
+# pipeline keeps this count intact and reintroduces #94, so the pair of loud
+# fixtures in gate_test.sh is what guards that direction.
 js_classify_lines() {
-  js_script_body | grep -E '\|[[:space:]]*(grep[[:space:]]+-[a-zA-Z]*[qv][a-zA-Z]*|awk)'
+  js_script_body | grep -E '\|[[:space:]]*(grep[[:space:]]+-[a-zA-Z]*[qv][a-zA-Z]*|awk)|<<<'
 }
 
 # The variables those lines read. The regexes on the same line are single

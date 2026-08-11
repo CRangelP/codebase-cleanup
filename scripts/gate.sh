@@ -412,8 +412,8 @@ if [[ -f package.json ]]; then
         # — the level that unlocks dead-export deletion — over a repo where
         # zero tests executed. The empty-suite detection used to live only
         # inside the non-zero branch, so this path was never even considered.
-        if printf '%s\n' "$ev" | grep -qiE \
-            '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b'; then
+        if grep -qiE \
+            '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b' <<<"$ev"; then
           uncounted_suite js "runner reported no tests and exited 0 (--passWithNoTests)"
           return 0
         fi
@@ -427,8 +427,8 @@ if [[ -f package.json ]]; then
         # locale (it does under LC_ALL=C), so the greedy form silently missed
         # the very reporter that is on by default. Without this a repo on the
         # built-in runner with no test file reached GREEN.
-        if printf '%s\n' "$ev" | grep -qE \
-            '(^|[^[:alnum:]])tests[[:space:]]+0[[:space:]]*$'; then
+        if grep -qE \
+            '(^|[^[:alnum:]])tests[[:space:]]+0[[:space:]]*$' <<<"$ev"; then
           uncounted_suite js "runner reported 0 tests and exited 0 (node:test)"
           return 0
         fi
@@ -509,7 +509,7 @@ if [[ -f package.json ]]; then
         # the code moves instead of the rule. `s + 0` also normalizes the digits
         # decimally, which is what settles a padded 'code 01' against an exit of
         # 1 without ever letting the shell read '010' as octal.
-        inline_codes=$(printf '%s\n' "$ev" | awk '
+        inline_codes=$(awk '
               tolower($0) ~ /^[[:space:]]*(no test files found|no tests found|did not find any tests)/ {
                 if (match(tolower($0), /exiting with code [0-9]+/)) {
                   s = substr(tolower($0), RSTART, RLENGTH)
@@ -517,7 +517,7 @@ if [[ -f package.json ]]; then
                   print s + 0
                 }
               }
-            ')
+            ' <<<"$ev")
         inline_verdict=none
         for announced in $inline_codes; do
           inline_verdict=mismatch
@@ -527,13 +527,13 @@ if [[ -f package.json ]]; then
           fi
         done
         if [[ $rc -eq 1 ]] \
-          && printf '%s\n' "$ev" | grep -qiE \
-            '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b' \
-          && ! printf '%s\n' "$ev" | grep -qiE \
-            '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b|(^|[[:space:]])(error|ERR!)([[:space:]:]|$)' \
+          && grep -qiE \
+            '^[[:space:]]*(No test files found|No tests found|did not find any tests)\b' <<<"$ev" \
+          && ! grep -qiE \
+            '(^|[[:space:]])(FAIL|Failed|AssertionError|Expected )|(^|[[:space:]])(●|✕|×)[[:space:]]|[1-9][0-9]* (failed|failing)\b|(^|[[:space:]])(error|ERR!)([[:space:]:]|$)' <<<"$ev" \
           && { [[ $inline_verdict == match ]] \
                || { [[ $inline_verdict == none ]] \
-                    && ! printf '%s\n' "$ev" | awk '
+                    && ! awk '
                 # tolower(), not IGNORECASE: that variable is a gawk extension
                 # and is silently ignored by BSD awk (macOS) and mawk (the
                 # usual Debian/Ubuntu default) — both CI legs. Under it the
@@ -547,7 +547,7 @@ if [[ -f package.json ]]; then
                   found=1; exit
                 }
                 END { exit found ? 0 : 1 }
-              '; }; }; then
+              ' <<<"$ev"; }; }; then
           uncounted_suite js "no test files found (exit $rc)"
           return 0
         fi
