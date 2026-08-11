@@ -98,6 +98,14 @@ one and is recorded as a timeout — never as a green.
 **Never force push, never commit on main.** All the work lives on the cleanup
 branch. Merging is the user's decision, on their own schedule.
 
+**A report that indicts everything is a report about the configuration.** If
+nearly every source file comes back unused, the likeliest cause is that no entry
+point was found: with no root, nothing is reachable and a healthy project reads
+as dead. Zero configuration hints does not rule this out — a project with no
+`main` and no plugin the tool recognizes produces no hints and no entries.
+Anchor the entry points and run again. Never delete against a report whose
+finding is the whole project.
+
 ## Step 0 — Calibrate autonomy
 
 Before anything else, measure the safety net. The autonomy level is a function
