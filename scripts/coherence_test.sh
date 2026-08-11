@@ -1646,6 +1646,24 @@ step 0.1 writes nothing at RED|**At RED, skip this step.**
 the final report commits nothing at RED|No `CLEANUP_PROGRESS.md` commit on RED.
 RED_SEATS
 
+# 16.8 The empty duplication survey still gets committed (#77). Measured on two
+# runs that provably completed: TECH_DEBT_AUDIT.md (step 1.4) committed 2 of 2,
+# `chore: duplication survey` (step 1.5) committed 0 of 2 — one of them writing
+# its reason down as "Fase 1.5 — não aplicável (1 arquivo restante)".
+#
+# The text did not open that exception; the model inferred it, and the inference
+# is reasonable prose. What it costs is structural: that commit is the only
+# durable mark that phase 1 reached its end, so "not applicable" quietly removes
+# the anchor the phase-ceiling grader needs — the same hole phase 2 already has
+# (#71). The clause was added rather than the rule relaxed, because a report
+# saying no pairs were found is a finding and the next session has to be able to
+# tell it apart from a step that never ran.
+check "SKILL.md commits the duplication survey even with no pairs" \
+      "$(LC_ALL=C grep -qF -- 'No pairs is a result, and it gets committed too' SKILL.md && echo 0 || echo 1)" \
+      "step 1.5 is back to reading as optional when the pair table is empty; #77
+measured 0 of 2 completed runs committing it, and that commit is the only durable
+mark that phase 1 ended"
+
 # 17. What decides destructive authority survives a compaction. -------------
 # Section 16 proved these rules cannot be deleted in silence. This one answers a
 # question that no amount of invariants about the TEXT can: is the text still in
