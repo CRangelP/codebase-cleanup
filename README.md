@@ -181,6 +181,14 @@ bash scripts/coherence_test.sh  # doc e código dizendo a mesma coisa
 bash scripts/mutation_test.sh   # a suíte acima reprovaria se a regra sumisse?
 ```
 
+A primeira execução do `eval.sh` baixa o `knip@6.32.0` uma vez, para dentro de
+`~/.cache/codebase-cleanup-eval/.vendor/`, e copia essa árvore para cada
+fixture. É de propósito: a fase 1 roda `npx knip@6.32.0`, e sem cópia local
+esse comando precisa do registry — um download dentro de uma run limitada por
+`--max-turns` é tempo morto ou um vermelho que nada tem a ver com a skill. Sem
+rede e sem a árvore, a suíte para antes de gastar o primeiro minuto de modelo,
+em vez de descobrir isso no meio do caso.
+
 Cada uma sai 0 quando tudo passou e imprime o caso que falhou quando não; o
 `test.sh` só encadeia as seis e para na primeira vermelha.
 Nenhuma das quatro toca o repositório em que você a rodou: o gate usa stubs de
