@@ -1583,6 +1583,29 @@ check "every npx in the docs pins a version" \
       "unpinned: ${bare_npx:-none} — an unpinned tool changes what counts as dead
 code without any file in this repo changing"
 
+# 16.6 The rootless-graph rule (#81). The most destructive outcome this protocol
+# can produce is deleting a whole source tree, and the only sentence in the repo
+# that named it lived in references/knip-config.md — behind progressive
+# disclosure, in a file the model may never open. Measured on a fixture with no
+# `main`, no test config and no plugin knip recognizes: TWO unused files, ZERO
+# configuration hints. Every clause of phase 1 is satisfied — the hints reached
+# zero trivially, the report is valid JSON, and 1.3 says delete.
+#
+# So the rule is anchored on what the run can SEE without opening anything: the
+# SHAPE of the finding, not the hint count. Both halves are checked, because a
+# version that only says "watch the hints" is the trap — hints are already zero
+# in the case that matters.
+skill_has() { LC_ALL=C grep -qF -- "$1" SKILL.md; }
+check "SKILL.md refuses a report that indicts the whole project" \
+      "$(skill_has 'A report that indicts everything' && echo 0 || echo 1)" \
+      "the rule that stops a run from deleting a source tree whose graph simply
+had no root is gone from SKILL.md; #81 has the measurement"
+check "that rule does not lean on the hint count" \
+      "$(skill_has 'Zero configuration hints does not rule this out' && echo 0 || echo 1)" \
+      "the clause that says zero hints proves nothing is missing — without it the
+rule reads as 'handle the hints', which the fixture in #81 satisfies while
+reporting the entire project as dead"
+
 # 17. What decides destructive authority survives a compaction. -------------
 # Section 16 proved these rules cannot be deleted in silence. This one answers a
 # question that no amount of invariants about the TEXT can: is the text still in
@@ -1668,6 +1691,7 @@ the level table|A partial net, or no test file in the stack
 stack caps override GREEN|Stack caps in
 a red gate rolls back|A red gate means rollback, not repair
 never force push, never commit on main|Never force push, never commit on main
+a report that indicts everything|A report that indicts everything
 never merge two steps|Never merge two steps
 the scheduled checkpoints|two scheduled checkpoints
 AUTHORITY_RULES
