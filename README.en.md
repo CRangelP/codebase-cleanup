@@ -160,6 +160,7 @@ codebase-cleanup/
     ├── eval.sh                      what the model does reading the skill (not in test.sh)
     ├── metrics_test.sh               measurer cases, on synthetic repos
     ├── coherence_test.sh             coherence invariants between docs and code
+    ├── mutate.sh                     applies a mutation and proves it applied (STALE aborts)
     └── mutation_test.sh              mutates destructive-authority rules; each must fail
 ```
 
@@ -191,6 +192,15 @@ copy that command needs the registry — a download inside a run capped by
 `--max-turns` is either dead time or a red that has nothing to do with the
 skill. With no network and no vendored tree the suite stops before spending the
 first minute of model time, instead of finding out mid-case.
+
+Every mutation made by hand — to prove an invariant bites, or that an eval case
+fails when the rule disappears — goes through `mutate.sh`, which aborts when the
+edit changed nothing. The reason is asymmetric: the expensive mutation is the one
+that runs the model against the mutated copy, and its failure mode is silent in
+the worst direction — an expression that does not match makes the run happen
+against the **original** text, the green comes back, and it reads as "the case
+does not bite" when nothing was ever mutated. `mutation_test.sh` runs that
+guard's floors first and stops if they fail.
 
 Each exits 0 when everything passed and prints the failing case when it does
 not; `test.sh` only chains the six and stops at the first red. None of them
