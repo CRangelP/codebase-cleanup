@@ -1570,7 +1570,16 @@ code without any file in this repo changing"
 # that does not may still fit under a kinder one, so the check errs early rather
 # than wrong. Re-measure with the command above when the file changes shape — a
 # rate derived from one file is not a constant of nature.
-SURVIVAL_BUDGET=14000   # 5.000 tokens x 2,854 bytes/token, measured by the host
+# 5.000 tokens x 2,884 bytes/token. The rate is the host's own count, read from
+# `claude plugin details codebase-cleanup` (~14,3k on-invoke for 41.241 bytes,
+# v0.4.0). The ceiling it implies is 14.420 bytes and the budget stays at 14.000,
+# because the rate is an average over the whole file while what has to fit is the
+# HEAD of it — and the head is dense prose with tables, which costs more tokens
+# per byte than the average. Measuring the extraction proved the direction of
+# that error: text made of commands and tables came out at 2,54 bytes/token
+# against the file average of 2,88, so an average rate flatters any specific
+# stretch. The margin is what covers being wrong about which stretch.
+SURVIVAL_BUDGET=14000
 
 byte_offset() { # byte_offset <file> <literal> — bytes before the first match
   LC_ALL=C grep -abo -F -- "$2" "$1" 2>/dev/null | head -1 | cut -d: -f1

@@ -232,10 +232,28 @@ report template, the procedure for a `knip-report.json` a previous run left
 tracked.
 
 The v0.4.0 extraction removed 4,431 bytes: **45,672 → 41,241** (851 → 770
-lines), roughly 1,550 fewer tokens per invocation. The number alone says
-nothing — the pair says something, and the reduction is a result, not a target.
-Nothing was removed "to make it smaller": a block whose reading question had no
-clear answer stayed where it was.
+lines). In tokens, which is the unit you pay in, measured by the host with
+`claude plugin details codebase-cleanup`:
+
+```
+v0.3.5   44,801 bytes   ~15.7k on-invoke     (~370 always-on)
+v0.4.0   41,241 bytes   ~14.3k on-invoke     (~370 always-on)
+```
+
+**~1,400 fewer tokens on every invocation.** The two measurements sit on
+different byte counts on purpose: between them the file *grew* with the #55
+fixes, and hiding that would make the extraction look larger than it was.
+
+The arithmetic that preceded the measurement was wrong, and it is worth
+recording how. Estimated from the file's average rate (2.85 bytes/token) the
+projected saving was ~1,550 tokens, 11% above the real one. The extracted text —
+commands, tables, code blocks — costs about 2.54 bytes per token, far denser
+than the prose that stayed. **An average rate does not estimate a specific
+cut**, and the ruler that counts is the host's.
+
+The number alone says nothing — the pair says something, and the reduction is a
+result, not a target. Nothing was removed "to make it smaller": a block whose
+reading question had no clear answer stayed where it was.
 
 Two things keep that arithmetic honest. Section 21 of `coherence_test.sh` walks
 the reference graph from `SKILL.md` and fails any file nobody points at — an
