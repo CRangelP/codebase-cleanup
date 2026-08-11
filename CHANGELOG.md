@@ -9,6 +9,44 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [0.4.2] — 2026-08-10
+
+### Adicionado
+
+- **A entrega do bloqueio ao modelo foi medida ao vivo, e a evidência está publicada.** É a única
+  perna do contrato do guarda que nenhuma suíte cobre: os 47 casos montam o JSON do hook à mão e
+  provam o comportamento do script, não que o `matcher` encaminhe a chamada nem que o exit 2
+  chegue ao modelo com o stderr junto.
+
+  Medido num repositório descartável, dentro de uma branch `cleanup/`, pedindo ao modelo
+  exatamente o comando proibido. As três coisas que importam apareceram: o bloqueio chegou, a
+  **razão** chegou junto, e o modelo ofereceu `git add -- <path>` em vez de procurar um contorno.
+
+- **O gatilho automático foi medido pela primeira vez sem a cópia colidente** (a pendência que a
+  #34 e a #56 deixaram em aberto). "dá uma faxina nesse projeto" num repo JS de dois arquivos: a
+  skill disparou, criou `cleanup/20260810`, tirou o baseline com o `metrics.sh`, classificou
+  **YELLOW** com a razão certa (gate exit 0, mas `typecheck` e `test` são `echo ok` e não há
+  arquivo de teste), commitou só o log e **parou no ponto de decisão** — o knip marcava os dois
+  arquivos como órfãos porque o grafo não tinha âncora, e aceitar isso teria esvaziado o repo.
+
+  O contraste é o que dá valor à medida: a mesma frase, no mesmo repo, com o plugin **fora de
+  escopo**, fez o modelo apagar o arquivo direto — sem branch, sem gate, sem log e sem rollback.
+
+- **Os READMEs explicam o escopo da instalação.** Instalado de dentro de um projeto, o plugin fica
+  com escopo `local` amarrado àquele diretório; em qualquer outro, `claude plugin list` continua
+  dizendo `enabled` e `claude plugin details` continua contando `Skills (1)`, mas o modelo não vê
+  skill nenhuma. Quem responde é o `projectPath` em `installed_plugins.json`.
+
+### Corrigido
+
+- **O invariante que nunca deixa passar um `git add -A` vivo reprovava a citação de um bloqueio
+  real.**
+  "Bloqueado pelo hook […]: `git add -A`" é a evidência mais forte possível de que a forma é
+  recusada, e o vocabulário de cobertura não tinha `blocked`/`bloquead` — as palavras próprias de
+  um guarda. Foram adicionadas, e o check continua reprovando uma instrução de verdade.
+
+451 invariantes, 14 mutações, 47 casos do guarda.
+
 ## [0.4.1] — 2026-08-10
 
 ### Corrigido

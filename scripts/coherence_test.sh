@@ -1507,7 +1507,13 @@ uncovered() {
           pre = done substr(s, 1, RSTART - 1)
           start = length(pre) - 47; if (start < 1) start = 1
           win = tolower(substr(pre, start))
-          if (win !~ /never|nunca|n.o|instead|em vez|rather than|forbidden|proibid/ \
+          # `blocked`/`bloquead` earn their place the day the READMEs quote a real
+          # guard denial: "Bloqueado pelo hook: `git add -A` …" is the strongest
+          # possible evidence that the form is refused, and the first version of
+          # this list read it as an instruction. They mark a mention as a refusal
+          # for the same reason `forbidden` does, and no document has a reason to
+          # write "blocked" in front of a command it is telling the reader to run.
+          if (win !~ /never|nunca|n.o|instead|em vez|rather than|forbidden|proibid|blocked|bloquead/ \
               && win !~ /\|[[:space:]]*.?$/)
             print FILENAME
           done = pre substr(s, RSTART, RLENGTH)

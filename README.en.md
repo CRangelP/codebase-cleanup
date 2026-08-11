@@ -57,7 +57,17 @@ and the `PreToolUse` guards:
 /plugin install codebase-cleanup@codebase-cleanup
 ```
 
-Updating later is `/plugin update codebase-cleanup@codebase-cleanup`. For a
+Updating later is `/plugin update codebase-cleanup@codebase-cleanup`.
+
+**Install scope decides where the skill exists, and `list` does not make that
+obvious.** Installed from inside a project, the plugin gets `local` scope tied
+to that directory — anywhere else, `claude plugin list` still says `enabled`,
+`claude plugin details` still counts `Skills (1)`, and the model sees no skill
+at all. To have it everywhere, install with `--scope user`; to find out where it
+is actually active, the answer is the `projectPath` in
+`~/.claude/plugins/installed_plugins.json`.
+
+For a
 team, declare it in the repository's `.claude/settings.json`:
 
 ```json
@@ -420,10 +430,22 @@ There is one thing those 47 cases do not reach, and it is worth naming: they
 build the hook JSON by hand and call the script, so they prove the guard's
 **behaviour** — not its delivery. That the `matcher` in `hooks.json` actually
 routes the call, and that exit 2 reaches the model with its stderr attached, was
-checked by hand with the plugin installed, not by a suite. It is the only leg of
-the contract no suite covers, and the distinction matters: a guard that blocks
-without delivering the reason becomes an opaque error, and a model that cannot
-read the reason rephrases the command until it slips through.
+checked by hand with the plugin installed, not by a suite.
+
+Since that is the only leg of the contract no suite covers, here is the
+measurement, taken in a throwaway repository, inside a `cleanup/` branch, asking
+the model for exactly the forbidden command:
+
+> Blocked by the codebase-cleanup plugin hook: `git add -A` (whole-tree staging)
+> is forbidden during cleanup, so it cannot swallow someone else's file into the
+> category commit. I will not route around it — a block that fired is final.
+> […] To stage by pathspec: `git add -- novo.ts`
+
+The three things that matter are all there: the block arrived, the **reason**
+arrived with it, and the model offered the correct form instead of looking for a
+way around. That is what the distinction protects — a guard that blocks without
+delivering the reason becomes an opaque error, and a model that cannot read the
+reason rephrases the command until it slips through.
 
 ## Known limits
 
