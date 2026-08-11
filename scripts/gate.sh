@@ -264,6 +264,14 @@ strip_ansi() {
   LC_ALL=C sed "s/${CR}\$//; s/.*${CR}//; s/${ESC}\[[0-9;?]*[a-zA-Z]//g; s/${ESC}\][^${BEL}]*${BEL}//g"
 }
 
+js_test_files() { # first path that looks like a JS/TS test file, or nothing
+  find . \
+    \( -name node_modules -o -name .git -o -name dist -o -name build -o -name vendor \) -prune -o \
+    \( -name '*.test.*' -o -name '*.spec.*' -o -name '*_test.js' -o -name '*_test.ts' \
+       -o -path '*/__tests__/*' -o -path '*/test/*' -o -path '*/tests/*' \) \
+    -type f -print -quit 2>/dev/null
+}
+
 py_missing() {
   echo "[gate] $1 present but toolchain '$2' missing — looked in \$VIRTUAL_ENV/bin," \
        ".venv/bin, venv/bin, uv/poetry and PATH — manual gate" >&2
@@ -430,6 +438,27 @@ if [[ -f package.json ]]; then
         if grep -qE \
             '(^|[^[:alnum:]])tests[[:space:]]+0[[:space:]]*$' <<<"$ev"; then
           uncounted_suite js "runner reported 0 tests and exited 0 (node:test)"
+          return 0
+        fi
+        # The last gap, and the one every OTHER stack already closed. Everything
+        # above reads what a RUNNER prints on an empty suite. A `test` script
+        # that is not a runner prints nothing to read: `echo ok`, `true`,
+        # `exit 0`, or a script that lints or builds instead. It exits 0, no
+        # marker appears, and the suite counts as run — GREEN over a repository
+        # with zero tests, which is the level that unlocks dead-export deletion.
+        #
+        # Go, Rust and Ruby have carried this guard for versions, each with the
+        # same sentence in its comment ("counting that as a test is how a
+        # suiteless repo gets classified GREEN"). JS was the only stack judging
+        # by output alone — and SKILL.md's level table states the rule in FILE
+        # terms, "no test file in the stack", so the JS branch was not
+        # implementing the documented contract at all.
+        #
+        # A repo whose tests sit somewhere these patterns miss is demoted to
+        # YELLOW with the reason printed. That direction is the safe one: it
+        # withholds authority instead of granting it, and it is visible.
+        if [[ -z $(js_test_files) ]]; then
+          uncounted_suite js "the test script exited 0 but no test file exists in the repo"
           return 0
         fi
         ran_test=1

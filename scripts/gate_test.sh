@@ -1054,6 +1054,38 @@ make_escapee "$ESCAPE_NOLS" "$TMP/escapee-nols.pid"
 # matrix ---------------------------------------------------------------
 case_run bad-path         2 "$TMP/nope"         -             "bad path"
 case_run empty            3 "$TMP/empty"        -             "no runnable checks"
+# A repository whose `test` script really is a suite has test files on disk, and
+# the gate now reads that (gate.sh, js_test_files). The fixtures below stand for
+# repositories WITH a suite — their scripts are `node -e ...` stand-ins so the
+# case can focus on aliases, package managers or another stack — so each gets one
+# file. The empty-suite fixtures deliberately get none: that is the difference
+# the guard exists to see.
+#
+# Writing the file here rather than at each mkdir is deliberate: several of these
+# copy their manifest from a sibling, and a per-fixture line would have to be
+# kept in sync with those copies.
+for f in js-green js-test-only js-alias js-alias-test-only js-alias-tsc js-tsc-noemit js-tsc-emit js-tsc-comment-noemit js-real-pass js-node-test-real js-alias-check-types js-test-and-unit js-test-integration js-test-unit-watch js-alias-both js-yarn-alias js-pnpm js-bun dotnet-poly-uncounted py-reqs-no-source py-reqs-with-source rb-gemfile-only rb-source-no-spec js-hold; do
+  mkdir -p "$TMP/$f/src" && printf 'it("runs", () => {})\n' > "$TMP/$f/src/app.test.ts"
+done
+
+# The placeholder pair, and the reason the guard is file-based (#103). A `test`
+# script that is not a runner prints nothing an output-based detector can read:
+# it exits 0, every empty-suite matcher above stays silent, and the suite counts
+# as run. Measured on this repo's own eval fixture, which is named `yellow-run`
+# and which the gate classified GREEN — the level that unlocks dead-export
+# deletion — over a repository with zero test files.
+mkdir -p "$TMP/js-placeholder-test"
+cat > "$TMP/js-placeholder-test/package.json" <<'EOF'
+{"name":"f","scripts":{"typecheck":"node -e 0","test":"echo ok"}}
+EOF
+# The same placeholder script WITH a test file present stays GREEN, which is the
+# honest limit of a file-based rule: it answers "is there a suite in this repo",
+# not "did this command run it". Stated as a case so the limit is visible instead
+# of implied.
+mkdir -p "$TMP/js-placeholder-with-file/src"
+cp "$TMP/js-placeholder-test/package.json" "$TMP/js-placeholder-with-file/package.json"
+printf 'it("runs", () => {})\n' > "$TMP/js-placeholder-with-file/src/app.test.ts"
+
 case_run js-green         0 "$TMP/js-green"     -             "checks=typecheck,test" "GREEN"
 # The buffering notice, asserted where the buffering happens. It is the only
 # thing the user gets between the command line and the output on a suite that
@@ -1067,6 +1099,10 @@ case_run js-buffer-notice 0 "$TMP/js-green"     -             "output appears wh
 case_run js-no-buffer-notice-on-typecheck-only 0 "$TMP/js-typecheck-only" - \
          "!output appears when this command finishes"
 case_run js-test-only     0 "$TMP/js-test-only" -             "checks=test" "YELLOW"
+case_run js-placeholder-test 0 "$TMP/js-placeholder-test" - \
+         "no test file exists in the repo" "checks=typecheck$" "YELLOW" '!GREEN'
+case_run js-placeholder-with-file 0 "$TMP/js-placeholder-with-file" - \
+         "checks=typecheck,test" "GREEN"
 case_run js-red           1 "$TMP/js-red"       -             "RED"
 case_run js-no-node       3 "$TMP/js-green"     "$NOTOOL"     "toolchain 'node' missing"
 case_run js-bad-json      3 "$TMP/js-bad-json"  -             "unparseable"

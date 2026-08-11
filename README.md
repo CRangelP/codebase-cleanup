@@ -231,7 +231,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 ```bash
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
-# validado em 08/2026: 143/143 casos, 47/47 casos do guarda, 5/5 propriedades,
+# validado em 08/2026: 145/145 casos, 47/47 casos do guarda, 5/5 propriedades,
 # 37/37 casos de métrica, 463/463 invariantes, 14/14 mutações pegas
 ```
 
