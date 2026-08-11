@@ -1664,6 +1664,35 @@ check "SKILL.md commits the duplication survey even with no pairs" \
 measured 0 of 2 completed runs committing it, and that commit is the only durable
 mark that phase 1 ended"
 
+# 16.9 Phase 2 is the only phase with no durable signature (#71). Phase 1 is
+# found by `chore: remove …`, phase 3 by the renames a `git mv` leaves in the
+# history, phase 4 by `refactor(<operation-id>)`. A consolidation is an edit plus
+# a deletion, which is what every other change also looks like — so the phase
+# that moves responsibility boundaries, and the only one with an irreducible
+# domain checkpoint, was the one nobody could locate afterwards. The final report
+# promises `git revert <sha>` per category; on phase 2 that promise was not
+# answerable without reading diffs.
+#
+# Both halves are checked. The subject alone would be satisfied by writing it in
+# a comment somewhere; the reason alone would survive someone deleting the
+# subject and keeping the prose. And the phase 4 anchor is checked in the same
+# breath, because the two forms are distinguishable only while phase 4's scope
+# stays a catalogued operation id — the day someone writes
+# `refactor(consolidate)` in phase 4, both graders and both readers lose the
+# distinction.
+check "SKILL.md fixes the phase 2 commit subject" \
+      "$(LC_ALL=C grep -qF -- 'refactor(consolidate): <what>' SKILL.md && echo 0 || echo 1)" \
+      "phase 2 is back to having no durable signature in the history; #71 has the
+argument and the table of the other three phases"
+check "SKILL.md says why that subject is fixed" \
+      "$(LC_ALL=C grep -qF -- 'The subject is fixed because this phase leaves no other trace' SKILL.md && echo 0 || echo 1)" \
+      "the subject survived but its reason did not, and a convention with no
+reason written next to it is the first thing a future cleanup drops"
+check "phase 4 keeps the catalogued-operation form that keeps the two apart" \
+      "$(LC_ALL=C grep -qF -- 'refactor(<operation-id>): <what>' SKILL.md && echo 0 || echo 1)" \
+      "phase 4's subject changed shape; if it can now be written as
+refactor(consolidate) the phase 2 mark stops being a mark"
+
 # 17. What decides destructive authority survives a compaction. -------------
 # Section 16 proved these rules cannot be deleted in silence. This one answers a
 # question that no amount of invariants about the TEXT can: is the text still in

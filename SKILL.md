@@ -629,9 +629,21 @@ with a simple interface is exactly what you *want*).
 ## Implementation
 
 After the choice, run on your own: one module at a time, one commit per
-consolidation, and `"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` once — after
+consolidation subject `refactor(consolidate): <what>`, and
+`"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` once — after
 staging pathspecs of what
-this consolidation touched, right before the commit. Do not gate between the
+this consolidation touched, right before the commit.
+
+**The subject is fixed because this phase leaves no other trace.** Phase 1 is
+found by its `chore: remove …` commits, phase 3 by the renames in the history,
+phase 4 by `refactor(<operation-id>)`. A consolidation is an edit and a
+deletion, which looks like any other edit and deletion — so without a subject
+the phase that moves responsibility boundaries is the one nobody can locate six
+months later, and `git revert <sha>` per category, which the final report
+promises, stops being answerable without reading diffs. `refactor` and not
+`chore`, because consolidating preserves behavior and touches source; scope
+`consolidate` and never a catalogued operation id, which is what keeps it
+distinguishable from phase 4. Do not gate between the
 intermediate steps: with the new interface in place and the callers not
 migrated yet, the build is red by construction, and a gate you expect to fail
 teaches nothing. The green that matters is the one at the end of the
