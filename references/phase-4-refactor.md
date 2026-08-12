@@ -247,8 +247,9 @@ operation, it waits for the checkpoint.
 
 ## Record
 
-`CLEANUP_PROGRESS.md`, updated at the end of every operation and committed with
-it (`git add -- CLEANUP_PROGRESS.md`):
+`CLEANUP_PROGRESS.md`, updated at the end of every operation and committed in a
+log-only commit after it (`git add -- CLEANUP_PROGRESS.md` — never staged into
+the operation's commit):
 
 - one line per operation: id, target, commit sha;
 - every skipped target under what is pending, with the reason — no coverage,

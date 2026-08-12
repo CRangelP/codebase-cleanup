@@ -86,8 +86,9 @@ previous phase degrades the judgment of the next one, and
 
 **Never merge two steps.** "Configure knip and delete whatever it finds" is how
 you delete a route handler registered by convention that knip did not know
-about. The separation between configuring, verifying and deleting is what
-prevents that.
+about. Deleting an orphan and updating `CLEANUP_PROGRESS.md` in the same
+commit is the same mistake one step later: reverting the category takes the
+record with it. The separation is what prevents that.
 
 **A red gate means rollback, not repair.** If typecheck or tests fail, the
 previous commit was already correct. Revert, record, move on. Trying to fix it
@@ -256,9 +257,11 @@ right away** (`chore: start cleanup log`), before any other work. It is the
 only artifact that has to outlive a rollback: an untracked file survives
 `git restore --staged --worktree .` by accident, a committed one survives by
 design, and a staged one would be thrown away with the failed step. Keep it
-updated at the end of every step, committed along with that step's changes.
-Stage it with a pathspec (`git add -- CLEANUP_PROGRESS.md`), never
-`git add -A`.
+updated at the end of every step, in a commit of its own — never in the same
+commit as that step's source changes.
+Reverting a category must not take the log with it; the log is the memory of
+why the category happened. Stage the log with a pathspec
+(`git add -- CLEANUP_PROGRESS.md`), never `git add -A`.
 
 Phases are separated by `/clear` (dirty context from one phase degrades the
 next), so this file is what allows resuming without the user re-explaining
@@ -479,6 +482,12 @@ are a working-tree problem and are swept there.
 
 Kept separate because if something breaks in production two weeks from now, the
 user needs to revert *one* commit — not a 400-file cleanup.
+
+**The log is not a category pathspec.** After the category commit lands, update
+`CLEANUP_PROGRESS.md` and commit that update alone. Staging the log into
+`chore: remove orphan files` merges the record with the deletion — and the
+final report's `git revert <sha>` promise exists so undoing the work does not
+erase why it was done.
 
 **Unused deps: install after pruning the manifest.** Removing an entry from
 `package.json` does not remove the package from `node_modules`, and the gate

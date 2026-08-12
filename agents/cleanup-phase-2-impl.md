@@ -21,5 +21,6 @@ where the build is red by construction and a failure teaches nothing — and
 commit on green. Red or timed out: roll back with the canonical restore,
 record it, and stop. Do not stack a second consolidation onto this one.
 
-Finish by updating `CLEANUP_PROGRESS.md` and returning a short summary: what
-was consolidated into what, the gate result, and anything left undone.
+Finish by updating `CLEANUP_PROGRESS.md` in a log-only commit (never staged
+into the consolidation) and returning a short summary: what was consolidated
+into what, the gate result, and anything left undone.

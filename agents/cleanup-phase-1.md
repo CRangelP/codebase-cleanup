@@ -31,15 +31,17 @@ answer — anything the level or a stack cap sends to a checkpoint — is not
 yours to decide. Record it in `CLEANUP_PROGRESS.md` under what is pending and
 leave it undone.
 
-Every rule of the protocol applies to you as written, and three of them are
+Every rule of the protocol applies to you as written, and four of them are
 the ones that get lost in delegation:
 
 - one commit per category, staged by pathspec, never a whole-tree add;
+- the progress log is never in a category commit — update it in a commit of
+  its own after the category lands;
 - no commit without a green gate, and a red or timed-out gate means rollback,
   not repair;
 - if a security hook blocks a command, follow the hook rule at the top of
   SKILL.md — the rollback being blocked aborts the pipeline.
 
-Finish by updating `CLEANUP_PROGRESS.md` — it is the canonical state, not your
-reply — and returning a short summary: what each category removed, what failed
-and why, and what is waiting on a human.
+Finish by updating `CLEANUP_PROGRESS.md` in a log-only commit — it is the
+canonical state, not your reply — and returning a short summary: what each
+category removed, what failed and why, and what is waiting on a human.

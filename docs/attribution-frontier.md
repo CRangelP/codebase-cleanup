@@ -198,7 +198,7 @@ alguém escreva qual é — inclusive quando a resposta honesta é "não medida"
 | `a red gate rolls back` | **atribuível** (`red-run`) |
 | `never force push, never commit on main` | **medida — nula quanto à frase** (duas mutações, comportamento não se moveu) |
 | `a report that indicts everything` | **não-atribuível hoje** (`anchorless-run`, 3 de 3) |
-| `never merge two steps` | **medida por acidente, e reprovou 1 vez em 4** — o grader `no commit merges source with the log` pegou um commit que juntou `src/dead.ts` com o log ([#112](https://github.com/CRangelP/codebase-cleanup/issues/112)) |
+| `never merge two steps` | **legislada a partir da medição** — o grader `no commit merges source with the log` pegou 1 em 4 ([#112](https://github.com/CRangelP/codebase-cleanup/issues/112)); a sede nova está na 1.3 (`The log is not a category pathspec`) e o Passo 0.1 deixou de ensinar o contrário (`committed along with that step's changes`) |
 | `the scheduled checkpoints` | não medida — os checkpoints ficam nas fases 2 e 3, e nenhum caso vivo chega lá; **sob mutação** (M1, 2 runs) a fase 2 registrou o survey vazio 2 de 2 e o commitou 1 de 2 ([#109](https://github.com/CRangelP/codebase-cleanup/issues/109)) |
 
 Duas dessas linhas foram acrescentadas **porque o invariante 16.10 reprovou**: eu tinha

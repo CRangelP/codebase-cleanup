@@ -1730,6 +1730,36 @@ check "phase 4 keeps the catalogued-operation form that keeps the two apart" \
       "phase 4's subject changed shape; if it can now be written as
 refactor(consolidate) the phase 2 mark stops being a mark"
 
+# 16.13 The progress log is never in a category commit (#112). Measured by
+# accident on a mutated yellow-run arm: one of four completed runs staged
+# CLEANUP_PROGRESS.md into `chore: remove orphan files`, and the grader
+# `no commit merges source with the log` failed (119/120). The three greens
+# and the red had read the same "Never merge two steps" prose — the variable
+# was not the mutated text. What the protocol already promised (`git revert
+# <sha>` per category) and what Step 0.1 used to say ("committed along with
+# that step's changes") disagreed; the model that followed 0.1 produced the
+# commit the grader exists to catch.
+#
+# Both halves are checked, in the form of 16.8 and 16.9. The rule alone would
+# survive as a heading with no reason; the reason alone would survive someone
+# deleting the pathspec ban and keeping the prose about revert. And the old
+# instruction that taught the failure mode has to stay gone — a live
+# "committed along with that step's changes" would re-open the hole the seat
+# closes. 16.12 is already the YELLOW exports-ceiling seats; this is 16.13.
+check "SKILL.md keeps the log out of category pathspecs" \
+      "$(LC_ALL=C grep -qF -- 'The log is not a category pathspec' SKILL.md && echo 0 || echo 1)" \
+      "phase 1.3 no longer says the progress log stays out of the category
+commit; #112 measured the merge the grader already bites, and the final
+report's revert promise depends on the separation"
+check "SKILL.md says why the log stays out of the category commit" \
+      "$(LC_ALL=C grep -qF -- 'Reverting a category must not take the log with it' SKILL.md && echo 0 || echo 1)" \
+      "the pathspec ban survived but its reason did not, and a convention with
+no reason written next to it is the first thing a future cleanup drops"
+check "Step 0.1 no longer teaches merging the log into the step" \
+      "$(LC_ALL=C grep -qF -- 'committed along with that step' SKILL.md && echo 1 || echo 0)" \
+      "Step 0.1 again says to commit the log along with the step's changes —
+which is exactly the commit shape #112 failed on and the grader forbids"
+
 # 16.11 The expensive mutation goes through the guard (#89). Proving that an eval
 # case bites means running the model against a mutated copy of the skill, and the
 # way that fails is silent and expensive: an expression that matches nothing

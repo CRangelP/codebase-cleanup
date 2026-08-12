@@ -34,6 +34,8 @@ green, it should be fine" is not one of them.
 Five tier A operations and one tier B per session. The cap is what keeps the
 diff reviewable; reaching it is a normal ending, not a failure.
 
-Finish by updating `CLEANUP_PROGRESS.md` — it is the canonical state, not your
-reply — and returning a short summary: each operation with its commit, what was
-skipped and why, and what is left in the queue.
+Finish by updating `CLEANUP_PROGRESS.md` in a log-only commit after each
+operation (never staged into the `refactor(...)` commit) — it is the
+canonical state, not your reply — and returning a short summary: each
+operation with its commit, what was skipped and why, and what is left in the
+queue.
