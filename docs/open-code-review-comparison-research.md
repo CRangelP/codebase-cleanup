@@ -39,7 +39,7 @@ Fonte: frontmatter de [`SKILL.md`](../SKILL.md).
 
 - Artefato: Markdown de skill + agents + `references/` + scripts bash (`gate.sh`, `guard.sh`, testes).
 - Host: Claude Code (plugin marketplace / cópia em `~/.claude/skills/`).
-- Versão do plugin: `0.9.0` ([`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json)).
+- Versão do plugin: `0.10.0` ([`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json)).
 - Licença: **MIT** ([`LICENSE`](../LICENSE), README).
 - Ferramentas externas por stack: knip (JS/TS pinado), vulture/deadcode, cargo-udeps, jscpd/similarity-ts, etc. — a skill aponta o que falta; não instala toolchain à força.
 - Autonomia calibrada: níveis GREEN / YELLOW / RED via `scripts/gate.sh`.

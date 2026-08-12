@@ -318,7 +318,7 @@ v0.4.0   41.241 bytes   ~14,3k on-invoke     (~370 always-on)
 têm bases de bytes diferentes de propósito: entre uma e outra o arquivo
 *cresceu* com os consertos da #55, e esconder isso deixaria a extração parecer
 maior do que foi. Desde então o `SKILL.md` voltou a crescer com as fases e as
-regras medidas (hoje ~48 KB / ~880 linhas na v0.9.0): o critério continua sendo
+regras medidas (hoje ~48 KB / ~880 linhas na v0.10.0): o critério continua sendo
 momento de leitura, não um teto de bytes.
 
 Vale registrar o erro da conta que antecedeu a medição. Estimando pela taxa
