@@ -133,12 +133,14 @@ codebase-cleanup/
 │   └── cleanup-phase-4-impl.md       aplica tier A e o tier B aprovado
 ├── docs/
 │   ├── plugin-spec-research.md       o que é limite do host, conselho e hábito
-│   └── attribution-frontier.md       o que a skill compra e o que o modelo já traz
+│   ├── attribution-frontier.md       o que a skill compra e o que o modelo já traz
+│   └── open-code-review-comparison-research.md  complementaridade com OpenCodeReview
 ├── hooks/
 │   └── hooks.json                    registra o guarda no evento PreToolUse
 ├── references/
 │   ├── gate.md                       o contrato do gate: exit codes, watchdog, scripts
 │   ├── audit.md                      protocolo de auditoria da fase 1.4
+│   ├── complementarity-opencodereview.md  OCR opcional na branch cleanup/
 │   ├── final-report.md               o modelo do relatório e como preenchê-lo
 │   ├── knip-config.md                configuração do knip sem armadilhas
 │   ├── duplication.md                funções duplicadas e a regra do churn
@@ -270,6 +272,23 @@ o vocabulário de consolidação da fase 2 em
 créditos não muda o comportamento em runtime; elas são fonte, não
 dependência.
 
+### Vizinho opcional: OpenCodeReview
+
+Esta skill e o [OpenCodeReview](https://github.com/alibaba/open-code-review)
+(OCR) da Alibaba resolvem trabalhos diferentes — são **vizinhos**, não
+substitutos. A cleanup mexe na árvore (código morto, módulos rasos, pastas,
+remodelagem local) atrás de gate e branch `cleanup/`. O OCR comenta risco e
+defeito em diff/PR, linha a linha; não é o caminho para apagar o que o knip
+ou o vulture marcam como inalcançável.
+
+A skill **não** instala, chama nem embute o binário Go do OCR, nem copia
+prompts ou regras dele. Quem quiser review de QA depois da faxina instala o
+CLI por conta (Apache-2.0; requisitos como Git ≥ 2.41 e endpoint de LLM são
+do OCR). A receita opcional — `ocr review` / `ocr delegate` contra a branch
+`cleanup/` — está em `references/complementarity-opencodereview.md`. O
+relatório final pode citar esse passo sob "Optional next step"; nunca como
+obrigação do protocolo.
+
 ### O que o `SKILL.md` carrega, e o que ele adia
 
 Todo byte do `SKILL.md` é pago em **toda** invocação: ele entra inteiro no
@@ -390,23 +409,40 @@ Com o nível anunciado, ela cria a branch de limpeza e segue:
 
 - **Fase 1 — código morto.** Configura o knip até os hints zerarem, roda em
   modo produção e deleta em commits atômicos, um por categoria: deps não
-  usadas, arquivos órfãos, exports mortos. Cada passo faz stage só com
-  pathspecs dos artefatos daquele passo (`git add -- …`, nunca `git add -A`),
-  e só entra com gate verde. No fim, produz uma auditoria do que sobrou.
+  usadas, arquivos órfãos, exports mortos. Antes da primeira mutação da
+  fase 1.3, grava um **preview** em `CLEANUP_PROGRESS.md` (lista concreta
+  por categoria, commit próprio `chore: preview phase 1 deletions`) — no
+  GREEN segue sozinha depois desse registro; no YELLOW o preview só omite o
+  que o nível já proíbe. Cada passo faz stage só com pathspecs dos
+  artefatos daquele passo (`git add -- …`, nunca `git add -A`), e só entra
+  com gate verde. No fim, produz uma auditoria do que sobrou (fase 1.4),
+  com **coverage mandate**: cada unidade da varredura fecha como
+  `reviewed` ou `skipped` com motivo, e o `coverage_rate` vai no log —
+  taxa abaixo de 100% sem gap registrado em Decisions deixa o passo
+  incompleto.
 - **Fase 1.5 — funções duplicadas** (fecha a fase 1). Varre funções com nomes
   diferentes fazendo a mesma coisa (similarity-ts ou fallow em JS/TS, jscpd
   nos demais stacks) e aplica a regra do churn: par que muda junto no git é
   duplicação real e vira candidato da fase 2; par que evolui separado é
-  coincidência estrutural e fica em paz. Só relatório — nada é deletado aqui.
+  coincidência estrutural e fica em paz. O mesmo mandate de cobertura vale
+  para cada par que o detector emitiu. Só relatório — nada é deletado aqui.
 - **Fase 2 — consolidação.** Levanta até 5 candidatos de módulos rasos
   (começando pelos pares da fase 1.5), recomenda um e faz uma única pergunta.
   Respondeu "vai", ela implementa.
 - **Fase 3 — estrutura.** Diagnóstico da árvore de pastas, plano, e movimentos
   com `git mv`, uma pasta por commit.
 
+O relatório final traz **Residual risks**: achados abertos da auditoria 1.4
+que a limpeza não fechou, cada um com a severidade do audit (`Critical` /
+`High` / `Medium` / `Low`) — não é uma segunda auditoria, é o que ficou
+pendente. Quando a run deixou branch `cleanup/`, o sumário pode apontar um
+passo opcional de review com OCR (seção [Vizinho opcional](#vizinho-opcional-opencodereview));
+nunca como etapa obrigatória.
+
 Entre as fases a skill pede `/clear` — contexto acumulado de uma fase piora o
 julgamento da seguinte. O progresso fica em `CLEANUP_PROGRESS.md` na raiz do
-repo, então a sessão seguinte retoma de onde parou sem você reexplicar nada.
+repo (incluindo Preview e Coverage), então a sessão seguinte retoma de onde
+parou sem você reexplicar nada.
 Em ambientes com subagentes, a skill roda como orquestrador e despacha cada
 fase para um contexto descartável. Instalada como plugin, esses subagentes
 vêm declarados em `agents/`: `cleanup-phase-1` (fases 1 e 1.5), e mais um par
@@ -540,6 +576,13 @@ Skills e materiais usados na construção desta:
   do WikiProject AI Cleanup da Wikipedia — base da adaptação local
   `humanizer-pt-br`, usada na escrita deste README.
 
+Ferramenta complementar (opcional, sem vendoring):
+
+- [OpenCodeReview](https://github.com/alibaba/open-code-review) (Alibaba,
+  Apache-2.0) — CLI de review de diff/PR que a documentação desta skill
+  pode citar como passo opcional depois da branch `cleanup/`. Não entra no
+  runtime; a receita está em `references/complementarity-opencodereview.md`.
+
 Nenhuma delas é dependência de runtime: são fontes e ferramentas de
 desenvolvimento — nada além desta pasta precisa estar instalado para usar a
 codebase-cleanup.
@@ -548,3 +591,8 @@ codebase-cleanup.
 
 MIT — use, copie, modifique e redistribua à vontade. Texto completo em
 [LICENSE](LICENSE).
+
+O CLI OpenCodeReview, quando você o instala à parte, é Apache-2.0 e
+permanece ferramenta externa: este repositório não o vende, não o embute e
+não o exige. Usá-lo não relicencia o código desta skill; o notice correspondente
+está no final do [LICENSE](LICENSE).

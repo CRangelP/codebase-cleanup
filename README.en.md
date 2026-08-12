@@ -136,12 +136,14 @@ codebase-cleanup/
 │   └── cleanup-phase-4-impl.md       applies tier A and the approved tier B
 ├── docs/
 │   ├── plugin-spec-research.md       host limits, official advice and mere habit
-│   └── attribution-frontier.md       what the skill buys and what the model already brings
+│   ├── attribution-frontier.md       what the skill buys and what the model already brings
+│   └── open-code-review-comparison-research.md  complementarity with OpenCodeReview
 ├── hooks/
 │   └── hooks.json                    registers the guard on the PreToolUse event
 ├── references/
 │   ├── gate.md                       the gate contract: exit codes, watchdog, scripts
 │   ├── audit.md                      phase 1.4 audit protocol
+│   ├── complementarity-opencodereview.md  optional OCR on the cleanup/ branch
 │   ├── final-report.md               the report template and how to fill it
 │   ├── knip-config.md                knip configuration without pitfalls
 │   ├── duplication.md                duplicate functions and the churn rule
@@ -393,25 +395,44 @@ With the level announced, it creates the cleanup branch and proceeds:
 
 - **Phase 1 — dead code.** Configures knip until the hints reach zero, runs
   in production mode and deletes in atomic commits, one per category: unused
-  deps, orphan files, dead exports. Each step stages only pathspecs of that
-  step's artifacts (`git add -- …`, never `git add -A`), and only lands with a
-  green gate. At the end, it produces an audit of what is left.
+  deps, orphan files, dead exports. Before the first deletion, it writes an
+  explicit **Preview (phase 1.3)** into `CLEANUP_PROGRESS.md` — the concrete
+  deps, files and exports the report would remove — and commits that log
+  update alone (`chore: preview phase 1 deletions`). On GREEN it proceeds
+  without asking after that record exists; on YELLOW the preview simply omits
+  what the level will not touch. Each delete step stages only pathspecs of
+  that step's artifacts (`git add -- …`, never `git add -A`), and only lands
+  with a green gate. At the end, phase **1.4** produces a full audit; every
+  unit in the sweep ends `reviewed` or `skipped` with a reason, and the
+  counts plus `coverage_rate` land under `## Coverage` in the progress log —
+  a rate below 100% without a recorded Decisions gap leaves the step
+  incomplete.
 - **Phase 1.5 — duplicate functions** (closes phase 1). Sweeps for functions
   with different names doing the same thing (similarity-ts or fallow on
   JS/TS, jscpd on other stacks) and applies the churn rule: a pair that
   changes together in git is real duplication and becomes a phase 2
   candidate; a pair that evolves independently is structural coincidence and
-  is left alone. Report only — nothing is deleted here.
+  is left alone. The same **coverage mandate** applies: every detector pair
+  is `reviewed` or `skipped` with a reason and a `coverage_rate` before the
+  survey commit. Report only — nothing is deleted here.
 - **Phase 2 — consolidation.** Surfaces up to 5 shallow module candidates
   (starting from the phase 1.5 pairs), recommends one and asks a single
   question. Answer "go" and it implements.
 - **Phase 3 — structure.** Diagnosis of the folder tree, plan, and moves with
   `git mv`, one folder per commit.
 
+The final report (template in `references/final-report.md`) includes open
+findings from the 1.4 audit as **Residual risks**, each with the audit's own
+severity (`Critical` / `High` / `Medium` / `Low`) — unfinished business from
+the cleanup, not a second audit. When the run left a `cleanup/` branch, the
+summary may point to an optional OCR review under **Optional next step**
+(see [Complementarity with OpenCodeReview](#complementarity-with-opencodereview));
+never as a required protocol stage.
+
 Between phases the skill asks for `/clear` — context accumulated from one
 phase degrades the judgment of the next. Progress lives in
-`CLEANUP_PROGRESS.md` at the repo root, so the next session resumes where it
-stopped without you re-explaining anything. In environments with subagents,
+`CLEANUP_PROGRESS.md` at the repo root (including Preview and Coverage), so
+the next session resumes where it stopped without you re-explaining anything. In environments with subagents,
 the skill runs as an orchestrator and dispatches each phase to a disposable
 context. Installed as a plugin, those subagents come declared in `agents/`:
 `cleanup-phase-1` (phases 1 and 1.5), plus a survey and an implementation
@@ -419,6 +440,22 @@ agent for each of phases 2 and 3. The two survey agents cannot write — that is
 how the checkpoint stops depending on good intentions: the question reaches you
 before anything changed, and the implementation only starts after your answer.
 The protocol is in Step 0.2 of SKILL.md.
+
+### Complementarity with OpenCodeReview
+
+This skill and [Alibaba OpenCodeReview](https://github.com/alibaba/open-code-review)
+(OCR) solve different jobs. Cleanup mutates the tree behind a gate — dead
+code, shallow modules, folders, local reshaping. OCR reviews a diff or PR
+and leaves line-level comments; auto-fix without a human is out of its
+roadmap. They are neighbours, not substitutes: OCR's "dead code" heuristics
+on a diff are not a replacement for knip or vulture.
+
+The skill does **not** install, vendor, or call the OCR Go binary. OCR stays
+an optional CLI you install yourself when you want review QA after a cleanup.
+The recipe — `ocr review` / `ocr delegate` against `cleanup/YYYYMMDD` — lives
+in `references/complementarity-opencodereview.md`. When a run produced that
+branch, the final summary may mention it as an optional next step; it is
+never required.
 
 ### How to revert
 
@@ -546,12 +583,23 @@ Skills and materials used in building this one:
 - [Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing),
   from Wikipedia's WikiProject AI Cleanup — the basis of the local adaptation
   `humanizer-pt-br`, used to write this README.
+- [OpenCodeReview](https://github.com/alibaba/open-code-review), by Alibaba
+  (Apache-2.0) — not embedded here; its review discipline (preview before
+  spend, coverage checklists, severity on findings) informed the named
+  preview, coverage mandate and residual-risks sections of this protocol.
+  Optional post-cleanup QA recipe:
+  `references/complementarity-opencodereview.md`.
 
 None of them is a runtime dependency: they were sources and development
 tools — nothing beyond this folder needs to be installed to use
-codebase-cleanup.
+codebase-cleanup. OCR remains optional and external if you choose to run it.
 
 ## License
 
 MIT — use, copy, modify and redistribute freely. Full text in
 [LICENSE](LICENSE).
+
+The optional OpenCodeReview CLI is licensed under Apache-2.0 and is **not**
+vendored, bundled, or required by this skill. Describing how to use it does
+not relicense this repository; this project's own source and documentation
+stay MIT.

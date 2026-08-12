@@ -26,3 +26,10 @@ Third-party notice: portions of references/audit.md are derived from
 tech-debt-audit by ksimback (https://github.com/ksimback/tech-debt-skill),
 licensed under the MIT License — Copyright (c) ksimback. The permission
 notice above applies to those portions as well.
+
+Optional external tool (not incorporated): documentation in this repository
+may describe using the OpenCodeReview CLI
+(https://github.com/alibaba/open-code-review), licensed under the Apache
+License 2.0, as an optional post-cleanup review step. That CLI is not
+vendored, bundled, or required to run this skill; this project's own source
+and documentation remain under the MIT License above.

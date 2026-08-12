@@ -272,9 +272,27 @@ anything.
 Branch: cleanup/20260808 · Level: GREEN · Started: 2026-08-08
 
 - [x] Phase 1.1 — knip hints down to zero (3 rounds)
-- [x] Phase 1.2 — deps removed (7) · commit a3f9c21
+- [x] Phase 1.2 — production report ready
+- [ ] Phase 1.3 — unused deps
 - [ ] Phase 1.3 — orphan files
+- [ ] Phase 1.3 — dead exports
 ...
+## Preview (phase 1.3)
+- unused deps: lodash.merge, left-pad (2)
+- orphan files: src/legacy/unused.ts (1)
+- dead exports: formatPercent @ src/utils.ts (1)  # GREEN only; omit on YELLOW
+Recorded after 1.2 and before the first 1.3 category mutates. GREEN proceeds
+without asking; YELLOW/cap and user scope already gate what may run.
+## Coverage
+### 1.4 audit
+- reviewed: 18 · skipped: 2 · coverage_rate: 100% (20/20 units)
+- skipped: src/vendor/big.ts — generated, out of scope
+### 1.5 duplication
+- reviewed: 12 · skipped: 1 · coverage_rate: 100% (13/13 pairs)
+- skipped: src/generated/a.ts ↔ src/generated/b.ts — generated sources
+Every unit from the scan ends `reviewed` or `skipped` with a reason. A rate
+below 100% means the sweep is unfinished — finish or record the gap under
+Decisions before closing the step.
 ## Decisions
 - `lodash.merge` kept: used by a build script outside the graph
 ## Pending for the human
@@ -400,6 +418,21 @@ to find.
 Never exclude tests with `ignore` to get the same effect.
 
 ## 1.3 Delete in atomic commits, one per category
+
+**Preview before the first mutation.** After the 1.2 report is trustworthy and
+**before** any delete, install, or pathspec stage, write a `## Preview
+(phase 1.3)` section into `CLEANUP_PROGRESS.md`: one bullet per category that
+this run will actually touch — categories the level forbids **and** categories
+the user scoped out (see Partial run below) are omitted here; the scoped-out
+ones still get a `## Decisions` line. List the concrete deps / files / exports
+that the current report would remove (counts plus names; truncate long lists
+with `… and N more` after ~20 items). Commit that log update alone
+(`chore: preview phase 1 deletions`) — still no source change. On GREEN,
+proceed autonomously after the preview is recorded; do not ask for
+confirmation of the list. On YELLOW (or any stack cap that already forbids a
+category), the preview simply omits what the level will not touch — the cap
+is the confirmation. A run that mutates without a preview in the log skipped
+a named step; do not skip it to "save a commit".
 
 **Default scope.** Run all three without asking (GREEN level) or the first two
 (YELLOW). Each one is: delete → (deps only: install / re-resolve) → stage
@@ -547,14 +580,27 @@ with no surprises.
 
 With the garbage gone, the graph is clean and the audit becomes precise.
 Follow the protocol in `references/audit.md` — nine dimensions with
-`file:line` citations, severity and effort per finding, and the deliverable
-template for `TECH_DEBT_AUDIT.md`. The protocol is distilled from ksimback's
+`file:line` citations, severity and effort per finding, the coverage
+mandate for large sweeps, and the deliverable template for
+`TECH_DEBT_AUDIT.md`. The protocol is distilled from ksimback's
 tech-debt-audit (MIT; credited in the README), so no other skill needs to be
 installed for this step.
 
 Always include a **"looks bad but is fine"** section — the calls you considered
 making and decided not to make, with the reason. If that section comes out
 empty, the audit did not look deep enough and you must go back.
+
+**Coverage mandate.** Before closing 1.4, every unit from the upfront list in
+`references/audit.md` ends as `reviewed` or `skipped` with a one-line reason.
+On a normal repo that list is the intersection of the 20 largest and 20
+hottest files, plus each top-level module outside that intersection; on a
+large repo it is one unit per module dispatched to a subagent. Dimension 9
+and the README contradiction check are units too when they apply. Write the
+counts and `coverage_rate` under `## Coverage` → `### 1.4 audit` in
+`CLEANUP_PROGRESS.md`. A rate below 100% means the step is unfinished: finish
+the checklist or record the gap under `## Decisions` before committing the
+audit. Cutting a large repo short without that record is the failure mode
+this mandate exists to catch.
 
 Commit the report (GREEN/YELLOW; at RED nothing is committed — it goes into
 the final report instead). Update `CLEANUP_PROGRESS.md`.
@@ -571,8 +617,8 @@ analysis surfaces alone.
 For JS/TS the ladder is: `similarity-ts` (AST comparison per function) if it
 is on PATH, else `npx fallow@3.14.0 dupes` (pin verified 2026-08-09; never
 bare `npx fallow`); other stacks fall back to `npx jscpd@5.0.14`. Tools,
-flags, thresholds and the report format are in `references/duplication.md` —
-read it before running anything.
+flags, thresholds, the coverage mandate and the report format are in
+`references/duplication.md` — read it before running anything.
 
 **The churn rule.** High similarity is not a verdict. Check whether the pair
 changes together in git history: pairs that co-change are real duplication
@@ -580,6 +626,14 @@ and become phase 2 candidates; pairs that evolve independently are structural
 coincidence — two domains that will diverge, where abstracting early costs
 more than duplicating. Record those as "left alone on purpose" with the churn
 evidence.
+
+**Coverage mandate.** Every candidate pair the detector emitted ends as
+`reviewed` (verdict filled: phase 2 candidate / left alone / no signal) or
+`skipped` with a reason (generated code, minified vendor, binary, tool noise).
+Write the counts and `coverage_rate` under `## Coverage` →
+`### 1.5 duplication` in `CLEANUP_PROGRESS.md` before the survey commit. A
+thin sample that ignores most of the detector output without skipped reasons
+is an incomplete sweep — same rule as 1.4.
 
 Nothing is merged or deleted in this step — which of two duplicate functions
 survives is a naming-and-intent decision, and that belongs to the phase 2
@@ -593,7 +647,9 @@ the N files that survived phase 1" is what this step found, and the next session
 reads it to know the question was asked and answered rather than skipped. Do not
 treat an empty pair table as "not applicable" and move on: the commit is the only
 durable mark that phase 1 reached its end, and a judgement that lives in the chat
-is gone with the session.
+is gone with the session. Record coverage as `reviewed: 0 · skipped: 0 ·
+coverage_rate: 100% (0/0 pairs)` so the mandate is visibly satisfied, not
+omitted.
 
 ---
 
@@ -807,8 +863,16 @@ the level and the commit count; one row per phase with what that phase actually
 removed; the quality delta against the Step 0 baseline, measured by running
 `"${CLAUDE_PLUGIN_ROOT:-.}/scripts/metrics.sh"` again and diffing it; how to
 revert (`git revert <sha>` — commits are atomic per category); what failed or
-was left undone, and why; and what is pending the user's decision. The template
-and the rules for filling each part are in `references/final-report.md`.
+was left undone, and why; residual risks from the 1.4 audit still open, each
+with a severity (`Critical` / `High` / `Medium` / `Low`); and what is pending
+the user's decision. The template and the rules for filling each part are in
+`references/final-report.md`.
+
+When the run produced a `cleanup/` branch, add one short **Optional next
+step** line pointing at `references/complementarity-opencodereview.md` — OCR
+review/delegate on that branch is optional QA for logical regressions the
+gate may miss. Never install OCR, never treat it as required, never vendor
+its code or prompts.
 
 If the level was RED, the report is diagnosis only: list what you would do and
 what needs to exist or be fixed (tests, typecheck, a baseline that passes) to
