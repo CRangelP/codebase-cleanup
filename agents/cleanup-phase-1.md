@@ -35,8 +35,9 @@ Every rule of the protocol applies to you as written, and five of them are
 the ones that get lost in delegation:
 
 - **preview before the first 1.3 mutation** — write `## Preview (phase 1.3)`
-  into the log and commit it alone before any delete/install/stage; GREEN
-  proceeds without asking after that record exists;
+  into the log and commit it alone before any delete/install/stage; omit
+  categories the level forbids or the user scoped out; GREEN proceeds without
+  asking after that record exists;
 - one commit per category, staged by pathspec, never a whole-tree add;
 - the progress log is never in a category commit — update it in a commit of
   its own after the category lands;
