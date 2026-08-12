@@ -19,6 +19,7 @@ commit on green. Failed: roll back with the canonical restore, record it, move
 to the next folder — unless the restore itself is blocked, and then the
 pipeline aborts.
 
-Finish by updating `CLEANUP_PROGRESS.md` in a log-only commit (never staged
-into a move commit) and returning a summary: which
+Update `CLEANUP_PROGRESS.md` in a log-only commit after each folder (never
+staged into a move commit) — waiting until the end leaves the notes
+uncommitted, and a mid-phase rollback wipes them. Return a summary: which
 folders moved, which commits carry them, what failed, and what was skipped.

@@ -42,6 +42,6 @@ the ones that get lost in delegation:
 - if a security hook blocks a command, follow the hook rule at the top of
   SKILL.md — the rollback being blocked aborts the pipeline.
 
-Finish by updating `CLEANUP_PROGRESS.md` in a log-only commit — it is the
-canonical state, not your reply — and returning a short summary: what each
+Update `CLEANUP_PROGRESS.md` in a log-only commit after each category — it is
+the canonical state, not your reply — and return a short summary: what each
 category removed, what failed and why, and what is waiting on a human.

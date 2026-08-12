@@ -403,7 +403,8 @@ Never exclude tests with `ignore` to get the same effect.
 
 **Default scope.** Run all three without asking (GREEN level) or the first two
 (YELLOW). Each one is: delete → (deps only: install / re-resolve) → stage
-pathspecs → gate → commit → regenerate the report. For the gate, use
+pathspecs → gate → commit → log-only `CLEANUP_PROGRESS.md` → regenerate the
+report. For the gate, use
 `"${CLAUDE_PLUGIN_ROOT:-.}/scripts/gate.sh"` (it detects the stack and the
 package manager and runs
 typecheck + tests in the right order); if it exits with code 3, find the
