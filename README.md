@@ -440,8 +440,9 @@ Com o nível anunciado, ela cria a branch de limpeza e segue:
   1.5 que a fase 2 não consumiu, filtrados por churn. A rede de segurança é
   por alvo (a função está coberta?), não pelo repositório inteiro. Tier A
   corre sozinho — até 5 operações por sessão; tier B para no checkpoint e
-  aplica no máximo 1. Um `refactor(<operation-id>)` por commit. Sem alvo
-  coberto, a fila é registrada e a fase encerra.
+  aplica no máximo 1. Um `refactor(<operation-id>)` por commit. Alvo sem
+  cobertura: pula e registra, ou escreve um characterization test num commit
+  próprio e segue — não há terceira saída.
 
 O relatório final traz **Residual risks**: achados abertos da auditoria 1.4
 que a limpeza não fechou, cada um com a severidade do audit (`Critical` /

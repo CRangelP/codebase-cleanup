@@ -430,7 +430,8 @@ With the level announced, it creates the cleanup branch and proceeds:
   per target (is that function covered?), not the whole repository. Tier A
   runs on its own — up to 5 operations per session; tier B stops at a
   checkpoint and applies at most 1. One `refactor(<operation-id>)` per
-  commit. With no covered target, the queue is recorded and the phase ends.
+  commit. Uncovered target: skip and record it, or write a characterization
+  test as its own commit and then proceed — there is no third exit.
 
 The final report (template in `references/final-report.md`) includes open
 findings from the 1.4 audit as **Residual risks**, each with the audit's own
