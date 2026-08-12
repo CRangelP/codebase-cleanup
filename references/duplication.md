@@ -176,3 +176,29 @@ The "phase 2 candidate" rows feed the survey in
 analysis alone. Nothing gets merged or deleted in this phase — which of two
 duplicate functions survives is a naming-and-intent decision, and that is
 exactly what the phase 2 checkpoint exists for.
+
+## Coverage mandate
+
+Detectors over-produce; agents under-read. Before committing the survey
+(GREEN/YELLOW) or folding the table into the final report (RED):
+
+1. The **unit list** is every pair (or clone-family member pairing) the chosen
+   ladder rung emitted after the threshold / min-tokens filters — not a
+   hand-picked sample.
+2. Close every unit as **`reviewed`** (verdict column filled) or **`skipped`**
+   with a reason (generated sources, vendored/minified, path outside the
+   user's scope, tool noise the rung cannot score). "Left alone on purpose"
+   after the churn rule is **reviewed**, not skipped — a verdict was reached.
+3. Write the tally into `CLEANUP_PROGRESS.md` under `## Coverage` →
+   `### 1.5 duplication`:
+
+   ```markdown
+   ### 1.5 duplication
+   - reviewed: N · skipped: M · coverage_rate: R% (N+M / N+M pairs)
+   - skipped: pathA ↔ pathB — reason
+   ```
+
+   Same arithmetic as the audit: `(reviewed + skipped) / units_planned × 100`.
+   An empty detector result is `0/0` at 100% — the question was asked. A
+   non-empty list with rows missing from both the table and the skipped
+   bullets is an incomplete sweep; do not close the step.

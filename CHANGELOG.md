@@ -9,6 +9,29 @@ do manifesto é a chave de cache que decide se uma instalação enxerga
 atualização, e esquecer o bump falha em silêncio dos dois lados — ninguém
 recebe erro, a correção só nunca chega.
 
+## [Unreleased]
+
+### Adicionado
+
+- Pesquisa de comparação com OpenCodeReview:
+  `docs/open-code-review-comparison-research.md` (vizinhos vs substitutos,
+  o que a skill absorveu como disciplina de processo e o que permanece
+  ferramenta externa).
+- Documentação de complementaridade com OpenCodeReview (CLI opcional Apache-2.0,
+  sem vendoring): `references/complementarity-opencodereview.md`, receita
+  `ocr review` / `ocr delegate` na branch `cleanup/`, e menção no relatório
+  final.
+- **Coverage mandate** nas varreduras 1.4 e 1.5: checklist
+  `reviewed|skipped+reason` e `coverage_rate` em `CLEANUP_PROGRESS.md`.
+- **Preview** nomeado antes da primeira mutação da fase 1.3 (lista no log,
+  commit próprio; GREEN segue autónomo).
+- Seção **Residual risks** com severidade no relatório final.
+
+### Alterado
+
+- `LICENSE`: notice de que o OCR é ferramenta externa opcional; o código deste
+  repositório permanece MIT.
+
 ## [0.9.0] — 2026-08-11
 
 Quatro decisões de texto normativo tomadas com medição, e um terceiro mecanismo do mesmo defeito

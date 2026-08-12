@@ -40,8 +40,25 @@ to be a comparison.
 - dead exports: typecheck broke in `src/api/routes.ts` (dynamic import)
 - orphan files: out of scope — user asked deps only
 
+### Residual risks (from 1.4)
+Rank open findings the cleanup did not fix. Severity is the audit's
+`Critical` / `High` / `Medium` / `Low` — copy it, do not invent a parallel
+scale. Cap at ~10; if the audit had a Top 5, those lead. No open findings
+means the line `(none)` — do not omit the section.
+
+| ID | Severity | Summary |
+|---|---|---|
+| TD-12 | High | auth boundary accepts untyped payloads (`src/api/auth.ts:88`) |
+| TD-03 | Medium | god file still >500 LOC after dead-code pass (`src/legacy/ops.ts`) |
+
 ### Pending your decision
 - (nothing)
+
+### Optional next step
+OCR (Apache-2.0 CLI, not bundled here) can review the cleanup branch for
+logical regressions the gate missed — recipe in
+`references/complementarity-opencodereview.md`. Skip this line when no
+`cleanup/` branch exists or the user already declined.
 ```
 
 The phase 1 line counts what each category actually removed, tallied per commit
@@ -65,3 +82,11 @@ own sake. Report the lines that moved and say which phase moved them; a line
 that did not move is not worth a row. No baseline — the run started before it
 was taken, or the file is gone — means no delta section at all. An unanchored
 "after" is a number pretending to be a comparison.
+
+Residual risks are the audit's unfinished business, not a second audit. Pull
+IDs and severities from `TECH_DEBT_AUDIT.md` (or from the RED diagnosis when
+nothing was committed). Do not re-score findings to make the summary look
+calmer. Coverage rates from `CLEANUP_PROGRESS.md` belong in the phase rows or
+under Failed / not done when a sweep closed below 100% without a Decision
+recording why — they are not optional footnotes.
+

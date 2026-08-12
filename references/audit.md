@@ -131,3 +131,34 @@ written into the repo — the same content goes into the final report instead.
   Whoever runs this step (the orchestrator, or the phase 1 subagent when
   phase 1 is itself delegated) merges, dedupes and ranks down to the 30–80
   target.
+
+## Coverage mandate
+
+Large sweeps cut corners unless every unit is accounted for. Before the audit
+commit (or before folding the same content into the final report at RED):
+
+1. Build the **unit list** up front. On a normal repo the units are the
+   intersection of the 20 largest and 20 hottest files, plus each top-level
+   module that falls outside that intersection. On a large repo the units are
+   the modules dispatched to subagents (one unit per module). Dimension 9 and
+   the README contradiction check are units too when they apply.
+2. Close every unit as **`reviewed`** (findings written, or an explicit
+   "Nothing material" for that slice) or **`skipped`** with a one-line reason
+   (generated tree, vendored minified blob, binary, path the user scoped out).
+3. Write the tally into `CLEANUP_PROGRESS.md` under `## Coverage` →
+   `### 1.4 audit`:
+
+   ```markdown
+   ### 1.4 audit
+   - reviewed: N · skipped: M · coverage_rate: R% (N+M / N+M units)
+   - skipped: path — reason
+   ```
+
+   `coverage_rate` is `(reviewed + skipped) / units_planned × 100`. Planned
+   units that are neither reviewed nor skipped are unfinished work — the rate
+   is then below 100% and the step is not closed. Skipping with a reason
+   counts toward coverage; silently omitting a unit does not.
+
+4. Carry Critical/High open findings forward: they feed the final report's
+   **Residual risks** table (`references/final-report.md`). Severity in that
+   table is this audit's severity — do not invent a second scale.
