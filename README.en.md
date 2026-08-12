@@ -137,7 +137,8 @@ codebase-cleanup/
 ├── docs/
 │   ├── plugin-spec-research.md       host limits, official advice and mere habit
 │   ├── attribution-frontier.md       what the skill buys and what the model already brings
-│   └── open-code-review-comparison-research.md  complementarity with OpenCodeReview
+│   ├── open-code-review-comparison-research.md  complementarity with OpenCodeReview
+│   └── archify-folder-reorg-research.md  Archify as a map, not as Phase 3
 ├── hooks/
 │   └── hooks.json                    registers the guard on the PreToolUse event
 ├── references/
@@ -250,7 +251,7 @@ exercises the real GNU `timeout` instead of the perl backend:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validated 2026-08: 145/145 cases, 47/47 guard cases, 5/5 properties,
-# 37/37 metrics cases, 463/463 invariants, 14/14 mutations caught
+# 37/37 metrics cases, 525/525 invariants, 14/14 mutations caught
 ```
 
 The .NET heuristic was validated against the real SDK
@@ -298,9 +299,12 @@ v0.3.5   44,801 bytes   ~15.7k on-invoke     (~370 always-on)
 v0.4.0   41,241 bytes   ~14.3k on-invoke     (~370 always-on)
 ```
 
-**~1,400 fewer tokens on every invocation.** The two measurements sit on
-different byte counts on purpose: between them the file *grew* with the #55
-fixes, and hiding that would make the extraction look larger than it was.
+**~1,400 fewer tokens on every invocation** from that extraction. The two
+measurements sit on different byte counts on purpose: between them the file
+*grew* with the #55 fixes, and hiding that would make the extraction look
+larger than it was. Since then `SKILL.md` has grown again with the phases and
+the measured rules (today ~48 KB / ~880 lines at v0.9.0): the criterion remains
+when the text is read, not a byte ceiling.
 
 The arithmetic that preceded the measurement was wrong, and it is worth
 recording how. Estimated from the file's average rate (2.85 bytes/token) the
@@ -421,6 +425,13 @@ With the level announced, it creates the cleanup branch and proceeds:
   question. Answer "go" and it implements.
 - **Phase 3 — structure.** Diagnosis of the folder tree, plan, and moves with
   `git mv`, one folder per commit.
+- **Phase 4 — local reshaping.** Inherits targets from the 1.4 audit and from
+  the 1.5 pairs phase 2 did not take, filtered by churn. The safety net is
+  per target (is that function covered?), not the whole repository. Tier A
+  runs on its own — up to 5 operations per session; tier B stops at a
+  checkpoint and applies at most 1. One `refactor(<operation-id>)` per
+  commit. Uncovered target: skip and record it, or write a characterization
+  test as its own commit and then proceed — there is no third exit.
 
 The final report (template in `references/final-report.md`) includes open
 findings from the 1.4 audit as **Residual risks**, each with the audit's own
@@ -437,7 +448,7 @@ the next session resumes where it stopped without you re-explaining anything. In
 the skill runs as an orchestrator and dispatches each phase to a disposable
 context. Installed as a plugin, those subagents come declared in `agents/`:
 `cleanup-phase-1` (phases 1 and 1.5), plus a survey and an implementation
-agent for each of phases 2 and 3. The two survey agents cannot write — that is
+agent for each of phases 2, 3 and 4. The survey agents cannot write — that is
 how the checkpoint stops depending on good intentions: the question reaches you
 before anything changed, and the implementation only starts after your answer.
 The protocol is in Step 0.2 of SKILL.md.

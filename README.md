@@ -134,7 +134,8 @@ codebase-cleanup/
 ├── docs/
 │   ├── plugin-spec-research.md       o que é limite do host, conselho e hábito
 │   ├── attribution-frontier.md       o que a skill compra e o que o modelo já traz
-│   └── open-code-review-comparison-research.md  complementaridade com OpenCodeReview
+│   ├── open-code-review-comparison-research.md  complementaridade com OpenCodeReview
+│   └── archify-folder-reorg-research.md  Archify como mapa, não como Fase 3
 ├── hooks/
 │   └── hooks.json                    registra o guarda no evento PreToolUse
 ├── references/
@@ -248,7 +249,7 @@ exercita o GNU `timeout` real em vez do backend perl:
 docker run --rm -v "$PWD":/repo:ro node:22-bookworm bash -c \
   'apt-get update -qq && apt-get install -y -qq procps && cd /repo && bash scripts/test.sh'
 # validado em 08/2026: 145/145 casos, 47/47 casos do guarda, 5/5 propriedades,
-# 37/37 casos de métrica, 463/463 invariantes, 14/14 mutações pegas
+# 37/37 casos de métrica, 525/525 invariantes, 14/14 mutações pegas
 ```
 
 A heurística .NET foi validada contra o SDK real (`mcr.microsoft.com/dotnet/sdk:8.0`
@@ -313,9 +314,12 @@ v0.3.5   44.801 bytes   ~15,7k on-invoke     (~370 always-on)
 v0.4.0   41.241 bytes   ~14,3k on-invoke     (~370 always-on)
 ```
 
-**~1.400 tokens a menos em cada invocação.** As duas medições têm bases de bytes
-diferentes de propósito: entre uma e outra o arquivo *cresceu* com os consertos
-da #55, e esconder isso deixaria a extração parecer maior do que foi.
+**~1.400 tokens a menos em cada invocação** naquela extração. As duas medições
+têm bases de bytes diferentes de propósito: entre uma e outra o arquivo
+*cresceu* com os consertos da #55, e esconder isso deixaria a extração parecer
+maior do que foi. Desde então o `SKILL.md` voltou a crescer com as fases e as
+regras medidas (hoje ~48 KB / ~880 linhas na v0.9.0): o critério continua sendo
+momento de leitura, não um teto de bytes.
 
 Vale registrar o erro da conta que antecedeu a medição. Estimando pela taxa
 média do arquivo (2,85 bytes/token) o ganho projetado era ~1.550 tokens, 11%
@@ -432,6 +436,13 @@ Com o nível anunciado, ela cria a branch de limpeza e segue:
   Respondeu "vai", ela implementa.
 - **Fase 3 — estrutura.** Diagnóstico da árvore de pastas, plano, e movimentos
   com `git mv`, uma pasta por commit.
+- **Fase 4 — remodelagem local.** Herda alvos da auditoria 1.4 e dos pares da
+  1.5 que a fase 2 não consumiu, filtrados por churn. A rede de segurança é
+  por alvo (a função está coberta?), não pelo repositório inteiro. Tier A
+  corre sozinho — até 5 operações por sessão; tier B para no checkpoint e
+  aplica no máximo 1. Um `refactor(<operation-id>)` por commit. Alvo sem
+  cobertura: pula e registra, ou escreve um characterization test num commit
+  próprio e segue — não há terceira saída.
 
 O relatório final traz **Residual risks**: achados abertos da auditoria 1.4
 que a limpeza não fechou, cada um com a severidade do audit (`Critical` /
@@ -446,8 +457,8 @@ repo (incluindo Preview e Coverage), então a sessão seguinte retoma de onde
 parou sem você reexplicar nada.
 Em ambientes com subagentes, a skill roda como orquestrador e despacha cada
 fase para um contexto descartável. Instalada como plugin, esses subagentes
-vêm declarados em `agents/`: `cleanup-phase-1` (fases 1 e 1.5), e mais um par
-de survey e implementação para cada uma das fases 2 e 3. Os dois de survey não
+vêm declarados em `agents/`: `cleanup-phase-1` (fases 1 e 1.5), e um par de
+survey e implementação para cada uma das fases 2, 3 e 4. Os de survey não
 conseguem escrever — é assim que o checkpoint deixa de depender de boa
 vontade: a pergunta chega até você antes de qualquer mudança, e a
 implementação só começa depois da sua resposta. O protocolo está na seção

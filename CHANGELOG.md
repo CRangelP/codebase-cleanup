@@ -17,6 +17,8 @@ recebe erro, a correção só nunca chega.
   `docs/open-code-review-comparison-research.md` (vizinhos vs substitutos,
   o que a skill absorveu como disciplina de processo e o que permanece
   ferramenta externa).
+- Pesquisa Archify × Fase 3: `docs/archify-folder-reorg-research.md` (mapa
+  visual complementar; não substitui `git mv` nem o plano de pastas).
 - Documentação de complementaridade com OpenCodeReview (CLI opcional Apache-2.0,
   sem vendoring): `references/complementarity-opencodereview.md`, receita
   `ocr review` / `ocr delegate` na branch `cleanup/`, e menção no relatório
@@ -31,6 +33,9 @@ recebe erro, a correção só nunca chega.
 
 - `LICENSE`: notice de que o OCR é ferramenta externa opcional; o código deste
   repositório permanece MIT.
+- READMEs (PT/EN): a fase 4 entra no fluxo "o que acontece ao rodar" e nos
+  subagentes (antes só aparecia na tabela de níveis); árvore de `docs/` e a
+  linha validada passam a 525/525 invariantes.
 
 ## [0.9.0] — 2026-08-11
 
