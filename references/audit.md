@@ -159,6 +159,8 @@ commit (or before folding the same content into the final report at RED):
    is then below 100% and the step is not closed. Skipping with a reason
    counts toward coverage; silently omitting a unit does not.
 
-4. Carry Critical/High open findings forward: they feed the final report's
-   **Residual risks** table (`references/final-report.md`). Severity in that
-   table is this audit's severity — do not invent a second scale.
+4. Carry **open findings of any severity** (`Critical` / `High` / `Medium` /
+   `Low`) forward: they feed the final report's **Residual risks** table
+   (`references/final-report.md`). Cap and ranking live in that template; the
+   severity column is this audit's severity — do not invent a second scale or
+   drop Medium/Low to make the table look calmer.

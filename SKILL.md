@@ -272,15 +272,17 @@ anything.
 Branch: cleanup/20260808 · Level: GREEN · Started: 2026-08-08
 
 - [x] Phase 1.1 — knip hints down to zero (3 rounds)
-- [x] Phase 1.2 — deps removed (7) · commit a3f9c21
+- [x] Phase 1.2 — production report ready
+- [ ] Phase 1.3 — unused deps
 - [ ] Phase 1.3 — orphan files
+- [ ] Phase 1.3 — dead exports
 ...
 ## Preview (phase 1.3)
 - unused deps: lodash.merge, left-pad (2)
 - orphan files: src/legacy/unused.ts (1)
 - dead exports: formatPercent @ src/utils.ts (1)  # GREEN only; omit on YELLOW
-Recorded before the first category mutates. GREEN proceeds without asking;
-YELLOW/cap already gates what may run.
+Recorded after 1.2 and before the first 1.3 category mutates. GREEN proceeds
+without asking; YELLOW/cap and user scope already gate what may run.
 ## Coverage
 ### 1.4 audit
 - reviewed: 18 · skipped: 2 · coverage_rate: 100% (20/20 units)
@@ -420,9 +422,11 @@ Never exclude tests with `ignore` to get the same effect.
 **Preview before the first mutation.** After the 1.2 report is trustworthy and
 **before** any delete, install, or pathspec stage, write a `## Preview
 (phase 1.3)` section into `CLEANUP_PROGRESS.md`: one bullet per category that
-this level allows, listing the concrete deps / files / exports that the
-current report would remove (counts plus names; truncate long lists with
-`… and N more` after ~20 items). Commit that log update alone
+this run will actually touch — categories the level forbids **and** categories
+the user scoped out (see Partial run below) are omitted here; the scoped-out
+ones still get a `## Decisions` line. List the concrete deps / files / exports
+that the current report would remove (counts plus names; truncate long lists
+with `… and N more` after ~20 items). Commit that log update alone
 (`chore: preview phase 1 deletions`) — still no source change. On GREEN,
 proceed autonomously after the preview is recorded; do not ask for
 confirmation of the list. On YELLOW (or any stack cap that already forbids a
@@ -586,10 +590,13 @@ Always include a **"looks bad but is fine"** section — the calls you considere
 making and decided not to make, with the reason. If that section comes out
 empty, the audit did not look deep enough and you must go back.
 
-**Coverage mandate.** Before closing 1.4, every unit the sweep took in hand
-(module, top hot file, or dimension×scope slice — see `references/audit.md`)
-ends as `reviewed` or `skipped` with a one-line reason. Write the counts and
-`coverage_rate` under `## Coverage` → `### 1.4 audit` in
+**Coverage mandate.** Before closing 1.4, every unit from the upfront list in
+`references/audit.md` ends as `reviewed` or `skipped` with a one-line reason.
+On a normal repo that list is the intersection of the 20 largest and 20
+hottest files, plus each top-level module outside that intersection; on a
+large repo it is one unit per module dispatched to a subagent. Dimension 9
+and the README contradiction check are units too when they apply. Write the
+counts and `coverage_rate` under `## Coverage` → `### 1.4 audit` in
 `CLEANUP_PROGRESS.md`. A rate below 100% means the step is unfinished: finish
 the checklist or record the gap under `## Decisions` before committing the
 audit. Cutting a large repo short without that record is the failure mode
