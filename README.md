@@ -412,14 +412,15 @@ Com o nível anunciado, ela cria a branch de limpeza e segue:
   usadas, arquivos órfãos, exports mortos. Antes da primeira mutação da
   fase 1.3, grava um **preview** em `CLEANUP_PROGRESS.md` (lista concreta
   por categoria, commit próprio `chore: preview phase 1 deletions`) — no
-  GREEN segue sozinha depois desse registro; no YELLOW o preview só omite o
-  que o nível já proíbe. Cada passo faz stage só com pathspecs dos
-  artefatos daquele passo (`git add -- …`, nunca `git add -A`), e só entra
-  com gate verde. No fim, produz uma auditoria do que sobrou (fase 1.4),
-  com **coverage mandate**: cada unidade da varredura fecha como
-  `reviewed` ou `skipped` com motivo, e o `coverage_rate` vai no log —
-  taxa abaixo de 100% sem gap registrado em Decisions deixa o passo
-  incompleto.
+  GREEN segue sozinha depois desse registro; no YELLOW (ou sob cap de
+  stack) o preview omite o que o nível já proíbe **e** o que o usuário
+  tirou de escopo — categorias fora do escopo do usuário ainda entram em
+  Decisions. Cada passo faz stage só com pathspecs dos artefatos daquele
+  passo (`git add -- …`, nunca `git add -A`), e só entra com gate verde.
+  No fim, produz uma auditoria do que sobrou (fase 1.4), com **coverage
+  mandate**: cada unidade da varredura fecha como `reviewed` ou `skipped`
+  com motivo, e o `coverage_rate` vai no log — taxa abaixo de 100% sem
+  gap registrado em Decisions deixa o passo incompleto.
 - **Fase 1.5 — funções duplicadas** (fecha a fase 1). Varre funções com nomes
   diferentes fazendo a mesma coisa (similarity-ts ou fallow em JS/TS, jscpd
   nos demais stacks) e aplica a regra do churn: par que muda junto no git é
@@ -579,13 +580,16 @@ Skills e materiais usados na construção desta:
 Ferramenta complementar (opcional, sem vendoring):
 
 - [OpenCodeReview](https://github.com/alibaba/open-code-review) (Alibaba,
-  Apache-2.0) — CLI de review de diff/PR que a documentação desta skill
-  pode citar como passo opcional depois da branch `cleanup/`. Não entra no
-  runtime; a receita está em `references/complementarity-opencodereview.md`.
+  Apache-2.0) — não embutido aqui; a disciplina de review dele (preview
+  antes do gasto, checklists de cobertura, severidade nos achados) informou
+  as seções nomeadas de preview, coverage mandate e residual-risks deste
+  protocolo. A documentação pode citar o CLI como passo opcional depois da
+  branch `cleanup/`; a receita fica em
+  `references/complementarity-opencodereview.md`.
 
 Nenhuma delas é dependência de runtime: são fontes e ferramentas de
 desenvolvimento — nada além desta pasta precisa estar instalado para usar a
-codebase-cleanup.
+codebase-cleanup. O OCR permanece opcional e externo se você quiser rodá-lo.
 
 ## Licença
 

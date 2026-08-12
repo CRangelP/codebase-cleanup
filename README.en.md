@@ -399,14 +399,15 @@ With the level announced, it creates the cleanup branch and proceeds:
   explicit **Preview (phase 1.3)** into `CLEANUP_PROGRESS.md` — the concrete
   deps, files and exports the report would remove — and commits that log
   update alone (`chore: preview phase 1 deletions`). On GREEN it proceeds
-  without asking after that record exists; on YELLOW the preview simply omits
-  what the level will not touch. Each delete step stages only pathspecs of
-  that step's artifacts (`git add -- …`, never `git add -A`), and only lands
-  with a green gate. At the end, phase **1.4** produces a full audit; every
-  unit in the sweep ends `reviewed` or `skipped` with a reason, and the
-  counts plus `coverage_rate` land under `## Coverage` in the progress log —
-  a rate below 100% without a recorded Decisions gap leaves the step
-  incomplete.
+  without asking after that record exists; on YELLOW (or any stack cap) the
+  preview omits what the level will not touch **and** what the user scoped
+  out — scoped-out categories still get a Decisions line. Each delete step
+  stages only pathspecs of that step's artifacts (`git add -- …`, never
+  `git add -A`), and only lands with a green gate. At the end, phase **1.4**
+  produces a full audit; every unit in the sweep ends `reviewed` or
+  `skipped` with a reason, and the counts plus `coverage_rate` land under
+  `## Coverage` in the progress log — a rate below 100% without a recorded
+  Decisions gap leaves the step incomplete.
 - **Phase 1.5 — duplicate functions** (closes phase 1). Sweeps for functions
   with different names doing the same thing (similarity-ts or fallow on
   JS/TS, jscpd on other stacks) and applies the churn rule: a pair that
