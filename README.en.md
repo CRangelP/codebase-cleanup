@@ -303,7 +303,7 @@ v0.4.0   41,241 bytes   ~14.3k on-invoke     (~370 always-on)
 measurements sit on different byte counts on purpose: between them the file
 *grew* with the #55 fixes, and hiding that would make the extraction look
 larger than it was. Since then `SKILL.md` has grown again with the phases and
-the measured rules (today ~48 KB / ~880 lines at v0.9.0): the criterion remains
+the measured rules (today ~48 KB / ~880 lines at v0.10.0): the criterion remains
 when the text is read, not a byte ceiling.
 
 The arithmetic that preceded the measurement was wrong, and it is worth

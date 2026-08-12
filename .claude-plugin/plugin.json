@@ -1,6 +1,6 @@
 {
   "name": "codebase-cleanup",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Four-phase codebase cleanup: dead code, module consolidation, folder structure and local reshaping. Dedicated branch, atomic commits per category, a green gate before every one of them.",
   "author": { "name": "CRangelP" },
   "homepage": "https://github.com/CRangelP/codebase-cleanup",

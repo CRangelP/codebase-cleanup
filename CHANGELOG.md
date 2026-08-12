@@ -11,31 +11,42 @@ recebe erro, a correção só nunca chega.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-08-12
+
+O protocolo ganha o que a faxina ainda não nomeava: ver o que vai sumir antes
+de sumir, fechar cada varredura com cobertura, e deixar o risco residual no
+relatório — com o OCR como vizinho opcional, nunca como etapa.
+
 ### Adicionado
 
-- Pesquisa de comparação com OpenCodeReview:
-  `docs/open-code-review-comparison-research.md` (vizinhos vs substitutos,
-  o que a skill absorveu como disciplina de processo e o que permanece
-  ferramenta externa).
+- **Preview** nomeado antes da primeira mutação da fase 1.3 (lista concreta no
+  log, commit próprio; GREEN segue autónomo). No YELLOW — e quando o usuário
+  tirou categoria de escopo — o preview omite o que a run não vai tocar.
+- **Coverage mandate** nas varreduras 1.4 e 1.5: cada unidade fecha
+  `reviewed` ou `skipped` com motivo, e o `coverage_rate` vai no log.
+- Seção **Residual risks** no relatório final, com a severidade do audit.
+- Complementaridade com OpenCodeReview (CLI opcional Apache-2.0, sem
+  vendoring): `references/complementarity-opencodereview.md`, receita
+  `ocr review` / `ocr delegate` na branch `cleanup/`, e passo opcional no
+  relatório. Pesquisa em `docs/open-code-review-comparison-research.md`.
 - Pesquisa Archify × Fase 3: `docs/archify-folder-reorg-research.md` (mapa
   visual complementar; não substitui `git mv` nem o plano de pastas).
-- Documentação de complementaridade com OpenCodeReview (CLI opcional Apache-2.0,
-  sem vendoring): `references/complementarity-opencodereview.md`, receita
-  `ocr review` / `ocr delegate` na branch `cleanup/`, e menção no relatório
-  final.
-- **Coverage mandate** nas varreduras 1.4 e 1.5: checklist
-  `reviewed|skipped+reason` e `coverage_rate` em `CLEANUP_PROGRESS.md`.
-- **Preview** nomeado antes da primeira mutação da fase 1.3 (lista no log,
-  commit próprio; GREEN segue autónomo).
-- Seção **Residual risks** com severidade no relatório final.
+- Mapa da fronteira de atribuição: `docs/attribution-frontier.md`.
 
 ### Alterado
 
 - `LICENSE`: notice de que o OCR é ferramenta externa opcional; o código deste
   repositório permanece MIT.
 - READMEs (PT/EN): a fase 4 entra no fluxo "o que acontece ao rodar" e nos
-  subagentes (antes só aparecia na tabela de níveis); árvore de `docs/` e a
-  linha validada passam a 525/525 invariantes.
+  subagentes; alvo sem cobertura tem as duas saídas do protocolo (pular ou
+  characterization test); árvore de `docs/` e linha validada em 525/525.
+
+### Corrigido
+
+- **O progresso depois de cada categoria/pasta volta a ser log-only**
+  ([#112](https://github.com/CRangelP/codebase-cleanup/issues/112)). O
+  `CLEANUP_PROGRESS.md` não entra no commit da mutação — reverter a categoria
+  não apaga o registro de que ela aconteceu.
 
 ## [0.9.0] — 2026-08-11
 
